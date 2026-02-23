@@ -90,15 +90,22 @@ const TrainersTab = () => {
   // Force refresh trainers from context
   const refreshTrainers = () => loadTrainers(true);
   // Filter Logic
-  const filteredTrainers = trainers.filter((t) => {
-    const searchLower = searchQuery.toLowerCase();
-    return (
-      t.name?.toLowerCase().includes(searchLower) ||
-      t.email?.toLowerCase().includes(searchLower) ||
-      t.domain?.toLowerCase().includes(searchLower) ||
-      t.trainer_id?.toLowerCase().includes(searchLower)
+  const filteredTrainers = trainers
+    .filter((t) => {
+      if (!searchQuery) return true;
+      const searchLower = searchQuery.toLowerCase();
+      return (
+        t.name?.toLowerCase().includes(searchLower) ||
+        t.email?.toLowerCase().includes(searchLower) ||
+        t.domain?.toLowerCase().includes(searchLower) ||
+        t.trainer_id?.toLowerCase().includes(searchLower)
+      );
+    })
+    .sort((a, b) =>
+      (a.trainer_id || "").localeCompare(b.trainer_id || "", undefined, {
+        numeric: true,
+      }),
     );
-  });
 
   // Handlers
   const openCreateDialog = async () => {
@@ -280,14 +287,20 @@ const TrainersTab = () => {
     <div className="space-y-6">
       {/* Header Section - All items on same line */}
       <div className="flex items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Input
-            placeholder="Search by name, email, or domain..."
-            className="pl-10 bg-card/50 shadow-sm"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <div className="flex-1 flex max-w-md items-center gap-3">
+          <div className="relative flex-1">
+            <Input
+              placeholder="Search by name, email, or domain..."
+              className="pl-10 bg-card/50 shadow-sm"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          </div>
+          <div className="text-sm font-medium text-muted-foreground whitespace-nowrap bg-muted/50 px-3 py-1.5 rounded-md border">
+            {filteredTrainers.length}{" "}
+            {filteredTrainers.length === 1 ? "Trainer" : "Trainers"}
+          </div>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           {/* Batch Import Button */}

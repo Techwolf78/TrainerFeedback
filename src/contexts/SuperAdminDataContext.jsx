@@ -1,18 +1,28 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { auth } from '@/services/firebase';
-import { getAllColleges } from '@/services/superadmin/collegeService';
-import { getAllTrainers } from '@/services/superadmin/trainerService';
-import { getAllSessions, subscribeToSessions } from '@/services/superadmin/sessionService';
-import { getAllTemplates } from '@/services/superadmin/templateService';
-import { getAllSystemUsers } from '@/services/superadmin/userService';
-import { 
-  getAllProjectCodes, 
-  addProjectCodes as addProjectCodesService, 
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react";
+import { auth } from "@/services/firebase";
+import { getAllColleges } from "@/services/superadmin/collegeService";
+import { getAllTrainers } from "@/services/superadmin/trainerService";
+import {
+  getAllSessions,
+  subscribeToSessions,
+} from "@/services/superadmin/sessionService";
+import { getAllTemplates } from "@/services/superadmin/templateService";
+import { getAllSystemUsers } from "@/services/superadmin/userService";
+import {
+  getAllProjectCodes,
+  addProjectCodes as addProjectCodesService,
   deleteProjectCode as deleteProjectCodeService,
-  rerunCollegeMatching as rerunCollegeMatchingService
-} from '@/services/superadmin/projectCodeService';
-import { toast } from 'sonner';
-import { getAcademicConfig } from '@/services/superadmin/academicService';
+  rerunCollegeMatching as rerunCollegeMatchingService,
+} from "@/services/superadmin/projectCodeService";
+import { toast } from "sonner";
+import { getAcademicConfig } from "@/services/superadmin/academicService";
 
 const SuperAdminDataContext = createContext(null);
 
@@ -36,13 +46,27 @@ export const SuperAdminDataProvider = ({ children }) => {
   const academicConfigsRef = useRef(academicConfigs);
 
   // Keep refs in sync with state
-  useEffect(() => { collegesRef.current = colleges; }, [colleges]);
-  useEffect(() => { trainersRef.current = trainers; }, [trainers]);
-  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
-  useEffect(() => { templatesRef.current = templates; }, [templates]);
-  useEffect(() => { adminsRef.current = admins; }, [admins]);
-  useEffect(() => { projectCodesRef.current = projectCodes; }, [projectCodes]);
-  useEffect(() => { academicConfigsRef.current = academicConfigs; }, [academicConfigs]);
+  useEffect(() => {
+    collegesRef.current = colleges;
+  }, [colleges]);
+  useEffect(() => {
+    trainersRef.current = trainers;
+  }, [trainers]);
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+  useEffect(() => {
+    templatesRef.current = templates;
+  }, [templates]);
+  useEffect(() => {
+    adminsRef.current = admins;
+  }, [admins]);
+  useEffect(() => {
+    projectCodesRef.current = projectCodes;
+  }, [projectCodes]);
+  useEffect(() => {
+    academicConfigsRef.current = academicConfigs;
+  }, [academicConfigs]);
 
   // Loading states
   const [loading, setLoading] = useState({
@@ -52,7 +76,7 @@ export const SuperAdminDataProvider = ({ children }) => {
     templates: false,
     admins: false,
     projectCodes: false,
-    initial: true
+    initial: true,
   });
 
   // Track what's been loaded
@@ -62,129 +86,149 @@ export const SuperAdminDataProvider = ({ children }) => {
     sessions: false,
     templates: false,
     admins: false,
-    projectCodes: false
+    projectCodes: false,
   });
 
   // Load colleges (with optional force refresh)
-  const loadColleges = useCallback(async (force = false) => {
-    // Use ref to get latest value, avoiding stale closure bug
-    if (loaded.colleges && !force) return collegesRef.current;
+  const loadColleges = useCallback(
+    async (force = false) => {
+      // Use ref to get latest value, avoiding stale closure bug
+      if (loaded.colleges && !force) return collegesRef.current;
 
-    setLoading(prev => ({ ...prev, colleges: true }));
-    try {
-      const data = await getAllColleges();
-      setColleges(data);
-      setLoaded(prev => ({ ...prev, colleges: true }));
-      return data;
-    } catch (error) {
-      console.error('Failed to load colleges:', error);
-      toast.error('Failed to load colleges');
-      return [];
-    } finally {
-      setLoading(prev => ({ ...prev, colleges: false }));
-    }
-  }, [loaded.colleges]);
+      setLoading((prev) => ({ ...prev, colleges: true }));
+      try {
+        const data = await getAllColleges();
+        setColleges(data);
+        setLoaded((prev) => ({ ...prev, colleges: true }));
+        return data;
+      } catch (error) {
+        console.error("Failed to load colleges:", error);
+        toast.error("Failed to load colleges");
+        return [];
+      } finally {
+        setLoading((prev) => ({ ...prev, colleges: false }));
+      }
+    },
+    [loaded.colleges],
+  );
 
   // Load trainers (with optional force refresh)
-  const loadTrainers = useCallback(async (force = false) => {
-    // Use ref to get latest value, avoiding stale closure bug
-    if (loaded.trainers && !force) return trainersRef.current;
+  const loadTrainers = useCallback(
+    async (force = false) => {
+      // Use ref to get latest value, avoiding stale closure bug
+      if (loaded.trainers && !force) return trainersRef.current;
 
-    setLoading(prev => ({ ...prev, trainers: true }));
-    try {
-      const result = await getAllTrainers(100); // Get all trainers
-      const data = result.trainers || [];
-      setTrainers(data);
-      setLoaded(prev => ({ ...prev, trainers: true }));
-      return data;
-    } catch (error) {
-      console.error('Failed to load trainers:', error);
-      toast.error('Failed to load trainers');
-      return [];
-    } finally {
-      setLoading(prev => ({ ...prev, trainers: false }));
-    }
-  }, [loaded.trainers]);
+      setLoading((prev) => ({ ...prev, trainers: true }));
+      try {
+        const result = await getAllTrainers(1000); // Get all trainers
+        const data = result.trainers || [];
+        setTrainers(data);
+        setLoaded((prev) => ({ ...prev, trainers: true }));
+        return data;
+      } catch (error) {
+        console.error("Failed to load trainers:", error);
+        toast.error("Failed to load trainers");
+        return [];
+      } finally {
+        setLoading((prev) => ({ ...prev, trainers: false }));
+      }
+    },
+    [loaded.trainers],
+  );
 
   // Load templates (with optional force refresh)
-  const loadTemplates = useCallback(async (force = false) => {
-    // Use ref to get latest value, avoiding stale closure bug
-    if (loaded.templates && !force) return templatesRef.current;
+  const loadTemplates = useCallback(
+    async (force = false) => {
+      // Use ref to get latest value, avoiding stale closure bug
+      if (loaded.templates && !force) return templatesRef.current;
 
-    setLoading(prev => ({ ...prev, templates: true }));
-    try {
-      const data = await getAllTemplates();
-      setTemplates(data);
-      setLoaded(prev => ({ ...prev, templates: true }));
-      return data;
-    } catch (error) {
-      console.error('Failed to load templates:', error);
-      toast.error('Failed to load templates');
-      return [];
-    } finally {
-      setLoading(prev => ({ ...prev, templates: false }));
-    }
-  }, [loaded.templates]);
+      setLoading((prev) => ({ ...prev, templates: true }));
+      try {
+        const data = await getAllTemplates();
+        setTemplates(data);
+        setLoaded((prev) => ({ ...prev, templates: true }));
+        return data;
+      } catch (error) {
+        console.error("Failed to load templates:", error);
+        toast.error("Failed to load templates");
+        return [];
+      } finally {
+        setLoading((prev) => ({ ...prev, templates: false }));
+      }
+    },
+    [loaded.templates],
+  );
 
   // Load admins (with optional force refresh)
-  const loadAdmins = useCallback(async (force = false) => {
-    // Use ref to get latest value, avoiding stale closure bug
-    if (loaded.admins && !force) return adminsRef.current;
+  const loadAdmins = useCallback(
+    async (force = false) => {
+      // Use ref to get latest value, avoiding stale closure bug
+      if (loaded.admins && !force) return adminsRef.current;
 
-    setLoading(prev => ({ ...prev, admins: true }));
-    try {
-      const data = await getAllSystemUsers();
-      setAdmins(data);
-      setLoaded(prev => ({ ...prev, admins: true }));
-      return data;
-    } catch (error) {
-      console.error('Failed to load admins:', error);
-      toast.error('Failed to load admins');
-      return [];
-    } finally {
-      setLoading(prev => ({ ...prev, admins: false }));
-    }
-  }, [loaded.admins]);
+      setLoading((prev) => ({ ...prev, admins: true }));
+      try {
+        const data = await getAllSystemUsers();
+        setAdmins(data);
+        setLoaded((prev) => ({ ...prev, admins: true }));
+        return data;
+      } catch (error) {
+        console.error("Failed to load admins:", error);
+        toast.error("Failed to load admins");
+        return [];
+      } finally {
+        setLoading((prev) => ({ ...prev, admins: false }));
+      }
+    },
+    [loaded.admins],
+  );
 
   // Load project codes (with optional force refresh)
-  const loadProjectCodes = useCallback(async (force = false) => {
-    // Use ref to get latest value, avoiding stale closure bug
-    if (loaded.projectCodes && !force) return projectCodesRef.current;
+  const loadProjectCodes = useCallback(
+    async (force = false) => {
+      // Use ref to get latest value, avoiding stale closure bug
+      if (loaded.projectCodes && !force) return projectCodesRef.current;
 
-    setLoading(prev => ({ ...prev, projectCodes: true }));
-    try {
-      const data = await getAllProjectCodes();
-      setProjectCodes(data);
-      setLoaded(prev => ({ ...prev, projectCodes: true }));
-      return data;
-    } catch (error) {
-      console.error('Failed to load project codes:', error);
-      toast.error('Failed to load project codes');
-      return [];
-    } finally {
-      setLoading(prev => ({ ...prev, projectCodes: false }));
-    }
-  }, [loaded.projectCodes]);
+      setLoading((prev) => ({ ...prev, projectCodes: true }));
+      try {
+        const data = await getAllProjectCodes();
+        setProjectCodes(data);
+        setLoaded((prev) => ({ ...prev, projectCodes: true }));
+        return data;
+      } catch (error) {
+        console.error("Failed to load project codes:", error);
+        toast.error("Failed to load project codes");
+        return [];
+      } finally {
+        setLoading((prev) => ({ ...prev, projectCodes: false }));
+      }
+    },
+    [loaded.projectCodes],
+  );
 
   // Add project codes
   const addProjectCodes = useCallback(async (rawCodes) => {
-    setLoading(prev => ({ ...prev, projectCodes: true }));
+    setLoading((prev) => ({ ...prev, projectCodes: true }));
     try {
       // Pass current colleges for matching
-      const result = await addProjectCodesService(rawCodes, collegesRef.current);
-      
+      const result = await addProjectCodesService(
+        rawCodes,
+        collegesRef.current,
+      );
+
       // Reload to get new data
       const newData = await getAllProjectCodes();
       setProjectCodes(newData);
-      
-      toast.success(`Added ${result.added} codes, skipped ${result.skipped} duplicates`);
+
+      toast.success(
+        `Added ${result.added} codes, skipped ${result.skipped} duplicates`,
+      );
       return result;
     } catch (error) {
-      console.error('Failed to add project codes:', error);
-      toast.error('Failed to add project codes');
+      console.error("Failed to add project codes:", error);
+      toast.error("Failed to add project codes");
       throw error;
     } finally {
-      setLoading(prev => ({ ...prev, projectCodes: false }));
+      setLoading((prev) => ({ ...prev, projectCodes: false }));
     }
   }, []);
 
@@ -192,18 +236,18 @@ export const SuperAdminDataProvider = ({ children }) => {
   const deleteProjectCode = useCallback(async (id) => {
     try {
       await deleteProjectCodeService(id);
-      setProjectCodes(prev => prev.filter(c => c.id !== id));
-      toast.success('Project code deleted');
+      setProjectCodes((prev) => prev.filter((c) => c.id !== id));
+      toast.success("Project code deleted");
     } catch (error) {
-      console.error('Failed to delete project code:', error);
-      toast.error('Failed to delete project code');
+      console.error("Failed to delete project code:", error);
+      toast.error("Failed to delete project code");
       throw error;
     }
   }, []);
 
   // Rerun matching
   const rerunMatching = useCallback(async () => {
-    setLoading(prev => ({ ...prev, projectCodes: true }));
+    setLoading((prev) => ({ ...prev, projectCodes: true }));
     try {
       const count = await rerunCollegeMatchingService(collegesRef.current);
       if (count > 0) {
@@ -212,50 +256,53 @@ export const SuperAdminDataProvider = ({ children }) => {
         const newData = await getAllProjectCodes();
         setProjectCodes(newData);
       } else {
-        toast.info('No new matches found');
+        toast.info("No new matches found");
       }
       return count;
     } catch (error) {
-      console.error('Failed to rerun matching:', error);
-      toast.error('Failed to rerun matching');
+      console.error("Failed to rerun matching:", error);
+      toast.error("Failed to rerun matching");
       throw error;
     } finally {
-      setLoading(prev => ({ ...prev, projectCodes: false }));
+      setLoading((prev) => ({ ...prev, projectCodes: false }));
     }
   }, []);
 
   // Load sessions (manual load, subscription handles real-time)
-  const loadSessions = useCallback(async (force = false) => {
-    // Use ref to get latest value, avoiding stale closure bug
-    if (loaded.sessions && !force) return sessionsRef.current;
+  const loadSessions = useCallback(
+    async (force = false) => {
+      // Use ref to get latest value, avoiding stale closure bug
+      if (loaded.sessions && !force) return sessionsRef.current;
 
-    setLoading(prev => ({ ...prev, sessions: true }));
-    try {
-      const data = await getAllSessions();
-      setSessions(data);
-      setLoaded(prev => ({ ...prev, sessions: true }));
-      return data;
-    } catch (error) {
-      console.error('Failed to load sessions:', error);
-      toast.error('Failed to load sessions');
-      return [];
-    } finally {
-      setLoading(prev => ({ ...prev, sessions: false }));
-    }
-  }, [loaded.sessions]);
+      setLoading((prev) => ({ ...prev, sessions: true }));
+      try {
+        const data = await getAllSessions();
+        setSessions(data);
+        setLoaded((prev) => ({ ...prev, sessions: true }));
+        return data;
+      } catch (error) {
+        console.error("Failed to load sessions:", error);
+        toast.error("Failed to load sessions");
+        return [];
+      } finally {
+        setLoading((prev) => ({ ...prev, sessions: false }));
+      }
+    },
+    [loaded.sessions],
+  );
 
   // Refresh all data
   const refreshAll = useCallback(async () => {
-    setLoading(prev => ({ ...prev, initial: true }));
+    setLoading((prev) => ({ ...prev, initial: true }));
     await Promise.all([
       loadColleges(true),
       loadTrainers(true),
       loadSessions(true),
       loadTemplates(true),
       loadAdmins(true),
-      loadProjectCodes(true)
+      loadProjectCodes(true),
     ]);
-    setLoading(prev => ({ ...prev, initial: false }));
+    setLoading((prev) => ({ ...prev, initial: false }));
   }, [loadColleges, loadTrainers, loadSessions, loadTemplates, loadAdmins]);
 
   // Initial load and session subscription
@@ -265,7 +312,7 @@ export const SuperAdminDataProvider = ({ children }) => {
     const initializeData = async () => {
       // Skip if no authenticated user (prevents post-logout errors)
       if (!auth.currentUser) {
-        setLoading(prev => ({ ...prev, initial: false }));
+        setLoading((prev) => ({ ...prev, initial: false }));
         return;
       }
 
@@ -274,11 +321,11 @@ export const SuperAdminDataProvider = ({ children }) => {
         loadTrainers(),
         loadTemplates(),
         loadAdmins(),
-        loadProjectCodes()
+        loadProjectCodes(),
       ]);
 
       if (!cancelled) {
-        setLoading(prev => ({ ...prev, initial: false }));
+        setLoading((prev) => ({ ...prev, initial: false }));
       }
     };
 
@@ -290,7 +337,7 @@ export const SuperAdminDataProvider = ({ children }) => {
       unsubscribe = subscribeToSessions((updatedSessions) => {
         if (!cancelled) {
           setSessions(updatedSessions);
-          setLoaded(prev => ({ ...prev, sessions: true }));
+          setLoaded((prev) => ({ ...prev, sessions: true }));
         }
       });
     }
@@ -302,7 +349,7 @@ export const SuperAdminDataProvider = ({ children }) => {
   }, []); // Only run once on mount
 
   const updateTrainersList = useCallback((updater) => {
-    if (typeof updater === 'function') {
+    if (typeof updater === "function") {
       setTrainers(updater);
     } else {
       setTrainers(updater);
@@ -310,7 +357,7 @@ export const SuperAdminDataProvider = ({ children }) => {
   }, []);
 
   const updateTemplatesList = useCallback((updater) => {
-    if (typeof updater === 'function') {
+    if (typeof updater === "function") {
       setTemplates(updater);
     } else {
       setTemplates(updater);
@@ -318,60 +365,58 @@ export const SuperAdminDataProvider = ({ children }) => {
   }, []);
 
   const updateCollegesList = useCallback((updater) => {
-    if (typeof updater === 'function') {
+    if (typeof updater === "function") {
       setColleges(updater);
     } else {
       setColleges(updater);
     }
   }, []);
 
-
   // Load academic config for a specific college
   const loadAcademicConfig = useCallback(async (collegeId, force = false) => {
     if (!collegeId) return null;
-    
+
     // Check cache first
     if (!force && academicConfigsRef.current[collegeId]) {
       return academicConfigsRef.current[collegeId];
     }
 
-    // Set simple loading state? 
-    // Since we don't have per-college loading in the main state object, 
-    // we'll rely on the specific component to show loading spinners, 
+    // Set simple loading state?
+    // Since we don't have per-college loading in the main state object,
+    // we'll rely on the specific component to show loading spinners,
     // but the unexpected 'loading' state update here might be overkill or tricky.
     // Let's just do the fetch.
     try {
       const data = await getAcademicConfig(collegeId);
       const config = data || { courses: {} };
-      
-      setAcademicConfigs(prev => ({
+
+      setAcademicConfigs((prev) => ({
         ...prev,
-        [collegeId]: config
+        [collegeId]: config,
       }));
-      
+
       return config;
     } catch (error) {
-      console.error('Failed to load academic config:', error);
-      toast.error('Failed to load academic config');
+      console.error("Failed to load academic config:", error);
+      toast.error("Failed to load academic config");
       return { courses: {} };
     }
   }, []);
 
   const updateAcademicConfig = useCallback((collegeId, newConfig) => {
-    setAcademicConfigs(prev => ({
+    setAcademicConfigs((prev) => ({
       ...prev,
-      [collegeId]: newConfig
+      [collegeId]: newConfig,
     }));
   }, []);
 
   const updateAdminsList = useCallback((updater) => {
-    if (typeof updater === 'function') {
+    if (typeof updater === "function") {
       setAdmins(updater);
     } else {
       setAdmins(updater);
     }
   }, []);
-
 
   const value = {
     // Data
@@ -385,7 +430,6 @@ export const SuperAdminDataProvider = ({ children }) => {
     // Loading states
     loading,
     isInitialLoading: loading.initial,
-
 
     // Load functions (with caching)
     loadColleges,
@@ -408,7 +452,7 @@ export const SuperAdminDataProvider = ({ children }) => {
     updateCollegesList,
     updateAdminsList,
     updateAcademicConfig,
-    setSessions
+    setSessions,
   };
 
   return (
@@ -421,7 +465,9 @@ export const SuperAdminDataProvider = ({ children }) => {
 export const useSuperAdminData = () => {
   const context = useContext(SuperAdminDataContext);
   if (!context) {
-    throw new Error('useSuperAdminData must be used within a SuperAdminDataProvider');
+    throw new Error(
+      "useSuperAdminData must be used within a SuperAdminDataProvider",
+    );
   }
   return context;
 };
