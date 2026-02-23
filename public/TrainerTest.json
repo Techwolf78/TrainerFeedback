@@ -1,0 +1,29 @@
+[
+  {
+    "trainer_id": "GA-T011",
+    "name": "GauravPatil",
+    "email": "gauravipatilgip@gmail.com",
+    "domain": "Technical",
+    "specialisation": "Technical-Electrical",
+    "password": "gat011",
+    "topics": []
+  },
+  {
+    "trainer_id": "GA-T012",
+    "name": "Purvapalankar",
+    "email": "purvapalankar123@gmail.com",
+    "domain": "Technical",
+    "specialisation": "Technical-Electrical",
+    "password": "gat012",
+    "topics": []
+  },
+  {
+    "trainer_id": "GA-T013",
+    "name": "Sumedh Sangle",
+    "email": "sanglesumedh@gmail.com",
+    "domain": "Technical",
+    "specialisation": "Technical-Mechanical",
+    "password": "gat013",
+    "topics": []
+  }
+]

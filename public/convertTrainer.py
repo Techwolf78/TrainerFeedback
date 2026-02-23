@@ -21,7 +21,7 @@ column_mapping = {
 df = df.rename(columns=column_mapping)
 
 # Add trainer_id as password and initialize topics list
-df["password"] = df["trainer_id"]
+df["password"] = df["trainer_id"].astype(str).str.lower().str.replace("-", "")
 df["topics"] = [[] for _ in range(len(df))]
 
 # Convert to list of dictionaries
