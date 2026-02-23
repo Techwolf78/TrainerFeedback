@@ -16,6 +16,7 @@ import {
   startAfter
 } from 'firebase/firestore';
 import { createUserWithoutLoggingIn } from '../authService';
+import { sendTrainerOnboardingEmail } from '../emailJsService';
 
 const COLLECTION_NAME = 'trainers';
 const COUNTER_COLLECTION = 'counters';
@@ -85,10 +86,15 @@ export const addTrainer = async ({ trainer_id, name, domain, specialisation, top
         createdAt: serverTimestamp()
     });
     
+    // Send Onboarding Email
+    await sendTrainerOnboardingEmail({
+      name,
+      email,
+      temporary_password: password
+    });
+
     // Return compatible object
     return { id: uid, trainer_id, name, email };
-
-    return { id: docRef.id, trainer_id, name, email };
   } catch (error) {
     console.error('Error adding trainer:', error);
     throw error;

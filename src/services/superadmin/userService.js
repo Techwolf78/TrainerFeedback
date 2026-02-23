@@ -11,6 +11,7 @@ import {
   where 
 } from 'firebase/firestore';
 import { createUserWithoutLoggingIn } from '../authService';
+import { sendAdminOnboardingEmail, sendSuperAdminOnboardingEmail } from '../emailJsService';
 
 const COLLECTION_NAME = 'users';
 
@@ -37,6 +38,24 @@ export const createSystemUser = async (userData, password) => {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     });
+
+    // Send Onboarding Email for College Admins
+    if (role === 'collegeAdmin') {
+      await sendAdminOnboardingEmail({
+        name,
+        email,
+        temporary_password: password
+      });
+    }
+
+    // Send Onboarding Email for Superadmins
+    if (role === 'superAdmin') {
+      await sendSuperAdminOnboardingEmail({
+        name,
+        email,
+        temporary_password: password
+      });
+    }
 
     return { uid, ...userData };
   } catch (error) {
