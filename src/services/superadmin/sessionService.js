@@ -1,44 +1,44 @@
-import { db } from "../firebase";
-import {
-  collection,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  getDocs,
-  query,
+import { db } from '../firebase';
+import { 
+  collection, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  getDocs, 
+  query, 
   where,
   getDoc,
   serverTimestamp,
   orderBy,
   limit,
   onSnapshot,
-  startAfter,
-} from "firebase/firestore";
+  startAfter
+} from 'firebase/firestore';
 
-const COLLECTION_NAME = "sessions";
+const COLLECTION_NAME = 'sessions';
 
 // Create a new session
 export const createSession = async (sessionData) => {
   try {
     const {
-      collegeId,
-      collegeName,
-      academicYear,
-      course,
-      branch,
-      batch,
-      year,
-      sessionTime, // 'Morning' | 'Afternoon'
-      sessionDate,
-      assignedTrainer, // { id, name }
-      topic,
-      domain,
-      sessionDuration = 60, // minutes
-      questions = [],
-      ttl = 24, // hours until expiry
-      projectId = "",
-      projectCode = "",
+        collegeId, 
+        collegeName, 
+        academicYear, 
+        course, 
+        branch, 
+        batch, 
+        year, 
+        sessionTime, // 'Morning' | 'Afternoon'
+        sessionDate, 
+        assignedTrainer, // { id, name }
+        topic, 
+        domain, 
+        sessionDuration = 60, // minutes
+        questions = [], 
+        ttl = 24, // hours until expiry
+        projectId = '',
+        projectCode = ''
     } = sessionData;
 
     const docRef = await addDoc(collection(db, COLLECTION_NAME), {
@@ -407,14 +407,15 @@ export const closeSessionWithStats = async (id) => {
 /**
  * Subscribe to real-time session updates
  * Limited to 50 most recent sessions to reduce read costs
- * @param {Function} callback - Callback function receiving updated sessions array
+ * @param {Function} callback - Callback function receiving (sessions, lastDoc, hasMore)
  * @returns {Function} - Unsubscribe function
  */
 export const subscribeToSessions = (callback) => {
+  const PAGE_SIZE = 50;
   const q = query(
     collection(db, COLLECTION_NAME),
     orderBy("createdAt", "desc"),
-    limit(50),
+    limit(PAGE_SIZE),
   );
 
   return onSnapshot(
@@ -424,13 +425,49 @@ export const subscribeToSessions = (callback) => {
         id: doc.id,
         ...doc.data(),
       }));
-      callback(sessions);
+      const lastDoc = snapshot.docs[snapshot.docs.length - 1] || null;
+      const hasMore = snapshot.docs.length === PAGE_SIZE;
+      callback(sessions, lastDoc, hasMore);
     },
     (error) => {
       console.error("Error in sessions subscription:", error);
     },
   );
 };
+
+/**
+ * Fetch older sessions beyond the real-time subscription window
+ * Uses cursor-based pagination with startAfter
+ * @param {Object} lastDoc - The last document snapshot from previous fetch
+ * @param {number} pageSize - Number of sessions to fetch per page
+ * @returns {Promise<{sessions: Array, lastDoc: Object, hasMore: boolean}>}
+ */
+export const getOlderSessions = async (lastDoc, pageSize = 50) => {
+  try {
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      orderBy("createdAt", "desc"),
+      startAfter(lastDoc),
+      limit(pageSize),
+    );
+
+    const snapshot = await getDocs(q);
+    const sessions = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    return {
+      sessions,
+      lastDoc: snapshot.docs[snapshot.docs.length - 1] || null,
+      hasMore: snapshot.docs.length === pageSize,
+    };
+  } catch (error) {
+    console.error("Error fetching older sessions:", error);
+    throw error;
+  }
+};
+
 /**
  * Fetch sessions for analytics with dynamic filters and limit
  * Used for Overview Dashboards to avoid processing all sessions client-side

@@ -12,6 +12,7 @@ import { getAllTrainers } from "@/services/superadmin/trainerService";
 import {
   getAllSessions,
   subscribeToSessions,
+  getOlderSessions,
 } from "@/services/superadmin/sessionService";
 import { getAllTemplates } from "@/services/superadmin/templateService";
 import { getAllSystemUsers } from "@/services/superadmin/userService";
@@ -35,6 +36,15 @@ export const SuperAdminDataProvider = ({ children }) => {
   const [admins, setAdmins] = useState([]);
   const [projectCodes, setProjectCodes] = useState([]);
   const [academicConfigs, setAcademicConfigs] = useState({}); // { [collegeId]: config }
+
+  // Pagination state for sessions
+  const [sessionsLastDoc, setSessionsLastDoc] = useState(null);
+  const [hasMoreSessions, setHasMoreSessions] = useState(false);
+  const [loadingMoreSessions, setLoadingMoreSessions] = useState(false);
+  // Track IDs from the live subscription to deduplicate
+  const liveSessionIdsRef = useRef(new Set());
+  // Track older (paginated) sessions separately so live updates don't overwrite them
+  const olderSessionsRef = useRef([]);
 
   // Refs to always access the latest state values (fixes stale closure bug)
   const collegesRef = useRef(colleges);
@@ -334,9 +344,19 @@ export const SuperAdminDataProvider = ({ children }) => {
     // Subscribe to real-time session updates only if authenticated
     let unsubscribe;
     if (auth.currentUser) {
-      unsubscribe = subscribeToSessions((updatedSessions) => {
+      unsubscribe = subscribeToSessions((liveSessions, lastDoc, hasMore) => {
         if (!cancelled) {
-          setSessions(updatedSessions);
+          // Track live session IDs for deduplication
+          const liveIds = new Set(liveSessions.map((s) => s.id));
+          liveSessionIdsRef.current = liveIds;
+
+          // Merge: live sessions first, then older paginated sessions (excluding any that now appear in live)
+          const filteredOlder = olderSessionsRef.current.filter(
+            (s) => !liveIds.has(s.id),
+          );
+          setSessions([...liveSessions, ...filteredOlder]);
+          setSessionsLastDoc(lastDoc);
+          setHasMoreSessions(hasMore || olderSessionsRef.current.length > 0);
           setLoaded((prev) => ({ ...prev, sessions: true }));
         }
       });
@@ -355,6 +375,39 @@ export const SuperAdminDataProvider = ({ children }) => {
       setTrainers(updater);
     }
   }, []);
+
+  // Load more (older) sessions via cursor pagination
+  const loadMoreSessions = useCallback(async () => {
+    if (!sessionsLastDoc || loadingMoreSessions) return;
+
+    setLoadingMoreSessions(true);
+    try {
+      const result = await getOlderSessions(sessionsLastDoc, 50);
+
+      // Filter out any that already exist in live subscription
+      const newOlder = result.sessions.filter(
+        (s) => !liveSessionIdsRef.current.has(s.id),
+      );
+
+      // Append to our older sessions ref
+      olderSessionsRef.current = [...olderSessionsRef.current, ...newOlder];
+
+      // Merge with current sessions (live + older)
+      setSessions((prev) => {
+        const existingIds = new Set(prev.map((s) => s.id));
+        const uniqueNew = newOlder.filter((s) => !existingIds.has(s.id));
+        return [...prev, ...uniqueNew];
+      });
+
+      setSessionsLastDoc(result.lastDoc);
+      setHasMoreSessions(result.hasMore);
+    } catch (error) {
+      console.error("Failed to load more sessions:", error);
+      toast.error("Failed to load older sessions");
+    } finally {
+      setLoadingMoreSessions(false);
+    }
+  }, [sessionsLastDoc, loadingMoreSessions]);
 
   const updateTemplatesList = useCallback((updater) => {
     if (typeof updater === "function") {
@@ -453,6 +506,11 @@ export const SuperAdminDataProvider = ({ children }) => {
     updateAdminsList,
     updateAcademicConfig,
     setSessions,
+
+    // Session pagination
+    loadMoreSessions,
+    hasMoreSessions,
+    loadingMoreSessions,
   };
 
   return (
