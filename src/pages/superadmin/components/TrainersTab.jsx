@@ -23,7 +23,6 @@ import {
   deleteTrainer,
   addTrainersBatch,
   getTrainerIdCounter,
-  updateTrainerIdCounter,
 } from "@/services/superadmin/trainerService";
 import { useSuperAdminData } from "@/contexts/SuperAdminDataContext";
 import TrainerAnalytics from "./TrainerAnalytics";
@@ -49,7 +48,7 @@ import {
 // Helper to generate formatted trainer ID
 const formatTrainerId = (num) => `GA-T${num.toString().padStart(3, "0")}`;
 
-const TRAINER_ID_REGEX = /^GA-T\d{3}$/;
+const TRAINER_ID_REGEX = /^GA-T\d{3,}$/;
 
 const TrainersTab = () => {
   // Get trainers from context (cached, no re-fetch on tab switch)
@@ -192,14 +191,6 @@ const TrainersTab = () => {
         );
       } else {
         await addTrainer(trainerData);
-        // If we created a GA-TXXX ID, update the centralized counter
-        if (TRAINER_ID_REGEX.test(trainerData.trainer_id)) {
-          const num = parseInt(trainerData.trainer_id.replace("GA-T", ""), 10);
-          const currentCounter = await getTrainerIdCounter();
-          if (num > currentCounter) {
-            await updateTrainerIdCounter(num);
-          }
-        }
         toast.success("Trainer created successfully");
         refreshTrainers(); // Reload to get fresh list
       }

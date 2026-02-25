@@ -79,9 +79,16 @@ const SessionsTab = ({
   isDialogOpen,
   setDialogOpen,
 }) => {
-  // Get data from context (cached, real-time subscribed)
-  const { sessions, trainers, templates, projectCodes, loadSessions } =
-    useSuperAdminData();
+  const {
+    sessions,
+    trainers,
+    templates,
+    projectCodes,
+    loadSessions,
+    loadMoreSessions,
+    hasMoreSessions,
+    loadingMoreSessions,
+  } = useSuperAdminData();
   const [loading, setLoading] = useState(false);
 
   // Session Tab State (All, Active, Past)
@@ -205,13 +212,12 @@ const SessionsTab = ({
       } else {
         // Reactivating - clear previous responses to accept new ones
         toast.loading("Clearing previous responses and reactivating...");
-        const { deleteResponsesForSession } = await import(
-          "@/services/superadmin/responseService"
-        );
+        const { deleteResponsesForSession } =
+          await import("@/services/superadmin/responseService");
         await deleteResponsesForSession(session.id);
-        await updateSession(session.id, { 
+        await updateSession(session.id, {
           status: "active",
-          reactivationCount: (session.reactivationCount || 0) + 1
+          reactivationCount: (session.reactivationCount || 0) + 1,
         });
         toast.dismiss();
         toast.success("Session activated for fresh responses");
@@ -862,8 +868,26 @@ const SessionsTab = ({
         </Table>
       </div>
 
-      <div className="text-xs text-muted-foreground text-center">
-        Showing {filteredSessions.length} sessions
+      <div className="flex flex-col items-center gap-2 py-4">
+        <span className="text-xs text-muted-foreground">
+          Showing {filteredSessions.length} of {sessions.length} loaded sessions
+        </span>
+        {hasMoreSessions && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={loadMoreSessions}
+            disabled={loadingMoreSessions}
+          >
+            {loadingMoreSessions ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+            {loadingMoreSessions ? "Loading..." : "Load More Sessions"}
+          </Button>
+        )}
       </div>
 
       {/* Export Confirmation Dialog */}
