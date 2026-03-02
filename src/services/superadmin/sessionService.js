@@ -280,8 +280,9 @@ export const closeSessionWithStats = async (id) => {
     // Import compileSessionStats dynamically to avoid circular dependency
 
     // 1. Compile statistics first (outside transaction)
-    // IMPORTANT: compileSessionStats now ONLY compiles the *current* responses in the subcollection.
-    // Due to the reactivation clear logic, this represents the "delta" stats since the last activation.
+    // compileSessionStats filters responses by version (reactivationCount),
+    // so only responses from the current activation cycle are compiled.
+    // This is the "delta" stats for this version.
     const { compileSessionStats, mergeStats } =
       await import("./responseService");
     const {
@@ -292,7 +293,11 @@ export const closeSessionWithStats = async (id) => {
     } = await import("./cacheService");
     const { runTransaction } = await import("firebase/firestore");
 
-    const deltaStats = await compileSessionStats(id);
+    // Read the session's current reactivationCount to filter responses by version
+    const sessionSnap = await getDoc(doc(db, COLLECTION_NAME, id));
+    const currentVersion = sessionSnap.exists() ? (sessionSnap.data().reactivationCount || 0) : 0;
+
+    const deltaStats = await compileSessionStats(id, currentVersion);
 
     let sessionDataForCache = null;
     let finalMergedStats = deltaStats;
