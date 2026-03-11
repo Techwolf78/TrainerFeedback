@@ -1,14 +1,13 @@
 import { db } from '../firebase';
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  deleteDoc, 
-  getDocs, 
+import {
+  collection,
+  doc,
+  setDoc,
+  getDocs,
   updateDoc,
   serverTimestamp,
   query,
-  where 
+  where
 } from 'firebase/firestore';
 import { createUserWithoutLoggingIn } from '../authService';
 import { sendAdminOnboardingEmail, sendSuperAdminOnboardingEmail } from '../emailJsService';
@@ -22,11 +21,11 @@ const COLLECTION_NAME = 'users';
  */
 export const createSystemUser = async (userData, password) => {
   const { email, role, name, collegeId } = userData;
-  
+
   try {
     // 1. Create Auth User
     const uid = await createUserWithoutLoggingIn(email, password);
-    
+
     // 2. Create Firestore Document
     // Using UID as the document ID for easy lookup
     await setDoc(doc(db, COLLECTION_NAME, uid), {
@@ -35,6 +34,7 @@ export const createSystemUser = async (userData, password) => {
       role,
       name,
       collegeId: collegeId || null,
+      isDeleted: false,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     });
@@ -83,18 +83,20 @@ export const updateSystemUser = async (uid, updates) => {
 };
 
 /**
- * Delete a system user
- * NOTE: This only deletes the Firestore document.
- * We cannot delete the Auth user easily without Admin SDK or logging in as them.
- * However, deleting the firestore doc effectively revokes access 
- * since AuthContext checks for the doc.
+ * Soft delete a system user
+ * Sets isDeleted flag to true instead of removing the document.
+ * AuthContext checks this flag and blocks login for deleted users.
  */
 export const deleteSystemUser = async (uid) => {
   try {
-    await deleteDoc(doc(db, COLLECTION_NAME, uid));
+    const docRef = doc(db, COLLECTION_NAME, uid);
+    await updateDoc(docRef, {
+      isDeleted: true,
+      deletedAt: serverTimestamp(),
+    });
     return true;
   } catch (error) {
-    console.error('Error deleting system user:', error);
+    console.error('Error soft-deleting system user:', error);
     throw error;
   }
 };
@@ -103,31 +105,39 @@ export const deleteSystemUser = async (uid) => {
  * Get all system users
  */
 export const getAllSystemUsers = async () => {
-    try {
-        const querySnapshot = await getDocs(collection(db, COLLECTION_NAME));
-        return querySnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-    } catch (error) {
-        console.error('Error getting users:', error);
-        throw error;
-    }
+  try {
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('isDeleted', '==', false)
+    );
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('Error getting users:', error);
+    throw error;
+  }
 };
 
 /**
  * Get users by role
  */
 export const getUsersByRole = async (role) => {
-    try {
-        const q = query(collection(db, COLLECTION_NAME), where('role', '==', role));
-        const querySnapshot = await getDocs(q);
-        return querySnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-    } catch (error) {
-        console.error(`Error getting users by role ${role}:`, error);
-        throw error;
-    }
+  try {
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('role', '==', role),
+      where('isDeleted', '==', false)
+    );
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error(`Error getting users by role ${role}:`, error);
+    throw error;
+  }
 };

@@ -19,6 +19,13 @@ export const AuthProvider = ({ children }) => {
 
       if (trainerDocSnap.exists()) {
         const trainerData = trainerDocSnap.data();
+
+        // Block soft-deleted trainers
+        if (trainerData.isDeleted === true) {
+          await signOut(auth);
+          return { isDeleted: true };
+        }
+
         return {
           uid: firebaseUser.uid,
           email: firebaseUser.email,
@@ -33,6 +40,13 @@ export const AuthProvider = ({ children }) => {
 
       if (userDocSnap.exists()) {
         const userData = userDocSnap.data();
+
+        // Block soft-deleted users
+        if (userData.isDeleted === true) {
+          await signOut(auth);
+          return { isDeleted: true };
+        }
+
         return {
           uid: firebaseUser.uid,
           email: firebaseUser.email,
@@ -45,7 +59,7 @@ export const AuthProvider = ({ children }) => {
       return {
         uid: firebaseUser.uid,
         email: firebaseUser.email,
-        role: 'guest' 
+        role: 'guest'
       };
 
     } catch (error) {
@@ -59,7 +73,12 @@ export const AuthProvider = ({ children }) => {
       setIsLoading(true);
       if (firebaseUser) {
         const userData = await fetchUserRoleAndData(firebaseUser);
-        setUser(userData);
+        // If soft-deleted, userData will be { isDeleted: true } and user was signed out
+        if (userData?.isDeleted) {
+          setUser(null);
+        } else {
+          setUser(userData);
+        }
       } else {
         setUser(null);
       }
@@ -76,11 +95,16 @@ export const AuthProvider = ({ children }) => {
       // The onAuthStateChanged listener will handle state update, 
       // but we might want to wait for that or fetch valid user data to return here.
       const userData = await fetchUserRoleAndData(userCredential.user);
-      
+
+      // Check if user was soft-deleted
+      if (userData?.isDeleted) {
+        return { success: false, error: 'Your account has been deactivated. Please contact your administrator.' };
+      }
+
       if (userData) {
-          return { success: true, user: userData };
+        return { success: true, user: userData };
       } else {
-          return { success: false, error: 'User data not found.' };
+        return { success: false, error: 'User data not found.' };
       }
     } catch (error) {
       console.error('Login error:', error);
@@ -100,8 +124,8 @@ export const AuthProvider = ({ children }) => {
 
   const refreshUser = useCallback(async () => {
     if (auth.currentUser) {
-       const userData = await fetchUserRoleAndData(auth.currentUser);
-       setUser(userData);
+      const userData = await fetchUserRoleAndData(auth.currentUser);
+      setUser(userData);
     }
   }, []);
 

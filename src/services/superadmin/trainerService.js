@@ -143,10 +143,14 @@ export const updateTrainer = async (id, updates) => {
   }
 };
 
-// Delete a trainer
+// Soft delete a trainer (sets isDeleted flag instead of removing the document)
 export const deleteTrainer = async (id) => {
   try {
-    await deleteDoc(doc(db, COLLECTION_NAME, id));
+    const docRef = doc(db, COLLECTION_NAME, id);
+    await updateDoc(docRef, {
+      isDeleted: true,
+      deletedAt: serverTimestamp(),
+    });
     return true;
   } catch (error) {
     console.error("Error deleting trainer:", error);
@@ -184,14 +188,17 @@ export const getAllTrainers = async (limitCount = 10, lastDoc = null) => {
   }
 };
 
-// Get trainer by ID (Firestore Document ID)
+// Get trainer by ID (returns null for soft-deleted trainers)
 export const getTrainerById = async (id) => {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
-      return { id: docSnap.id, ...docSnap.data() };
+      const data = docSnap.data();
+      // Exclude soft-deleted trainers
+      if (data.isDeleted === true) return null;
+      return { id: docSnap.id, ...data };
     } else {
       return null;
     }

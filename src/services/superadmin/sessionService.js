@@ -1,44 +1,44 @@
-import { db } from '../firebase';
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
-  getDocs, 
-  query, 
+import { db } from "../firebase";
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  getDocs,
+  query,
   where,
   getDoc,
   serverTimestamp,
   orderBy,
   limit,
   onSnapshot,
-  startAfter
-} from 'firebase/firestore';
+  startAfter,
+} from "firebase/firestore";
 
-const COLLECTION_NAME = 'sessions';
+const COLLECTION_NAME = "sessions";
 
 // Create a new session
 export const createSession = async (sessionData) => {
   try {
     const {
-        collegeId, 
-        collegeName, 
-        academicYear, 
-        course, 
-        branch, 
-        batch, 
-        year, 
-        sessionTime, // 'Morning' | 'Afternoon'
-        sessionDate, 
-        assignedTrainer, // { id, name }
-        topic, 
-        domain, 
-        sessionDuration = 60, // minutes
-        questions = [], 
-        ttl = 24, // hours until expiry
-        projectId = '',
-        projectCode = ''
+      collegeId,
+      collegeName,
+      academicYear,
+      course,
+      branch,
+      batch,
+      year,
+      sessionTime, // 'Morning' | 'Afternoon'
+      sessionDate,
+      assignedTrainer, // { id, name }
+      topic,
+      domain,
+      sessionDuration = 60, // minutes
+      questions = [],
+      ttl = 24, // hours until expiry
+      projectId = "",
+      projectCode = "",
     } = sessionData;
 
     const docRef = await addDoc(collection(db, COLLECTION_NAME), {

@@ -1,15 +1,14 @@
 import { db } from '../firebase';
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
-  getDocs, 
-  query, 
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  doc,
+  getDocs,
+  query,
   where,
   getDoc,
-  serverTimestamp 
+  serverTimestamp
 } from 'firebase/firestore';
 
 const COLLECTION_NAME = 'colleges';
@@ -17,10 +16,14 @@ const COLLECTION_NAME = 'colleges';
 // Add a new college
 export const addCollege = async ({ name, code, logoUrl = '' }) => {
   try {
-    // Check for duplicate code
-    const q = query(collection(db, COLLECTION_NAME), where('code', '==', code));
+    // Check for duplicate code (only among non-deleted colleges)
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('code', '==', code),
+      where('isDeleted', '==', false)
+    );
     const querySnapshot = await getDocs(q);
-    
+
     if (!querySnapshot.empty) {
       throw new Error(`College with code ${code} already exists.`);
     }
@@ -29,8 +32,9 @@ export const addCollege = async ({ name, code, logoUrl = '' }) => {
       name,
       code,
       logoUrl,
+      isDeleted: false,
       createdAt: serverTimestamp()
-    });
+    }); 0
 
     return { id: docRef.id, name, code, logoUrl };
   } catch (error) {
@@ -54,13 +58,17 @@ export const updateCollege = async (id, updates) => {
   }
 };
 
-// Delete a college
+// Soft delete a college (sets isDeleted flag instead of removing the document)
 export const deleteCollege = async (id) => {
   try {
-    await deleteDoc(doc(db, COLLECTION_NAME, id));
+    const docRef = doc(db, COLLECTION_NAME, id);
+    await updateDoc(docRef, {
+      isDeleted: true,
+      deletedAt: serverTimestamp(),
+    });
     return true;
   } catch (error) {
-    console.error('Error deleting college:', error);
+    console.error('Error soft-deleting college:', error);
     throw error;
   }
 };
@@ -68,7 +76,11 @@ export const deleteCollege = async (id) => {
 // Get all colleges
 export const getAllColleges = async () => {
   try {
-    const querySnapshot = await getDocs(collection(db, COLLECTION_NAME));
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('isDeleted', '==', false)
+    );
+    const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
@@ -79,14 +91,17 @@ export const getAllColleges = async () => {
   }
 };
 
-// Get college by ID
+// Get college by ID (returns null for soft-deleted colleges)
 export const getCollegeById = async (id) => {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
     const docSnap = await getDoc(docRef);
-    
+
     if (docSnap.exists()) {
-      return { id: docSnap.id, ...docSnap.data() };
+      const data = docSnap.data();
+      // Exclude soft-deleted colleges
+      if (data.isDeleted === true) return null;
+      return { id: docSnap.id, ...data };
     } else {
       return null;
     }
@@ -103,8 +118,12 @@ export const bulkAddColleges = async (collegesArray) => {
       throw new Error('Please provide a non-empty array of colleges.');
     }
 
-    // Fetch all existing codes to check for duplicates
-    const existingSnapshot = await getDocs(collection(db, COLLECTION_NAME));
+    // Fetch all existing codes to check for duplicates (only among non-deleted colleges)
+    const existingQ = query(
+      collection(db, COLLECTION_NAME),
+      where('isDeleted', '==', false)
+    );
+    const existingSnapshot = await getDocs(existingQ);
     const existingCodes = new Set(
       existingSnapshot.docs.map(doc => doc.data().code?.toUpperCase())
     );
@@ -135,6 +154,7 @@ export const bulkAddColleges = async (collegesArray) => {
           name,
           code,
           logoUrl,
+          isDeleted: false,
           createdAt: serverTimestamp()
         });
         existingCodes.add(code); // prevent duplicates within the same batch
