@@ -105,13 +105,18 @@ export const getResponseCount = async (sessionId) => {
 };
 
 /**
- * Compile statistics from all responses for a session
+ * Compile statistics from responses for a session, filtered by version
  * @param {string} sessionId - The session document ID
+ * @param {number} [version=0] - The reactivation version to compile stats for
  * @returns {Promise<Object>} - Compiled statistics object
  */
-export const compileSessionStats = async (sessionId) => {
+export const compileSessionStats = async (sessionId, version = 0) => {
   try {
-    const responses = await getResponses(sessionId);
+    const allResponses = await getResponses(sessionId);
+    
+    // Filter responses to only include those matching the current version
+    // Responses without a version field are treated as version 0 (original)
+    const responses = allResponses.filter(r => (r.version ?? 0) === version);
     
     if (responses.length === 0) {
       return {

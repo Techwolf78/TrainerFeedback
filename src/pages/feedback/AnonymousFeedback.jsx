@@ -157,13 +157,14 @@ export const AnonymousFeedback = () => {
         .filter((a) => a.value !== null);
 
       // Submit to Firebase subcollection
+      const version = session.reactivationCount || 0;
       await addResponse(sessionId, {
         deviceId: getDeviceId(),
         answers,
+        version,
       });
 
       // Mark as submitted in localStorage
-      const version = session.reactivationCount || 0;
       localStorage.setItem(
         `feedback_submitted_${sessionId}_v${version}`,
         JSON.stringify({

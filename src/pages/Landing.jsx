@@ -9,6 +9,7 @@ import {
   GraduationCap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import ImageComparison from "./new";
 
 const collegeLogos = [
   "Collegelogo1.png",
@@ -228,6 +229,7 @@ export const Landing = () => {
           </div>
         </div>
       </footer>
+      {/* <ImageComparison /> */}
     </div>
   );
 };

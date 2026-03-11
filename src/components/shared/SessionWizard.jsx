@@ -109,7 +109,7 @@ const SessionWizard = ({
   // Load Config when College Changes
   useEffect(() => {
     const loadConfig = async () => {
-      if (formData.collegeId) {
+      if (formData.collegeId) { 
         try {
           const config = await getAcademicConfig(formData.collegeId);
           setAcademicOptions(config || {});
@@ -583,9 +583,7 @@ const SessionWizard = ({
             </Popover>
           </div>
         </div>
-
         <div className="border-t my-2" />
-
         <div className="space-y-3">
           <Label className="text-base font-semibold">Session Logistics</Label>
           <div className="grid grid-cols-2 gap-4">

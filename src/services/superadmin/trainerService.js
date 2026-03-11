@@ -5,6 +5,7 @@ import {
   updateDoc,
   doc,
   setDoc,
+  deleteDoc,
   getDocs,
   query,
   where,
@@ -68,11 +69,10 @@ export const addTrainer = async (
       );
     }
 
-    // Check for duplicate trainer_id (only among non-deleted trainers)
+    // Check for duplicate trainer_id
     const q = query(
       collection(db, COLLECTION_NAME),
       where("trainer_id", "==", trainer_id),
-      where("isDeleted", "==", false),
     );
     const querySnapshot = await getDocs(q);
 
@@ -99,7 +99,6 @@ export const addTrainer = async (
       specialisation,
       topics,
       email,
-      isDeleted: false,
       createdAt: serverTimestamp(),
     });
 
@@ -154,7 +153,7 @@ export const deleteTrainer = async (id) => {
     });
     return true;
   } catch (error) {
-    console.error("Error soft-deleting trainer:", error);
+    console.error("Error deleting trainer:", error);
     throw error;
   }
 };
@@ -162,16 +161,11 @@ export const deleteTrainer = async (id) => {
 // Get all trainers (with pagination)
 export const getAllTrainers = async (limitCount = 10, lastDoc = null) => {
   try {
-    let q = query(
-      collection(db, COLLECTION_NAME),
-      where("isDeleted", "==", false),
-      limit(limitCount),
-    );
+    let q = query(collection(db, COLLECTION_NAME), limit(limitCount));
 
     if (lastDoc) {
       q = query(
         collection(db, COLLECTION_NAME),
-        where("isDeleted", "==", false),
         startAfter(lastDoc),
         limit(limitCount),
       );
@@ -222,12 +216,9 @@ export const addTrainersBatch = async (trainers) => {
     skipped: [],
   };
 
-  // 1. Fetch existing trainer IDs from DB for duplicate check (exclude soft-deleted)
+  // 1. Fetch existing trainer IDs from DB for duplicate check
   const existingIds = new Set();
-  const q = query(
-    collection(db, COLLECTION_NAME),
-    where("isDeleted", "==", false),
-  );
+  const q = query(collection(db, COLLECTION_NAME));
   const snapshot = await getDocs(q);
   snapshot.forEach((doc) => {
     const data = doc.data();

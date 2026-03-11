@@ -210,11 +210,8 @@ const SessionsTab = ({
         toast.dismiss();
         toast.success("Session closed and statistics compiled");
       } else {
-        // Reactivating - clear previous responses to accept new ones
-        toast.loading("Clearing previous responses and reactivating...");
-        const { deleteResponsesForSession } =
-          await import("@/services/superadmin/responseService");
-        await deleteResponsesForSession(session.id);
+        // Reactivating - increment version so new responses are tracked separately
+        toast.loading("Reactivating session...");
         await updateSession(session.id, {
           status: "active",
           reactivationCount: (session.reactivationCount || 0) + 1,
