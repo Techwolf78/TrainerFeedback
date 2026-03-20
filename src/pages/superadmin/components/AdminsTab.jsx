@@ -168,6 +168,20 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
     return college ? college.name : "Unknown College";
   };
 
+  // Helper to format college dropdown labels with code/initials
+  const getCollegeDisplayLabel = (college) => {
+    if (!college) return "";
+    const code = college.code?.trim();
+    if (code) return `${code} - ${college.name}`;
+
+    const initials = college.name
+      .split(/\s+/)
+      .map((w) => w[0])
+      .join("")
+      .toUpperCase();
+    return `${initials} - ${college.name}`;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -288,7 +302,7 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
                       <SelectContent>
                         {colleges.map((college) => (
                           <SelectItem key={college.id} value={college.id}>
-                            {college.name}
+                            {getCollegeDisplayLabel(college)}
                           </SelectItem>
                         ))}
                       </SelectContent>

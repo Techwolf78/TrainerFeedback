@@ -59,10 +59,6 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import {
-  getCollegeCache,
-  getCollegeTrends,
-} from "@/services/superadmin/cacheService";
 import { getAllSessions } from "@/services/superadmin/sessionService";
 import { getAllTrainers } from "@/services/superadmin/trainerService";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
@@ -71,8 +67,6 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
   const [loading, setLoading] = useState(true);
 
   // Data State
-  const [cache, setCache] = useState(null);
-  const [trends, setTrends] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [trainers, setTrainers] = useState([]);
   const [academicOptions, setAcademicOptions] = useState(null);
@@ -95,78 +89,15 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
 
       setLoading(true);
       try {
-        const today = new Date();
-        const currentYearMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-        const isEarlyMonth = today.getDate() <= 7;
-
-        const promises = [
-          getCollegeCache(collegeId),
-          getCollegeTrends(collegeId, currentYearMonth),
+        const results = await Promise.all([
           getAllSessions(collegeId),
           getAllTrainers(1000),
           getAcademicConfig(collegeId),
-        ];
+        ]);
 
-        if (isEarlyMonth) {
-          const prevDate = new Date(
-            today.getFullYear(),
-            today.getMonth() - 1,
-            1,
-          );
-          const prevYearMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
-          promises.push(getCollegeTrends(collegeId, prevYearMonth));
-        }
-
-        const results = await Promise.all(promises);
-        const cacheData = results[0];
-        const trendData = results[1] || {
-          dailyResponses: {},
-          dailySessions: {},
-        };
-        const sessionsData = results[2];
-        const trainersData = results[3]?.trainers;
-        const academicConfig = results[4];
-        const prevTrendData = isEarlyMonth ? results[5] : null;
-
-        // Process Trends similar to AdminDataContext
-        const processedTrends = {};
-
-        const processTrendDoc = (trendDoc, yearMonth) => {
-          if (!trendDoc) return;
-          Object.entries(trendDoc.dailyResponses || {}).forEach(
-            ([day, count]) => {
-              const fullDate = `${yearMonth}-${day}`;
-              if (!processedTrends[fullDate])
-                processedTrends[fullDate] = { responses: 0, sessions: 0 };
-              processedTrends[fullDate].responses = count;
-            },
-          );
-          Object.entries(trendDoc.dailySessions || {}).forEach(
-            ([day, count]) => {
-              const fullDate = `${yearMonth}-${day}`;
-              if (!processedTrends[fullDate])
-                processedTrends[fullDate] = { responses: 0, sessions: 0 };
-              processedTrends[fullDate].sessions = count;
-            },
-          );
-        };
-
-        processTrendDoc(trendData, currentYearMonth);
-        if (prevTrendData) {
-          const prevDate = new Date(
-            today.getFullYear(),
-            today.getMonth() - 1,
-            1,
-          );
-          const prevYearMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
-          processTrendDoc(prevTrendData, prevYearMonth);
-        }
-
-        setCache(cacheData);
-        setTrends(processedTrends);
-        setSessions(sessionsData || []);
-        setTrainers(trainersData || []);
-        setAcademicOptions(academicConfig);
+        setSessions(results[0] || []);
+        setTrainers(results[1]?.trainers || []);
+        setAcademicOptions(results[2]);
       } catch (error) {
         console.error("Failed to load college analytics:", error);
       } finally {
@@ -222,12 +153,8 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     return Object.keys(academicOptions.courses);
   }, [academicOptions]);
 
-  // New Structure: Course -> Year -> Department -> Batch
-
   const availableYears = useMemo(() => {
     if (!academicOptions?.courses || filters.course === "all") return [];
-
-    // Years are directly under courses
     const course = academicOptions.courses[filters.course];
     if (course?.years) {
       return Object.keys(course.years).sort();
@@ -241,14 +168,12 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     const course = academicOptions.courses[filters.course];
 
     if (course?.years) {
-      // If year is selected, get depts for that year
       if (filters.year !== "all") {
         const yearData = course.years[filters.year];
         if (yearData?.departments) {
           Object.keys(yearData.departments).forEach((d) => allDepts.add(d));
         }
       } else {
-        // Aggregate from all years
         Object.values(course.years).forEach((yearData) => {
           if (yearData?.departments) {
             Object.keys(yearData.departments).forEach((d) => allDepts.add(d));
@@ -265,7 +190,6 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     const course = academicOptions.courses[filters.course];
 
     if (course?.years) {
-      // Filter by Year
       const yearsToScan =
         filters.year !== "all" ? [filters.year] : Object.keys(course.years);
 
@@ -273,7 +197,6 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
         const yearData = course.years[yearKey];
         if (!yearData?.departments) return;
 
-        // Filter by Department
         const deptsToScan =
           filters.department !== "all"
             ? [filters.department]
@@ -295,7 +218,8 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     if (sessions.length === 0) return [];
 
     return sessions.filter((session) => {
-      if (session.status !== "inactive" || !session.compiledStats) return false;
+      // Allow both inactive (compiled) and active (live) sessions to show up
+      if (!session.compiledStats) return false;
 
       if (
         filters.trainerId !== "all" &&
@@ -321,161 +245,119 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     });
   }, [sessions, filters]);
 
-  // Aggregate stats
+  // Aggregate stats from filtered sessions
   const aggregatedStats = useMemo(() => {
-    // 1. Hierarchical View -> Use cache structure if no complex filters
-    // Use course-based navigation if limited to hierarchy
-    const isHierarchicalView =
-      filters.trainerId === "all" &&
-      filters.projectCode === "all" &&
-      filters.dateRange === "all";
-
-    if (isHierarchicalView && cache) {
-      let targetData = cache;
-
-      // Navigate hierarchy: Course -> Year -> Batch
-      if (filters.course !== "all" && targetData.courses?.[filters.course]) {
-        targetData = targetData.courses[filters.course];
-        if (filters.year !== "all" && targetData.years?.[filters.year]) {
-          targetData = targetData.years[filters.year];
-          if (filters.batch !== "all" && targetData.batches?.[filters.batch]) {
-            targetData = targetData.batches[filters.batch];
-          }
-        }
-      }
-
-      const avgRating =
-        targetData.totalRatingsCount > 0
-          ? (targetData.ratingSum / targetData.totalRatingsCount).toFixed(2)
-          : "0.00";
-
-      // Reconstruct category averages
-      const categoryAverages = {};
-      if (targetData.categoryData) {
-        Object.entries(targetData.categoryData).forEach(([cat, data]) => {
-          categoryAverages[cat] =
-            data.count > 0 ? (data.sum / data.count).toFixed(2) : 0;
-        });
-      }
-
-      // Format topics
-      const topicsLearned = targetData.topicsLearned
-        ? Object.entries(targetData.topicsLearned)
-            .sort((a, b) => b[1] - a[1])
-            .map(([name, count]) => ({ name, count }))
-            .slice(0, 10)
-        : [];
-
+    if (filteredSessions.length === 0) {
       return {
-        totalSessions: targetData.totalSessions || 0,
-        totalResponses: targetData.totalResponses || 0,
-        totalRatingsCount: targetData.totalRatingsCount || 0,
-        totalHours: targetData.totalHours || 0,
-        avgRating,
-        ratingDistribution: targetData.ratingDistribution || {
-          1: 0,
-          2: 0,
-          3: 0,
-          4: 0,
-          5: 0,
-        },
-        categoryAverages,
-        qualitative: targetData.qualitative || {
-          high: [],
-          low: [],
-          future: [],
-        },
-        topicsLearned,
-      };
-    }
-
-    // 2. Dynamic Filtered View -> Aggregate from filteredSessions
-    if (filteredSessions.length > 0) {
-      const stats = {
+        totalSessions: 0,
         totalResponses: 0,
         totalRatingsCount: 0,
-        ratingSum: 0,
         totalHours: 0,
+        avgRating: "0.00",
         ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
-        categoryTotals: {},
-        categoryCounts: {},
-      };
-
-      filteredSessions.forEach((session) => {
-        const cs = session.compiledStats;
-        if (!cs) return;
-
-        stats.totalResponses += cs.totalResponses || 0;
-        stats.totalHours += (Number(session.sessionDuration) || 60) / 60;
-
-        Object.entries(cs.ratingDistribution || {}).forEach(
-          ([rating, count]) => {
-            stats.ratingDistribution[rating] =
-              (stats.ratingDistribution[rating] || 0) + count;
-            stats.ratingSum += Number(rating) * count;
-            stats.totalRatingsCount += count;
-          },
-        );
-
-        Object.entries(cs.categoryAverages || {}).forEach(([cat, avg]) => {
-          const count = cs.totalResponses || 1;
-          stats.categoryTotals[cat] =
-            (stats.categoryTotals[cat] || 0) + avg * count;
-          stats.categoryCounts[cat] = (stats.categoryCounts[cat] || 0) + count;
-        });
-      });
-
-      const avgRating =
-        stats.totalRatingsCount > 0
-          ? (stats.ratingSum / stats.totalRatingsCount).toFixed(2)
-          : "0.00";
-
-      const categoryAverages = {};
-      Object.keys(stats.categoryTotals).forEach((cat) => {
-        categoryAverages[cat] =
-          stats.categoryCounts[cat] > 0
-            ? (stats.categoryTotals[cat] / stats.categoryCounts[cat]).toFixed(2)
-            : 0;
-      });
-
-      return {
-        totalSessions: filteredSessions.length,
-        totalResponses: stats.totalResponses,
-        totalRatingsCount: stats.totalRatingsCount,
-        totalHours: stats.totalHours,
-        avgRating,
-        ratingDistribution: stats.ratingDistribution,
-        categoryAverages,
+        categoryAverages: {},
         qualitative: { high: [], low: [], future: [] },
         topicsLearned: [],
       };
     }
 
-    return {
-      totalSessions: 0,
+    const stats = {
       totalResponses: 0,
       totalRatingsCount: 0,
+      ratingSum: 0,
       totalHours: 0,
-      avgRating: "0.00",
       ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
-      categoryAverages: {},
-      qualitative: { high: [], low: [], future: [] },
-      topicsLearned: [],
+      categoryTotals: {},
+      categoryCounts: {},
+      allTopics: {},
     };
-  }, [filteredSessions, cache, filters]);
 
-  // Response trend - use normalized trends data (YYYY-MM-DD keys)
+    filteredSessions.forEach((session) => {
+      const cs = session.compiledStats;
+      if (!cs) return;
+
+      const sessionCount = cs.totalResponses || 0;
+      stats.totalResponses += sessionCount;
+      stats.totalHours += (Number(session.sessionDuration) || 60) / 60;
+
+      // Use rating distribution if present
+      if (cs.ratingDistribution) {
+        Object.entries(cs.ratingDistribution).forEach(([rating, count]) => {
+          stats.ratingDistribution[rating] = (stats.ratingDistribution[rating] || 0) + count;
+          stats.ratingSum += Number(rating) * count;
+          stats.totalRatingsCount += count;
+        });
+      } else if (cs.avgRating) {
+        // Fallback for live stats that might not have full distribution yet
+        stats.ratingSum += (cs.avgRating || 0) * sessionCount;
+        stats.totalRatingsCount += sessionCount;
+      }
+
+      // Aggregate Category Averages
+      if (cs.categoryAverages) {
+        Object.entries(cs.categoryAverages).forEach(([cat, avg]) => {
+          stats.categoryTotals[cat] = (stats.categoryTotals[cat] || 0) + avg * sessionCount;
+          stats.categoryCounts[cat] = (stats.categoryCounts[cat] || 0) + sessionCount;
+        });
+      }
+
+      // Aggregate topics
+      if (cs.topicsLearned) {
+        cs.topicsLearned.forEach((topic) => {
+          const name = topic.name.toLowerCase();
+          stats.allTopics[name] = (stats.allTopics[name] || 0) + topic.count;
+        });
+      }
+    });
+
+    const avgRating =
+      stats.totalRatingsCount > 0
+        ? (stats.ratingSum / stats.totalRatingsCount).toFixed(2)
+        : "0.00";
+
+    const categoryAverages = {};
+    Object.keys(stats.categoryTotals).forEach((cat) => {
+      categoryAverages[cat] =
+        stats.categoryCounts[cat] > 0
+          ? (stats.categoryTotals[cat] / stats.categoryCounts[cat]).toFixed(2)
+          : 0;
+    });
+
+    const topicsLearned = Object.entries(stats.allTopics)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => ({ name, count }))
+      .slice(0, 10);
+
+    return {
+      totalSessions: filteredSessions.length,
+      totalResponses: stats.totalResponses,
+      totalRatingsCount: stats.totalRatingsCount,
+      totalHours: stats.totalHours,
+      avgRating,
+      ratingDistribution: stats.ratingDistribution,
+      categoryAverages,
+      qualitative: { high: [], low: [], future: [] },
+      topicsLearned,
+    };
+  }, [filteredSessions]);
+
+  // Response trend
   const responseTrend = useMemo(() => {
-    if (!trends || Object.keys(trends).length === 0) return [];
+    const trendMap = {};
+    filteredSessions.forEach((session) => {
+      const date = session.sessionDate;
+      const responses = session.compiledStats?.totalResponses || 0;
+      trendMap[date] = (trendMap[date] || 0) + responses;
+    });
 
-    return Object.entries(trends)
-      .map(([dateStr, data]) => ({
-        day: parseInt(dateStr.split("-")[2]),
-        responses: data.responses || 0,
-        fullDate: dateStr,
+    return Object.entries(trendMap)
+      .map(([date, responses]) => ({
+        fullDate: date,
+        day: new Date(date).getDate(),
+        responses,
       }))
       .sort((a, b) => a.fullDate.localeCompare(b.fullDate));
-  }, [trends]);
+  }, [filteredSessions]);
 
   // Category radar data
   const categoryRadarData = useMemo(() => {
@@ -497,33 +379,44 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     );
   }, [aggregatedStats]);
 
-  // Domain Analytics Data
+  // Domain Analytics
   const domainAnalyticsData = useMemo(() => {
-    const domains = cache?.domains || {};
-    const domainEntries = Object.entries(domains);
+    const domainMap = {};
+    filteredSessions.forEach((session) => {
+      const domain = session.domain || "Other";
+      if (!domainMap[domain]) {
+        domainMap[domain] = { responses: 0, ratingSum: 0, ratingsCount: 0 };
+      }
 
-    if (domainEntries.length === 0) return { chartData: [], totalResponses: 0 };
+      const cs = session.compiledStats;
+      if (cs) {
+        domainMap[domain].responses += cs.totalResponses || 0;
+        Object.entries(cs.ratingDistribution || {}).forEach(
+          ([rating, count]) => {
+            domainMap[domain].ratingSum += Number(rating) * count;
+            domainMap[domain].ratingsCount += count;
+          },
+        );
+      }
+    });
 
     let totalResponses = 0;
-    const chartData = domainEntries.map(([domainName, data]) => {
-      const avgRating =
-        data.totalRatingsCount > 0
-          ? (data.ratingSum / data.totalRatingsCount).toFixed(2)
-          : "0.00";
-      totalResponses += data.totalResponses || 0;
-
+    const chartData = Object.entries(domainMap).map(([name, data]) => {
+      totalResponses += data.responses;
       return {
-        name: domainName.replace(/_/g, " "),
-        responses: data.totalResponses || 0,
-        avgRating: parseFloat(avgRating),
-        totalRatings: data.totalRatingsCount || 0,
+        name,
+        responses: data.responses,
+        avgRating:
+          data.ratingsCount > 0
+            ? parseFloat((data.ratingSum / data.ratingsCount).toFixed(2))
+            : 0,
+        totalRatings: data.ratingsCount,
       };
     });
 
     return { chartData, totalResponses };
-  }, [cache]);
+  }, [filteredSessions]);
 
-  // Rating distribution bar chart data
   const ratingDistributionData = useMemo(() => {
     const distribution = aggregatedStats.ratingDistribution || {
       1: 0,
@@ -538,10 +431,8 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     }));
   }, [aggregatedStats]);
 
-  // Top trainers
   const topTrainers = useMemo(() => {
     const trainerStats = {};
-
     filteredSessions.forEach((session) => {
       const trainerId = session.assignedTrainer?.id;
       const trainerName = session.assignedTrainer?.name || "Unknown";
@@ -572,7 +463,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
         comments.slice(0, 2).forEach((c) => {
           if (trainerStats[trainerId].recentComments.length < 3) {
             trainerStats[trainerId].recentComments.push({
-              text: c.text || c,
+              text: typeof c === "string" ? c : c.text,
               date: session.sessionDate,
             });
           }
@@ -601,22 +492,8 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     );
   }
 
-  if (!cache) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">
-          No analytics data available for this college yet.
-        </p>
-        <Button variant="outline" className="mt-4" onClick={onBack}>
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back
-        </Button>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
-      {/* Header with Back Button */}
       <div className="flex items-center justify-between ">
         <div className="flex items-center gap-4">
           <Button
@@ -649,7 +526,6 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
         )}
       </div>
 
-      {/* Filters */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -779,6 +655,24 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
             </div>
 
             <div className="space-y-1">
+              <Label className="text-xs">Time Range</Label>
+              <Select
+                value={filters.dateRange}
+                onValueChange={(v) => setFilters({ ...filters, dateRange: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Time" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Time</SelectItem>
+                  <SelectItem value="7days">Last 7 Days</SelectItem>
+                  <SelectItem value="30days">Last 30 Days</SelectItem>
+                  <SelectItem value="90days">Last 90 Days</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
               <Label className="text-xs">Trainer</Label>
               <Select
                 value={filters.trainerId}
@@ -797,431 +691,160 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                 </SelectContent>
               </Select>
             </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">Date Range</Label>
-              <Select
-                value={filters.dateRange}
-                onValueChange={(v) => setFilters({ ...filters, dateRange: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="All Time" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Time</SelectItem>
-                  <SelectItem value="7days">Last 7 Days</SelectItem>
-                  <SelectItem value="30days">Last 30 Days</SelectItem>
-                  <SelectItem value="90days">Last 90 Days</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">
-              Total Responses
-            </CardTitle>
-            <ClipboardList className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {aggregatedStats.totalResponses}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="bg-primary/5 border-primary/20">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Overall Rating
+                </p>
+                <h3 className="text-2xl font-bold text-primary mt-1">
+                  {aggregatedStats.avgRating}
+                </h3>
+              </div>
+              <div className="bg-primary/10 p-2 rounded-full">
+                <Star className="h-5 w-5 text-primary fill-primary" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Total Student Responses
+            <div className="mt-4 h-1.5 w-full bg-primary/10 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary rounded-full transition-all duration-500"
+                style={{
+                  width: `${(parseFloat(aggregatedStats.avgRating) / 5) * 100}%`,
+                }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-blue-500/5 border-blue-500/20">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Total Responses
+                </p>
+                <h3 className="text-2xl font-bold text-blue-600 mt-1">
+                  {aggregatedStats.totalResponses}
+                </h3>
+              </div>
+              <div className="bg-blue-500/10 p-2 rounded-full">
+                <MessageSquare className="h-5 w-5 text-blue-600" />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-4">
+              Across {aggregatedStats.totalSessions} sessions
             </p>
           </CardContent>
         </Card>
 
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">
-              Average Rating
-            </CardTitle>
-            <Star className="h-4 w-4 text-yellow-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {aggregatedStats.avgRating}
+        <Card className="bg-green-500/5 border-green-500/20">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Training Hours
+                </p>
+                <h3 className="text-2xl font-bold text-green-600 mt-1">
+                  {Math.round(aggregatedStats.totalHours)}h
+                </h3>
+              </div>
+              <div className="bg-green-500/10 p-2 rounded-full">
+                <Clock className="h-5 w-5 text-green-600" />
+              </div>
             </div>
-            <div className="flex items-center gap-1 mt-1">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Star
-                  key={i}
-                  className={`h-3 w-3 ${i <= Math.round(Number(aggregatedStats.avgRating)) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"}`}
-                />
-              ))}
-              <span className="text-xs text-muted-foreground ml-1">
-                out of 5.0
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">
-              Total Sessions
-            </CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {aggregatedStats.totalSessions || 0}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Conducted Sessions
+            <p className="text-xs text-muted-foreground mt-4">
+              Total engagement time
             </p>
           </CardContent>
         </Card>
 
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Hours</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {aggregatedStats.totalHours || 0}
+        <Card className="bg-purple-500/5 border-purple-500/20">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Active Domains
+                </p>
+                <h3 className="text-2xl font-bold text-purple-600 mt-1">
+                  {domainAnalyticsData.chartData.length}
+                </h3>
+              </div>
+              <div className="bg-purple-500/10 p-2 rounded-full">
+                <Sparkles className="h-5 w-5 text-purple-600" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Training Hours Delivered
+            <p className="text-xs text-muted-foreground mt-4">
+              Areas of training
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Chart Row - 3 Charts: Domain Performance, Category Breakdown, Rating Distribution */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Domain Performance Vertical Bar Chart */}
-        <Card>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Domain Performance</CardTitle>
-            <CardDescription>X: Domain | Y: Avg Rating (0-5)</CardDescription>
+            <CardTitle>Performance Trend</CardTitle>
+            <CardDescription>Response volume over time</CardDescription>
           </CardHeader>
           <CardContent>
-            {domainAnalyticsData.chartData.length > 0 ? (
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={domainAnalyticsData.chartData}>
-                    <defs>
-                      <linearGradient
-                        id="barGradient"
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-                        <stop
-                          offset="0%"
-                          stopColor="hsl(var(--primary))"
-                          stopOpacity={1}
-                        />
-                        <stop
-                          offset="100%"
-                          stopColor="hsl(var(--primary))"
-                          stopOpacity={0.6}
-                        />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      className="stroke-muted"
-                      vertical={false}
-                    />
-                    <XAxis dataKey="name" className="text-xs" />
-                    <YAxis domain={[0, 5]} tickCount={6} className="text-xs" />
-                    <RechartsTooltip
-                      cursor={false}
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                      }}
-                      formatter={(value) => [value.toFixed(2), "Avg Rating"]}
-                    />
-                    <Bar
-                      dataKey="avgRating"
-                      fill="url(#barGradient)"
-                      radius={[4, 4, 0, 0]}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                No domain data available yet.
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Category Breakdown Radar Chart */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Category Breakdown</CardTitle>
-            <CardDescription>X: Category | Y: Score (0-5)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              {categoryRadarData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart
-                    cx="50%"
-                    cy="53%"
-                    outerRadius="50%"
-                    data={categoryRadarData}
-                  >
-                    <defs>
-                      <linearGradient
-                        id="radarGradient"
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-                        <stop
-                          offset="0%"
-                          stopColor="hsl(var(--primary))"
-                          stopOpacity={0.6}
-                        />
-                        <stop
-                          offset="100%"
-                          stopColor="hsl(var(--primary))"
-                          stopOpacity={0.2}
-                        />
-                      </linearGradient>
-                    </defs>
-                    <PolarGrid stroke="hsl(var(--primary))" opacity={0.1} />
-                    <PolarAngleAxis
-                      dataKey="category"
-                      tick={(props) => {
-                        const { payload, x, y, textAnchor, index } = props;
-                        const categoryData = categoryRadarData[index];
-                        if (categoryData && categoryRadarData.length > 0) {
-                          const isTop = y < 115;
-                          const isBottom = y > 145;
-                          const isRight = textAnchor === "start";
-                          const isLeft = textAnchor === "end";
-
-                          let dy = 0;
-                          if (isTop) dy = -40;
-                          else if (isBottom) dy = 30;
-                          else dy = 0;
-
-                          let dx = 0;
-                          if (isRight) dx = 12;
-                          if (isLeft) dx = -12;
-
-                          return (
-                            <g className="recharts-layer recharts-polar-angle-axis-tick">
-                              <text
-                                x={x + dx}
-                                y={y + dy}
-                                textAnchor={textAnchor}
-                                fill="hsl(var(--foreground))"
-                                fontSize={10}
-                                fontWeight="600"
-                              >
-                                {payload.value}
-                              </text>
-                              <text
-                                x={x + dx}
-                                y={y + dy + 15}
-                                textAnchor={textAnchor}
-                                fill="hsl(var(--primary))"
-                                fontSize={11}
-                                fontWeight="800"
-                              >
-                                {categoryData.score.toFixed(1)}
-                              </text>
-                            </g>
-                          );
-                        }
-                        return (
-                          <text
-                            x={x}
-                            y={y}
-                            textAnchor={textAnchor}
-                            fill="hsl(var(--foreground))"
-                            fontSize={10}
-                          >
-                            {payload.value}
-                          </text>
-                        );
-                      }}
-                    />
-                    <PolarRadiusAxis
-                      angle={90}
-                      domain={[0, 5]}
-                      tick={{
-                        fill: "hsl(var(--muted-foreground))",
-                        fontSize: 9,
-                      }}
-                      tickCount={6}
-                    />
-                    <Radar
-                      name="Score"
-                      dataKey="score"
-                      stroke="hsl(var(--primary))"
-                      fill="url(#radarGradient)"
-                      fillOpacity={1}
-                      strokeWidth={2}
-                      dot={{
-                        fill: "hsl(var(--primary))",
-                        r: 3,
-                        fillOpacity: 1,
-                      }}
-                    />
-                    <RechartsTooltip
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                      }}
-                      formatter={(value) => [
-                        parseFloat(value).toFixed(2),
-                        "Score",
-                      ]}
-                    />
-                  </RadarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                  No category data available
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Rating Distribution Bar Chart */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Rating Distribution</CardTitle>
-            <CardDescription>
-              X: Star Rating | Y: Response Count
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={ratingDistributionData}>
-                  <defs>
-                    <linearGradient
-                      id="barGradient"
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop
-                        offset="0%"
-                        stopColor="hsl(var(--primary))"
-                        stopOpacity={1}
-                      />
-                      <stop
-                        offset="100%"
-                        stopColor="hsl(var(--primary))"
-                        stopOpacity={0.6}
-                      />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    className="stroke-muted"
-                    vertical={false}
-                  />
-                  <XAxis dataKey="rating" className="text-xs" />
-                  <YAxis allowDecimals={false} className="text-xs" />
-                  <RechartsTooltip
-                    cursor={false}
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                    }}
-                    formatter={(value) => [value, "Responses"]}
-                  />
-                  <Bar
-                    dataKey="count"
-                    fill="url(#barGradient)"
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Response Trend & Student Voices - Side by Side */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Response Trend Line Chart - LEFT */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Response Trend</CardTitle>
-            <CardDescription>
-              X: Day | Y: Responses (Current Month)
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
+            <div className="h-[300px] w-full">
               {responseTrend.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={responseTrend}>
                     <defs>
-                      <linearGradient
-                        id="colorResponses"
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
+                      <linearGradient id="colorRes" x1="0" y1="0" x2="0" y2="1">
                         <stop
                           offset="5%"
                           stopColor="hsl(var(--primary))"
-                          stopOpacity={0.15}
+                          stopOpacity={0.3}
                         />
                         <stop
                           offset="95%"
                           stopColor="hsl(var(--primary))"
-                          stopOpacity={0.01}
+                          stopOpacity={0}
                         />
                       </linearGradient>
                     </defs>
                     <CartesianGrid
                       strokeDasharray="3 3"
                       vertical={false}
-                      className="stroke-muted"
+                      stroke="hsl(var(--muted-foreground)/0.1)"
                     />
                     <XAxis
-                      dataKey="fullDate"
-                      className="text-xs"
-                      tickFormatter={(date) => {
-                        const d = new Date(date);
-                        return `${d.getDate()} ${d.toLocaleString("default", { month: "short" })}`;
-                      }}
+                      dataKey="day"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
                     />
-                    <YAxis allowDecimals={false} className="text-xs" />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                    />
                     <RechartsTooltip
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                      }}
-                      labelFormatter={(date) => {
-                        const d = new Date(date);
-                        return d.toLocaleDateString("en-US", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        });
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          return (
+                            <div className="bg-background border border-border p-3 rounded-lg shadow-xl">
+                              <p className="text-xs text-muted-foreground font-medium mb-1">
+                                {payload[0].payload.fullDate}
+                              </p>
+                              <div className="flex items-center gap-2">
+                                <div className="h-2 w-2 rounded-full bg-primary" />
+                                <p className="text-sm font-bold">
+                                  {payload[0].value} Responses
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
                       }}
                     />
                     <Area
@@ -1229,174 +852,227 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                       dataKey="responses"
                       stroke="hsl(var(--primary))"
                       strokeWidth={3}
-                      dot={{ fill: "hsl(var(--primary))", r: 4 }}
-                      activeDot={{ r: 6 }}
                       fillOpacity={1}
-                      fill="url(#colorResponses)"
+                      fill="url(#colorRes)"
                     />
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                  No trend data available for this month yet.
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  No trend data available
                 </div>
               )}
             </div>
           </CardContent>
         </Card>
 
-        {/* Student Voices Section - RIGHT */}
         <Card>
           <CardHeader>
-            <div className="flex items-center gap-2">
-              <MessageSquare className="h-5 w-5 text-primary" />
-              <CardTitle>Student Voices</CardTitle>
-            </div>
-            <CardDescription>Highlights from student feedback</CardDescription>
+            <CardTitle>Category Scores</CardTitle>
+            <CardDescription>Metrics breakdown</CardDescription>
           </CardHeader>
           <CardContent>
-            {aggregatedStats.qualitative && (
-              <Tabs defaultValue="high" className="w-full">
-                <TabsList className="grid w-full grid-cols-4 mb-4">
-                  <TabsTrigger
-                    value="high"
-                    className="data-[state=active]:bg-green-100 data-[state=active]:text-green-800 text-xs"
-                  >
-                    Praise
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="low"
-                    className="data-[state=active]:bg-red-100 data-[state=active]:text-red-800 text-xs"
-                  >
-                    Concerns
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="topics"
-                    className="data-[state=active]:bg-amber-100 data-[state=active]:text-amber-800 text-xs"
-                  >
-                    Learned
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="future"
-                    className="data-[state=active]:bg-blue-100 data-[state=active]:text-blue-800 text-xs"
-                  >
-                    Future
-                  </TabsTrigger>
-                </TabsList>
+            <div className="h-[300px] w-full">
+              {categoryRadarData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart cx="50%" cy="50%" outerRadius="80%" data={categoryRadarData}>
+                    <PolarGrid stroke="hsl(var(--muted-foreground)/0.2)" />
+                    <PolarAngleAxis
+                      dataKey="category"
+                      tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
+                    />
+                    <PolarRadiusAxis
+                      angle={30}
+                      domain={[0, 5]}
+                      tick={false}
+                      axisLine={false}
+                    />
+                    <Radar
+                      name="Score"
+                      dataKey="score"
+                      stroke="hsl(var(--primary))"
+                      fill="hsl(var(--primary))"
+                      fillOpacity={0.5}
+                    />
+                    <RechartsTooltip />
+                  </RadarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  No category data
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-                {["high", "low"].map((type) => (
-                  <TabsContent key={type} value={type} className="mt-0">
-                    <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                      {aggregatedStats.qualitative?.[type]?.length > 0 ? (
-                        aggregatedStats.qualitative[type]
-                          .slice(0, 5)
-                          .map((comment, idx) => (
-                            <div
-                              key={idx}
-                              className={`flex flex-col p-3 rounded-lg border ${type === "high" ? "bg-green-50 border-green-100" : "bg-red-50 border-red-100"}`}
-                            >
-                              <div className="flex justify-between items-start mb-2">
-                                <div className="flex items-center gap-0.5">
-                                  {[1, 2, 3, 4, 5].map((star) => (
-                                    <Star
-                                      key={star}
-                                      className={`h-3 w-3 ${star <= Math.round(Number(comment.rating)) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground/30"}`}
-                                    />
-                                  ))}
-                                </div>
-                                <span className="text-[10px] text-muted-foreground">
-                                  {new Date(comment.date).toLocaleDateString()}
-                                </span>
-                              </div>
-                              <p className="text-sm italic text-foreground/80 mb-2">
-                                "{comment.text}"
-                              </p>
-                              <div
-                                className={`pt-2 border-t flex justify-between items-center text-xs text-muted-foreground font-medium ${type === "high" ? "border-green-100" : "border-red-100"}`}
-                              >
-                                <span
-                                  className="truncate max-w-[160px]"
-                                  title={comment.trainerName}
-                                >
-                                  Trainer :{" "}
-                                  {comment.trainerName || "Unknown Trainer"}
-                                </span>
-                                <span
-                                  className={`opacity-70 px-1.5 py-0.5 bg-white/50 rounded-md border ${type === "high" ? "border-green-200/50" : "border-red-200/50"}`}
-                                >
-                                  {comment.course}
-                                </span>
-                              </div>
-                            </div>
-                          ))
-                      ) : (
-                        <div className="text-center py-8 text-muted-foreground text-sm italic">
-                          No {type === "high" ? "praise" : "concerns"} yet.
-                        </div>
-                      )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Rating Distribution</CardTitle>
+            <CardDescription>Feedback volume by star rating</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={ratingDistributionData} layout="vertical">
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    horizontal={true}
+                    vertical={false}
+                    stroke="hsl(var(--muted-foreground)/0.1)"
+                  />
+                  <XAxis type="number" hide />
+                  <YAxis
+                    dataKey="rating"
+                    type="category"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                  />
+                  <RechartsTooltip
+                    cursor={{ fill: "hsl(var(--muted)/0.4)" }}
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="bg-background border border-border p-2 rounded shadow-lg">
+                            <p className="text-sm font-bold">
+                              {payload[0].value} ratings
+                            </p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Bar
+                    dataKey="count"
+                    radius={[0, 4, 4, 0]}
+                    barSize={20}
+                  >
+                    {ratingDistributionData.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={
+                          index === 4
+                            ? "#22c55e"
+                            : index === 3
+                              ? "#84cc16"
+                              : index === 2
+                                ? "#eab308"
+                                : index === 1
+                                  ? "#f97316"
+                                  : "#ef4444"
+                        }
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Top Trainers</CardTitle>
+            <CardDescription>Highest rated for this college</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {topTrainers.length > 0 ? (
+                topTrainers.map((trainer, idx) => (
+                  <div key={trainer.id} className="flex items-center justify-between p-3 rounded-lg border border-border/50 hover:border-primary/30 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">
+                        #{idx + 1}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-sm leading-none">
+                          {trainer.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {trainer.sessions} sessions · {trainer.responses} responses
+                        </p>
+                      </div>
                     </div>
-                  </TabsContent>
-                ))}
-
-                {/* Topics Learned Tab */}
-                <TabsContent value="topics" className="mt-0">
-                  <div className="max-h-80 overflow-y-auto pr-1">
-                    {aggregatedStats.topicsLearned?.length > 0 ? (
-                      <div className="flex flex-wrap gap-2 p-2">
-                        <TooltipProvider>
-                          {aggregatedStats.topicsLearned.map((topic, idx) => (
-                            <Tooltip key={idx}>
-                              <TooltipTrigger asChild>
-                                <div className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-100 text-sm font-semibold hover:bg-amber-600 hover:text-white hover:border-amber-600 transition-all cursor-default shadow-sm hover:shadow-md">
-                                  <div className="flex items-center justify-center bg-white/80 group-hover:bg-amber-500 group-hover:text-white rounded px-1 min-w-[20px] h-5 text-[10px] border border-amber-200/50 transition-colors">
-                                    {topic.count}
-                                  </div>
-                                  {topic.name}
-                                </div>
-                              </TooltipTrigger>
-                              <TooltipContent side="top">
-                                <p className="font-semibold text-xs">
-                                  {topic.count} Student Mentions
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-                          ))}
-                        </TooltipProvider>
-                      </div>
-                    ) : (
-                      <div className="text-center py-8 text-muted-foreground text-sm italic">
-                        No topics recorded yet.
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1 bg-primary/10 px-2 py-1 rounded-full">
+                      <Star className="h-3 w-3 text-primary fill-primary" />
+                      <span className="text-xs font-bold text-primary">
+                        {trainer.avgRating}
+                      </span>
+                    </div>
                   </div>
-                </TabsContent>
+                ))
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  No trainer data available
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-                {/* Future Topics Tab */}
-                <TabsContent value="future" className="mt-0">
-                  <div className="max-h-80 overflow-y-auto pr-1">
-                    {aggregatedStats.qualitative?.future?.length > 0 ? (
-                      <div className="flex flex-wrap gap-2 p-2">
-                        {aggregatedStats.qualitative.future.map(
-                          (topic, idx) => (
-                            <div
-                              key={idx}
-                              className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-100 text-sm font-semibold hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all cursor-default shadow-sm hover:shadow-md"
-                            >
-                              <Sparkles className="h-3.5 w-3.5 opacity-70 group-hover:animate-pulse" />
-                              {topic.text}
-                            </div>
-                          ),
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-center py-8 text-muted-foreground text-sm italic">
-                        No future topics suggested yet.
-                      </div>
-                    )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Topics Summary</CardTitle>
+            <CardDescription>Most frequently mentioned topics</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {aggregatedStats.topicsLearned.length > 0 ? (
+                aggregatedStats.topicsLearned.map((topic, i) => (
+                  <div key={i} className="flex items-center gap-2 bg-primary/5 border border-primary/20 px-3 py-1.5 rounded-full">
+                    <span className="text-xs font-medium">{topic.name}</span>
+                    <span className="text-[10px] bg-primary/10 px-1.5 rounded-full text-primary">
+                      {topic.count}
+                    </span>
                   </div>
-                </TabsContent>
-              </Tabs>
-            )}
+                ))
+              ) : (
+                <div className="text-center py-8 text-muted-foreground w-full">
+                  No topic data available
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Domain Breakdown</CardTitle>
+            <CardDescription>Performance by training category</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px] w-full">
+              {domainAnalyticsData.chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={domainAnalyticsData.chartData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="responses"
+                    >
+                      {domainAnalyticsData.chartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={`hsl(var(--primary) / ${0.3 + (index * 0.1)})`} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  No domain data available
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>

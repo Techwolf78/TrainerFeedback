@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { resetAllData } from '@/lib/dataService';
 import { createSystemUser } from '@/services/superadmin/userService';
-import { rebuildCache } from '@/services/superadmin/rebuildCache';
+import { seedFirestoreData } from '@/services/superadmin/seedFirebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { RefreshCw, Check, AlertTriangle, Database, Shield } from 'lucide-react';
@@ -15,6 +15,9 @@ const SeedData = () => {
   const [authSeedComplete, setAuthSeedComplete] = useState(false);
   const [isRebuilding, setIsRebuilding] = useState(false);
   const [rebuildComplete, setRebuildComplete] = useState(false);
+  const [isFirestoreSeeding, setIsFirestoreSeeding] = useState(false);
+  const [firestoreSeedComplete, setFirestoreSeedComplete] = useState(false);
+  const [firestoreSeedSummary, setFirestoreSeedSummary] = useState(null);
 
   const handleSeedData = () => {
     setIsSeeding(true);
@@ -56,16 +59,25 @@ const SeedData = () => {
     }
   };
 
-  const handleRebuildCache = async () => {
-    setIsRebuilding(true);
+  const handleSeedFirestore = async () => {
+    setIsFirestoreSeeding(true);
+    setFirestoreSeedSummary(null);
+
     try {
-      await rebuildCache();
-      setRebuildComplete(true);
-      toast.success('Analytics Cache Rebuilt Successfully!');
+      const result = await seedFirestoreData({
+        createSessions: true,
+        sessionsPerCollege: 2,
+        minResponses: 8,
+        maxResponses: 18
+      });
+
+      setFirestoreSeedSummary(result);
+      setFirestoreSeedComplete(true);
+      toast.success('Firestore seed complete!');
     } catch (error) {
-      toast.error('Failed to rebuild cache: ' + error.message);
+      toast.error('Firestore seed failed: ' + error.message);
     } finally {
-      setIsRebuilding(false);
+      setIsFirestoreSeeding(false);
     }
   };
 
@@ -129,28 +141,41 @@ const SeedData = () => {
             <p className="text-xs text-muted-foreground">Creates the SuperAdmin account in your Firebase project using the same auth logic as the app.</p>
           </div>
 
-          {/* Section 3: Maintenance */}
-          <div className="space-y-4">
-             <h3 className="text-sm font-medium flex items-center gap-2">
-                <Database className="h-4 w-4" /> 
-                Maintenance
+          {/* Section 3: Firestore Seed (Dev) */}
+          <div className="space-y-4 border-b border-border pb-6">
+            <h3 className="text-sm font-medium flex items-center gap-2">
+              <Database className="h-4 w-4" />
+              Firestore Seed (Dev)
             </h3>
-            
-            {!rebuildComplete ? (
-                 <Button 
-                    onClick={handleRebuildCache} 
-                    disabled={isRebuilding}
-                    variant="outline"
-                    className="w-full border-orange-200 text-orange-700 hover:bg-orange-50 hover:text-orange-800"
-                >
-                    {isRebuilding ? 'Rebuilding...' : 'Rebuild Analytics Cache'}
-                </Button>
+
+            {!firestoreSeedComplete ? (
+              <Button
+                onClick={handleSeedFirestore}
+                disabled={isFirestoreSeeding}
+                variant="outline"
+                className="w-full"
+              >
+                {isFirestoreSeeding ? 'Seeding...' : 'Seed Firestore Demo Data'}
+              </Button>
             ) : (
-                 <div className="flex items-center gap-2 text-green-600 text-sm">
-                    <Check className="h-4 w-4" /> Cache Updated!
+              <div className="flex flex-col gap-2 text-green-600 text-sm">
+                <div className="flex items-center gap-2">
+                  <Check className="h-4 w-4" /> Firestore seed complete!
                 </div>
+                {firestoreSeedSummary && (
+                  <div className="text-xs text-muted-foreground">
+                    Colleges: {firestoreSeedSummary.colleges.added} added, {firestoreSeedSummary.colleges.skipped} skipped.<br />
+                    Trainers: {firestoreSeedSummary.trainers.added} added, {firestoreSeedSummary.trainers.skipped} skipped.<br />
+                    Users: {firestoreSeedSummary.systemUsers.added} added, {firestoreSeedSummary.systemUsers.skipped} skipped.<br />
+                    Sessions: {firestoreSeedSummary.sessions.created} created, Responses: {firestoreSeedSummary.sessions.responses}.
+                  </div>
+                )}
+              </div>
             )}
-             <p className="text-xs text-muted-foreground">Fixes stat discrepancies by recalculating analytics from all sessions.</p>
+
+            <p className="text-xs text-muted-foreground">
+              Creates colleges, trainers, admins, and sample sessions/responses in Firestore.
+            </p>
           </div>
 
           {/* Credentials Info */}

@@ -10,6 +10,8 @@ import {
   Upload,
   Loader2,
   ListPlus,
+  Search,
+  X,
 } from "lucide-react";
 import { uploadImage } from "@/services/cloudinaryService";
 import { Button } from "@/components/ui/button";
@@ -72,6 +74,37 @@ const CollegesTab = ({
   // Analytics view state
   const [selectedCollegeForAnalytics, setSelectedCollegeForAnalytics] =
     useState(null);
+
+  // Search
+  const [searchQuery, setSearchQuery] = useState("");
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const filteredColleges = normalizedSearch
+    ? colleges.filter((college) => {
+        const name = college.name?.toLowerCase() || "";
+        const code = college.code?.toLowerCase() || "";
+        return (
+          name.includes(normalizedSearch) || code.includes(normalizedSearch)
+        );
+      })
+    : colleges;
+
+  const escapeRegExp = (value) =>
+    value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  const highlightMatch = (text) => {
+    if (!normalizedSearch || !text) return text;
+    const regex = new RegExp(`(${escapeRegExp(normalizedSearch)})`, "gi");
+    const parts = String(text).split(regex);
+    return parts.map((part, index) =>
+      regex.test(part) ? (
+        <span key={index} className="rounded bg-yellow-100 px-1 text-foreground">
+          {part}
+        </span>
+      ) : (
+        part
+      ),
+    );
+  };
 
   // Handlers
   const closeCollegeDialog = () => {
@@ -244,30 +277,55 @@ const CollegesTab = ({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-2">
           <h2 className="text-2xl font-bold tracking-tight">Colleges</h2>
           <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium">
-            {colleges.length} Total
+            {searchQuery
+              ? `${filteredColleges.length} of ${colleges.length}`
+              : `${colleges.length} Total`}
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            onClick={() => {
-              closeBulkDialog();
-              setBulkDialogOpen(true);
-            }}
-            variant="outline"
-            className="shadow hover:shadow-md transition-all duration-300"
-          >
-            <ListPlus className="mr-2 h-4 w-4" /> Bulk Add
-          </Button>
-          <Button
-            onClick={openCreateCollegeDialog}
-            className="gradient-hero text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-300"
-          >
-            <Plus className="mr-2 h-4 w-4" /> Add College
-          </Button>
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search colleges..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 pr-10"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2 top-2.5 h-6 w-6 rounded-full bg-muted/30 hover:bg-muted/50 flex items-center justify-center"
+                aria-label="Clear search"
+              >
+                <X className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => {
+                closeBulkDialog();
+                setBulkDialogOpen(true);
+              }}
+              variant="outline"
+              className="shadow hover:shadow-md transition-all duration-300"
+            >
+              <ListPlus className="mr-2 h-4 w-4" /> Bulk Add
+            </Button>
+            <Button
+              onClick={openCreateCollegeDialog}
+              className="gradient-hero text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-300"
+            >
+              <Plus className="mr-2 h-4 w-4" /> Add College
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -475,7 +533,7 @@ const CollegesTab = ({
       </Modal>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {colleges.map((college, index) => (
+        {filteredColleges.map((college, index) => (
           <div
             key={college.id}
             className="glass-card rounded-xl p-5 animate-fade-up relative group flex flex-col gap-4"
@@ -535,17 +593,16 @@ const CollegesTab = ({
                 className="font-semibold text-lg text-foreground leading-tight line-clamp-2"
                 title={college.name}
               >
-                {college.name}
+                {highlightMatch(college.name)}
               </h3>
               <p className="text-sm font-medium text-muted-foreground">
-                Code: <span className="text-foreground/80">{college.code}</span>
+                Code: <span className="text-foreground/80">{highlightMatch(college.code)}</span>
               </p>
             </div>
 
             <div className="pt-2 mt-auto border-t border-border/50 flex items-center justify-between text-xs text-muted-foreground">
               <span>
-                {admins.filter((a) => a.collegeId === college.id).length}{" "}
-                admin(s)
+                {admins.filter((a) => a.collegeId === college.id).length} admin(s)
               </span>
               <span className="flex items-center gap-1">
                 <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
@@ -555,15 +612,31 @@ const CollegesTab = ({
           </div>
         ))}
 
-        {colleges.length === 0 && (
+        {filteredColleges.length === 0 && (
           <div className="col-span-full text-center py-12">
             <Building2 className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
             <h3 className="text-lg font-medium text-muted-foreground mb-2">
-              No colleges yet
+              {searchQuery ? "No colleges match your search" : "No colleges yet"}
             </h3>
             <p className="text-muted-foreground">
-              Create your first college to get started
+              {searchQuery ? (
+                <>
+                  Try an exact name or code, or use fewer characters for a broader
+                  match.
+                </>
+              ) : (
+                "Create your first college to get started"
+              )}
             </p>
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="mt-3 text-sm font-medium text-primary hover:underline"
+              >
+                Clear search
+              </button>
+            )}
           </div>
         )}
       </div>

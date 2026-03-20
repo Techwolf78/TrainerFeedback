@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Card,
   CardContent,
@@ -201,6 +201,13 @@ const SessionAnalytics = ({ session, onBack }) => {
 
   const stats = session.compiledStats;
 
+  const [learnedLimit, setLearnedLimit] = useState(25);
+  const [futureLimit, setFutureLimit] = useState(25);
+  const loadMoreStep = 25;
+
+  const learnedToShow = (stats.topicsLearned || []).slice(0, learnedLimit);
+  const futureToShow = (stats.futureTopics || []).slice(0, futureLimit);
+
   // Prepare chart data - all ratings for bar chart (including zeros)
   const ratingDataAll = Object.entries(stats.ratingDistribution || {}).map(
     ([rating, count]) => ({
@@ -235,19 +242,9 @@ const SessionAnalytics = ({ session, onBack }) => {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="outline"
-            size="lg"
-            onClick={onBack}
-            className="gap-2 px-4 py-2"
-          >
-            <ArrowLeft className="h-5 w-5" />
-            Back
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold">{session.topic}</h1>
-            <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
+        <div>
+          <h1 className="text-2xl font-bold">{session.topic}</h1>
+          <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
               <span className="flex items-center gap-1">
                 <Building2 className="h-4 w-4" /> {session.collegeName}
               </span>
@@ -257,12 +254,23 @@ const SessionAnalytics = ({ session, onBack }) => {
               <span className="flex items-center gap-1">
                 <Calendar className="h-4 w-4" /> {session.sessionDate}
               </span>
-            </div>
           </div>
         </div>
-        <Button onClick={handleExport} className="gap-2">
-          <Download className="h-4 w-4" /> Export Report
-        </Button>
+        <div className="flex items-center gap-2">
+             <Button onClick={handleExport} className="gap-2">
+            <Download className="h-4 w-4" /> Export Report
+          </Button>
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={onBack}
+            className="gap-2 px-4 py-2 border-2 border-gray-300"
+          >
+            <ArrowLeft className="h-5 w-5" />
+            Back
+          </Button>
+       
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -710,28 +718,41 @@ const SessionAnalytics = ({ session, onBack }) => {
 
               <TabsContent value="learned" className="mt-0">
                 <div className="max-h-80 overflow-y-auto pr-1">
-                  {stats.topicsLearned?.length > 0 ? (
-                    <div className="flex flex-wrap gap-2 p-2">
-                      <TooltipProvider>
-                        {stats.topicsLearned.map((topic, idx) => (
-                          <Tooltip key={idx}>
-                            <TooltipTrigger asChild>
-                              <div className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-100 text-sm font-semibold hover:bg-amber-600 hover:text-white hover:border-amber-600 transition-all cursor-default shadow-sm hover:shadow-md">
-                                <div className="flex items-center justify-center bg-white/80 group-hover:bg-amber-500 group-hover:text-white rounded px-1 min-w-[20px] h-5 text-[10px] border border-amber-200/50 transition-colors">
-                                  {topic.count}
+                  {(stats.topicsLearned || []).length > 0 ? (
+                    <>
+                      <div className="flex flex-wrap gap-2 p-2">
+                        <TooltipProvider>
+                          {learnedToShow.map((topic, idx) => (
+                            <Tooltip key={idx}>
+                              <TooltipTrigger asChild>
+                                <div className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-100 text-sm font-semibold hover:bg-amber-600 hover:text-white hover:border-amber-600 transition-all cursor-default shadow-sm hover:shadow-md">
+                                  <div className="flex items-center justify-center bg-white/80 group-hover:bg-amber-500 group-hover:text-white rounded px-1 min-w-[20px] h-5 text-[10px] border border-amber-200/50 transition-colors">
+                                    {topic.count}
+                                  </div>
+                                  {topic.name || topic.text}
                                 </div>
-                                {topic.name}
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">
-                              <p className="font-semibold text-xs">
-                                {topic.count} Student Mentions
-                              </p>
-                            </TooltipContent>
-                          </Tooltip>
-                        ))}
-                      </TooltipProvider>
-                    </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                <p className="font-semibold text-xs">
+                                  {topic.count} Student Mentions
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          ))}
+                        </TooltipProvider>
+                      </div>
+
+                      {stats.topicsLearned.length > learnedLimit && (
+                        <div className="flex justify-center mt-2">
+                          <Button
+                            size="sm"
+                            onClick={() => setLearnedLimit((v) => Math.min(v + loadMoreStep, stats.topicsLearned.length))}
+                          >
+                            Load {Math.min(loadMoreStep, stats.topicsLearned.length - learnedLimit)} more
+                          </Button>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <div className="text-center py-8 text-muted-foreground text-sm italic">
                       No topics recorded yet.
@@ -742,18 +763,34 @@ const SessionAnalytics = ({ session, onBack }) => {
 
               <TabsContent value="future" className="mt-0">
                 <div className="max-h-80 overflow-y-auto pr-1">
-                  {stats.futureTopics?.length > 0 ? (
-                    <div className="flex flex-wrap gap-2 p-2">
-                      {stats.futureTopics.map((topic, idx) => (
-                        <div
-                          key={idx}
-                          className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-100 text-sm font-semibold hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all cursor-default shadow-sm hover:shadow-md"
-                        >
-                          <Sparkles className="h-3.5 w-3.5 opacity-70 group-hover:animate-pulse" />
-                          {topic.text}
+                  {(stats.futureTopics || []).length > 0 ? (
+                    <>
+                      <div className="flex flex-wrap gap-2 p-2">
+                        {futureToShow.map((topic, idx) => {
+                          const label = topic.text || topic.name || "";
+                          return (
+                            <div
+                              key={idx}
+                              className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-100 text-sm font-semibold hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all cursor-default shadow-sm hover:shadow-md"
+                            >
+                              <Sparkles className="h-3.5 w-3.5 opacity-70 group-hover:animate-pulse" />
+                              {label}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {stats.futureTopics.length > futureLimit && (
+                        <div className="flex justify-center mt-2">
+                          <Button
+                            size="sm"
+                            onClick={() => setFutureLimit((v) => Math.min(v + loadMoreStep, stats.futureTopics.length))}
+                          >
+                            Load {Math.min(loadMoreStep, stats.futureTopics.length - futureLimit)} more
+                          </Button>
                         </div>
-                      ))}
-                    </div>
+                      )}
+                    </>
                   ) : (
                     <div className="text-center py-8 text-muted-foreground text-sm italic">
                       No future topics suggested yet.

@@ -97,10 +97,10 @@ export const AnonymousFeedback = () => {
     }));
   };
 
-  const handleTextChange = (index, text) => {
+  const handleTextChange = (index, value, type = "text") => {
     setResponses((prev) => ({
       ...prev,
-      [index]: { ...prev[index], value: text },
+      [index]: { ...prev[index], value, type },
     }));
   };
 
@@ -343,16 +343,71 @@ export const AnonymousFeedback = () => {
     }
   };
 
+  const handleBulkSubmit = async () => {
+    if (!session || !session.questions) return;
+    setIsSubmitting(true);
+    try {
+      const promises = [];
+      const countToSubmit = 50;
+
+      for (let i = 1; i <= countToSubmit; i++) {
+        // Determine star rating based on sequence (approx 10 of each rating)
+        const ratingValue = Math.ceil(i / 10); // 1-10: 1, 11-20: 2, etc.
+
+        const answers = session.questions.map((q) => {
+          let value;
+          const type = q.type || q.responseType || "rating";
+
+          if (type === "rating" || q.responseType === "rating" || q.responseType === "both") {
+            value = ratingValue > 5 ? 5 : ratingValue;
+          } else if (type === "mcq" && q.options) {
+            value = q.options[Math.floor(Math.random() * q.options.length)];
+          } else if (type === "multiselect" && q.options) {
+            const shuffled = [...q.options].sort(() => 0.5 - Math.random());
+            value = shuffled.slice(0, Math.floor(Math.random() * 2) + 1);
+          } else if (type === "futureSession") {
+            value = `Future skills suggestion ${i}: Advanced AI workflows, LLM prompt design, production ML`;
+          } else if (type === "topicslearned") {
+            value = `Topics learned ${i}: model training, evaluation metrics, deployment pipelines`;
+          } else {
+            // "text" type or "any other feedback"
+            value = `Additional feedback ${i}: session was highly informative and well paced`;
+          }
+
+          return {
+            questionId: q.id,
+            value,
+            type,
+          };
+        });
+
+        const deviceId = `bulk_${Date.now()}_${i}`;
+        const version = session.reactivationCount || 0;
+        promises.push(addResponse(sessionId, { deviceId, answers, version }));
+      }
+
+      await Promise.all(promises);
+      toast.success(`Successfully submitted ${countToSubmit} sequential responses!`);
+      setIsSubmitted(true);
+    } catch (err) {
+      console.error("Bulk submission failed:", err);
+      toast.error("Bulk submission failed");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-background to-purple-50 dark:from-background dark:via-background dark:to-background">
-      {/* Debug Seeder Button */}
-      {/* <Button 
-        className="fixed bottom-4 right-4 z-50 bg-red-600 hover:bg-red-700 shadow-lg text-white font-bold"
-        onClick={handleSeedData}
+      {/* Bulk Submitter Button */}
+      <Button
+        className="fixed bottom-4 right-4 z-50 bg-orange-600 hover:bg-orange-700 shadow-lg text-white font-bold"
+        onClick={handleBulkSubmit}
         disabled={isSubmitting}
       >
-        {isSubmitting ? 'Seeding...' : 'DEBUG: Seed 10 Responses'}
-      </Button> */}
+        {isSubmitting ? "Submitting..." : "DEBUG: Submit 50 Responses"}
+      </Button>
+
       {/* Navbar */}
       <nav className="sticky top-0 z-50 bg-primary shadow-sm">
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center">
@@ -554,7 +609,11 @@ export const AnonymousFeedback = () => {
                           placeholder="Share your thoughts..."
                           value={responses[index]?.value || ""}
                           onChange={(e) =>
-                            handleTextChange(index, e.target.value)
+                            handleTextChange(
+                              index,
+                              e.target.value,
+                              question.type || "text",
+                            )
                           }
                           rows={3}
                         />
@@ -568,7 +627,7 @@ export const AnonymousFeedback = () => {
                           placeholder="What topics or skills would you like covered in future sessions?"
                           value={responses[index]?.value || ""}
                           onChange={(e) =>
-                            handleTextChange(index, e.target.value)
+                            handleTextChange(index, e.target.value, "futureSession")
                           }
                           rows={3}
                         />
@@ -586,7 +645,7 @@ export const AnonymousFeedback = () => {
                           placeholder="e.g. Topic 1, Topic 2, Topic 3"
                           value={responses[index]?.value || ""}
                           onChange={(e) =>
-                            handleTextChange(index, e.target.value)
+                            handleTextChange(index, e.target.value, "topicslearned")
                           }
                           rows={3}
                         />

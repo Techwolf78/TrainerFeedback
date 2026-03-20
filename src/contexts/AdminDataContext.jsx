@@ -14,13 +14,11 @@ import {
   usersApi,
   feedbackApi,
 } from "@/lib/dataService";
-import { getAllSessions } from "@/services/superadmin/sessionService";
+import { getAllSessions, subscribeToSessions, subscribeToCollegeSessions } from "@/services/superadmin/sessionService";
 import { getCollegeById } from "@/services/superadmin/collegeService";
 import { getAllTrainers } from "@/services/superadmin/trainerService";
-import {
-  getCollegeCache,
-  getCollegeTrends,
-} from "@/services/superadmin/cacheService";
+import { collection, query, where, orderBy, onSnapshot, collectionGroup } from "firebase/firestore";
+import { db } from "@/services/firebase";
 import { toast } from "sonner";
 
 const AdminDataContext = createContext(null);
@@ -30,8 +28,6 @@ export const AdminDataProvider = ({ children }) => {
 
   // Data state
   const [college, setCollege] = useState(null);
-  const [cache, setCache] = useState(null);
-  const [trends, setTrends] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [trainers, setTrainers] = useState([]);
   const [feedback, setFeedback] = useState([]);
@@ -59,6 +55,7 @@ export const AdminDataProvider = ({ children }) => {
   const sessionsRef = useRef(sessions);
   const trainersRef = useRef(trainers);
   const feedbackRef = useRef(feedback);
+
   useEffect(() => {
     loadedRef.current = loaded;
   }, [loaded]);
@@ -74,6 +71,50 @@ export const AdminDataProvider = ({ children }) => {
   useEffect(() => {
     feedbackRef.current = feedback;
   }, [feedback]);
+
+  // [NEW] Real-time session subscription for Admin (filtered by collegeId)
+  useEffect(() => {
+    if (!user?.collegeId) return;
+
+    setLoading(prev => ({ ...prev, sessions: true }));
+    
+    // We use the new optimized subscribeToCollegeSessions to filter at query level
+    const unsubscribe = subscribeToCollegeSessions(user.collegeId, (collegeSessions) => {
+      setSessions(collegeSessions);
+      setLoaded(prev => ({ ...prev, sessions: true }));
+      setLoading(prev => ({ ...prev, sessions: false }));
+    });
+
+    return () => unsubscribe();
+  }, [user?.collegeId]);
+
+  // [NEW] Real-time Feedback subscription for Admin
+  useEffect(() => {
+    if (!user?.collegeId) return;
+
+    setLoading(prev => ({ ...prev, feedback: true }));
+
+    // Use a Collection Group query to find all responses for sessions belonging to this college
+    // Since we store sessionId on responses, and responses are sub-collections,
+    // we query all response collections where collegeId matches.
+    const feedbackQuery = query(
+      collectionGroup(db, "responses"),
+      where("collegeId", "==", user.collegeId),
+      orderBy("submittedAt", "desc")
+    );
+
+    const unsubscribe = onSnapshot(feedbackQuery, (snapshot) => {
+      const allFeedback = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setFeedback(allFeedback);
+      setLoaded(prev => ({ ...prev, feedback: true }));
+      setLoading(prev => ({ ...prev, feedback: false }));
+    });
+
+    return () => unsubscribe();
+  }, [user?.collegeId]);
 
   // Load college details
   const loadCollege = useCallback(
@@ -92,74 +133,6 @@ export const AdminDataProvider = ({ children }) => {
           setCollege(data);
         }
         setLoaded((prev) => ({ ...prev, college: true }));
-
-        // Load Cache & Trends concurrently with College info (lightweight)
-        try {
-          const today = new Date();
-          const currentYearMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-          const isEarlyMonth = today.getDate() <= 7;
-
-          const promises = [
-            getCollegeCache(user.collegeId),
-            getCollegeTrends(user.collegeId, currentYearMonth),
-          ];
-
-          if (isEarlyMonth) {
-            const prevDate = new Date(
-              today.getFullYear(),
-              today.getMonth() - 1,
-              1,
-            );
-            const prevYearMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
-            promises.push(getCollegeTrends(user.collegeId, prevYearMonth));
-          }
-
-          const results = await Promise.all(promises);
-          const cacheData = results[0];
-          const currentTrends = results[1] || {
-            dailyResponses: {},
-            dailySessions: {},
-          };
-          const prevTrends = isEarlyMonth ? results[2] : null;
-
-          const normalizedTrends = {};
-
-          const processTrendDoc = (trendDoc, yearMonth) => {
-            if (!trendDoc) return;
-            Object.entries(trendDoc.dailyResponses || {}).forEach(
-              ([day, count]) => {
-                const fullDate = `${yearMonth}-${day}`;
-                if (!normalizedTrends[fullDate])
-                  normalizedTrends[fullDate] = { responses: 0, sessions: 0 };
-                normalizedTrends[fullDate].responses = count;
-              },
-            );
-            Object.entries(trendDoc.dailySessions || {}).forEach(
-              ([day, count]) => {
-                const fullDate = `${yearMonth}-${day}`;
-                if (!normalizedTrends[fullDate])
-                  normalizedTrends[fullDate] = { responses: 0, sessions: 0 };
-                normalizedTrends[fullDate].sessions = count;
-              },
-            );
-          };
-
-          processTrendDoc(currentTrends, currentYearMonth);
-          if (prevTrends) {
-            const prevDate = new Date(
-              today.getFullYear(),
-              today.getMonth() - 1,
-              1,
-            );
-            const prevYearMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
-            processTrendDoc(prevTrends, prevYearMonth);
-          }
-
-          setCache(cacheData);
-          setTrends(normalizedTrends);
-        } catch (e) {
-          console.error("Failed to load college analytics cache", e);
-        }
       } catch (error) {
         console.error("Failed to load college:", error);
         toast.error("Failed to load college info");
@@ -263,8 +236,6 @@ export const AdminDataProvider = ({ children }) => {
 
   const value = {
     college,
-    cache,
-    trends,
     sessions,
     trainers,
     feedback,

@@ -596,7 +596,7 @@ const AdminDashboardContent = () => {
         {/* Main Content */}
         <main className="flex-1 overflow-y-auto bg-muted/5 p-6 scroll-smooth">
           <div
-            className={`max-w-8xl mx-auto transition-all duration-300 ${isSidebarCollapsed ? "px-6" : "px-0"}`}
+            className={` mx-auto transition-all duration-300 ${isSidebarCollapsed ? "px-6" : "px-0"}`}
           >
             {activeTab === "overview" && <CollegeOverviewTab />}
             {activeTab === "feedback" && <TrainerFeedbackTab />}

@@ -101,7 +101,9 @@ export const seedDefaultTemplate = async () => {
             { id: "q6", text: "Was the session pace appropriate?", type: "mcq", options: ["Too Fast", "Just Right", "Too Slow"], required: true },
             { id: "q7", text: "How would you rate the audio/video quality of the session?", type: "rating", required: true },
             { id: "q8", text: "Overall, how satisfied are you with this session?", type: "rating", required: true },
-            { id: "q9", text: "Any additional comments or suggestions for improvement?", type: "text", required: false }
+            { id: "q9", text: "What were the key topics covered in today's session? (Separated by commas)", type: "topicslearned", required: false },
+            { id: "q10", text: "What topics would you like to see in future sessions?", type: "futureSession", required: false },
+            { id: "q11", text: "Any additional comments or suggestions for improvement?", type: "text", required: false }
           ]
         }
       ]

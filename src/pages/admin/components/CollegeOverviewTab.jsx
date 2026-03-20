@@ -68,8 +68,6 @@ const CollegeOverviewTab = () => {
     sessions,
     trainers,
     college,
-    cache,
-    trends,
     loadSessions,
     loadTrainers,
     refreshAll,
@@ -81,7 +79,10 @@ const CollegeOverviewTab = () => {
     if (trainers.length === 0 && loadTrainers) {
       loadTrainers();
     }
-  }, [trainers.length, loadTrainers]);
+    if (sessions.length === 0 && loadSessions) {
+      loadSessions();
+    }
+  }, [trainers.length, sessions.length, loadTrainers, loadSessions]);
 
   // Filter state
   const [filters, setFilters] = useState({
@@ -238,7 +239,7 @@ const CollegeOverviewTab = () => {
     if (!sessions.length) return [];
     const codes = new Set();
     sessions.forEach((s) => {
-      if (s.projectId) codes.add(s.projectId);
+      if (s.projectCode) codes.add(s.projectCode);
     });
     return [...codes].sort();
   }, [sessions]);
@@ -271,73 +272,178 @@ const CollegeOverviewTab = () => {
 
   // Helper to Aggregate Stats from Sessions List
   const aggregateStatsFromSessions = (sessionList) => {
-    const stats = {
+    const agg = {
       totalResponses: 0,
       totalRatingsCount: 0,
       ratingSum: 0,
+      ratingCount: 0,
       totalHours: 0,
       ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
       categoryTotals: {},
       categoryCounts: {},
       totalSessions: sessionList.length,
+      topicsLearned: {},
+      qualitative: {
+        high: [],
+        low: [],
+        futureTopics: {}
+      },
+      // Added for chart synchronization
+      domainMap: {},
+      trendMap: {}
     };
 
-    sessionList.forEach((session) => {
-      const cs = session.compiledStats;
-      // Only count valid stats
-      if (!cs) return;
+    sessionList.forEach((s) => {
+      const stats = s.compiledStats;
+      
+      // Update Domain and Trend maps
+      const domain = s.domain || "Other";
+      if (!agg.domainMap[domain]) {
+        agg.domainMap[domain] = { responses: 0, ratingSum: 0, ratingsCount: 0 };
+      }
 
-      stats.totalResponses += cs.totalResponses || 0;
-      stats.totalHours += (Number(session.sessionDuration) || 60) / 60;
+      const date = s.sessionDate;
+      if (date && !agg.trendMap[date]) {
+        agg.trendMap[date] = { responses: 0, sessions: 0 };
+      }
 
-      Object.entries(cs.ratingDistribution || {}).forEach(([rating, count]) => {
-        stats.ratingDistribution[rating] =
-          (stats.ratingDistribution[rating] || 0) + count;
-        stats.ratingSum += Number(rating) * count;
-        stats.totalRatingsCount += count;
+      // Always count session duration even if we don't have compiled stats yet
+      agg.totalHours += s.sessionDuration ? (Number(s.sessionDuration) / 60) : 1;
+      if (!stats) return;
+
+      agg.totalResponses += stats.totalResponses || 0;
+      
+      if (date) {
+        agg.trendMap[date].responses += stats.totalResponses || 0;
+        agg.trendMap[date].sessions += 1;
+      }
+
+      // Rating sum and count from the session's overall stats
+      const sessionAvg = Number(stats.avgRating) || 0;
+      const sessionCount = Number(stats.totalResponses) || 0;
+      
+      if (sessionCount > 0) {
+        agg.ratingSum += sessionAvg * sessionCount;
+        agg.ratingCount += sessionCount;
+
+        // Domain aggregation
+        agg.domainMap[domain].responses += sessionCount;
+        Object.entries(stats.ratingDistribution || {}).forEach(([rating, count]) => {
+          const rNum = Number(rating);
+          agg.domainMap[domain].ratingSum += rNum * count;
+          agg.domainMap[domain].ratingsCount += count;
+          agg.ratingDistribution[rating] = (agg.ratingDistribution[rating] || 0) + count;
+        });
+      }
+
+      // Category Averages aggregation
+      if (stats.categoryAverages) {
+        Object.entries(stats.categoryAverages).forEach(([cat, avg]) => {
+          if (!agg.categoryTotals[cat]) {
+            agg.categoryTotals[cat] = 0;
+            agg.categoryCounts[cat] = 0;
+          }
+          agg.categoryTotals[cat] += avg * sessionCount;
+          agg.categoryCounts[cat] += sessionCount;
+        });
+      }
+
+      // Qualitative Feedback - use comments if available
+      const comments = [
+        ...(stats.topComments || []),
+        ...(stats.leastRatedComments || []),
+        ...(stats.avgComments || []),
+      ];
+
+      comments.forEach((c) => {
+        const commentData = {
+          ...c,
+          trainerName: s.assignedTrainer?.name || "Unknown Trainer",
+          date: s.sessionDate || new Date().toISOString(),
+          course: s.course || "N/A",
+          rating: c.avgRating || 0,
+        };
+        if (c.avgRating >= 4) agg.qualitative.high.push(commentData);
+        else if (c.avgRating <= 2.5) agg.qualitative.low.push(commentData);
       });
 
-      Object.entries(cs.categoryAverages || {}).forEach(([cat, avg]) => {
-        const count = cs.totalResponses || 1;
-        stats.categoryTotals[cat] =
-          (stats.categoryTotals[cat] || 0) + avg * count;
-        stats.categoryCounts[cat] = (stats.categoryCounts[cat] || 0) + count;
-      });
+      // Topics
+      if (stats.topicsLearned) {
+        stats.topicsLearned.forEach(topic => {
+          const name = topic.name.toLowerCase();
+          agg.topicsLearned[name] = (agg.topicsLearned[name] || 0) + topic.count;
+        });
+      }
+
+      // Future Topics
+      if (stats.futureTopics) {
+        stats.futureTopics.forEach(topic => {
+          const name = (topic.name || "").toLowerCase();
+          if (!agg.qualitative.futureTopics[name]) {
+            agg.qualitative.futureTopics[name] = { count: 0, ratingSum: 0 };
+          }
+          agg.qualitative.futureTopics[name].count += (topic.count || 1);
+          agg.qualitative.futureTopics[name].ratingSum += (topic.avgRating || 0) * (topic.count || 1);
+        });
+      }
     });
 
-    const avgRating =
-      stats.totalRatingsCount > 0
-        ? (stats.ratingSum / stats.totalRatingsCount).toFixed(2)
-        : "0.00";
+    // Process future topics into list
+    const future = Object.entries(agg.qualitative.futureTopics)
+      .map(([name, data]) => ({
+        name: name.charAt(0).toUpperCase() + name.slice(1),
+        count: data.count,
+        avgRating: (data.ratingSum / data.count).toFixed(2)
+      }))
+      .sort((a, b) => b.count - a.count);
 
+    // Process topics learned into list
+    const topicsLearnedList = Object.entries(agg.topicsLearned)
+      .map(([name, count]) => ({
+        name: name.charAt(0).toUpperCase() + name.slice(1),
+        count
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    // Formatting category averages
     const categoryAverages = {};
-    Object.keys(stats.categoryTotals).forEach((cat) => {
-      categoryAverages[cat] =
-        stats.categoryCounts[cat] > 0
-          ? (stats.categoryTotals[cat] / stats.categoryCounts[cat]).toFixed(2)
-          : 0;
+    Object.entries(agg.categoryTotals).forEach(([cat, sum]) => {
+      const count = agg.categoryCounts[cat];
+      categoryAverages[cat] = count > 0 ? (sum / count).toFixed(2) : 0;
     });
+
+    // Process Domain Chart Data
+    const domainChartData = Object.entries(agg.domainMap).map(([domainName, data]) => ({
+      name: domainName.replace(/_/g, " "),
+      responses: data.responses || 0,
+      avgRating: data.ratingsCount > 0 ? parseFloat((data.ratingSum / data.ratingsCount).toFixed(2)) : 0,
+    }));
+
+    // Process Trend Data
+    const trendData = Object.entries(agg.trendMap)
+      .map(([dateStr, data]) => ({
+        day: parseInt(dateStr.split("-")[2]),
+        responses: data.responses,
+        sessions: data.sessions,
+        fullDate: dateStr,
+      }))
+      .sort((a, b) => a.fullDate.localeCompare(b.fullDate))
+      .slice(-30);
 
     return {
-      totalSessions: stats.totalSessions,
-      totalResponses: stats.totalResponses,
-      totalRatingsCount: stats.totalRatingsCount,
-      totalHours: stats.totalHours,
-      avgRating,
-      ratingDistribution: stats.ratingDistribution,
+      totalSessions: agg.totalSessions,
+      totalResponses: agg.totalResponses,
+      totalHours: agg.totalHours,
+      avgRating: agg.ratingCount > 0 ? (agg.ratingSum / agg.ratingCount).toFixed(2) : 0,
+      ratingDistribution: agg.ratingDistribution,
       categoryAverages,
-      topicsLearned: Object.entries(
-        sessionList.reduce((acc, s) => {
-          (s.compiledStats?.topicsLearned || []).forEach((t) => {
-            acc[t.name] = (acc[t.name] || 0) + t.count;
-          });
-          return acc;
-        }, {}),
-      )
-        .sort((a, b) => b[1] - a[1])
-        .map(([name, count]) => ({ name, count }))
-        .slice(0, 15),
-      qualitative: { high: [], low: [], avg: [], future: [] },
+      topicsLearned: topicsLearnedList,
+      domainChartData,
+      trendData,
+      qualitative: {
+        ...agg.qualitative,
+        future
+      }
     };
   };
 
@@ -345,21 +451,6 @@ const CollegeOverviewTab = () => {
     const fetchAnalytics = async () => {
       if (!college?.id) return;
 
-      // Skip dynamic fetch when default view — global cache is used instead
-      const isDefault =
-        filters.trainerId === "all" &&
-        filters.course === "all" &&
-        filters.projectCode === "all" &&
-        filters.year === "all" &&
-        filters.department === "all" &&
-        filters.batch === "all" &&
-        filters.dateRange === "all";
-      if (isDefault) {
-        setAnalyticsData(null);
-        return;
-      }
-
-      // 1. Check Cache
       const cacheKey = getCacheKey(filters);
       if (analyticsCache[cacheKey]) {
         setAnalyticsData(analyticsCache[cacheKey]);
@@ -368,17 +459,19 @@ const CollegeOverviewTab = () => {
 
       setIsFetchingAnalytics(true);
       try {
-        // 2. Fetch Sessions
+        // 1. Fetch Sessions (if not already in local state or if filters applied)
+        // For large datasets, getAnalyticsSessions handles backend filtering
         const fetchedSessions = await getAnalyticsSessions({
           collegeId: college.id,
           ...filters,
-          limitCount: 30,
+          limitCount: 50,
+          includeActive: true, // Show live analytics in filtered view
         });
 
-        // 3. Aggregate Stats
+        // 2. Aggregate Stats
         const computedStats = aggregateStatsFromSessions(fetchedSessions);
 
-        // 4. Update Cache & State
+        // 3. Update Cache & State
         setAnalyticsCache((prev) => ({ ...prev, [cacheKey]: computedStats }));
         setAnalyticsData(computedStats);
       } catch (err) {
@@ -394,9 +487,9 @@ const CollegeOverviewTab = () => {
     return () => clearTimeout(timer);
   }, [filters, college?.id]);
 
-  // Combined Stats: Prefer Global Cache for Default View, otherwise Dynamic Data
+  // Combined Stats: Compute from local sessions for default view, otherwise Dynamic Data
   const aggregatedStats = useMemo(() => {
-    // 1. If global view (no filters), return root cache
+    // 1. If global view (no filters), return aggregation of all current sessions
     const isDefaultView =
       filters.trainerId === "all" &&
       filters.course === "all" &&
@@ -406,45 +499,9 @@ const CollegeOverviewTab = () => {
       filters.batch === "all" &&
       filters.dateRange === "all";
 
-    if (isDefaultView && cache) {
-      const avgRating =
-        cache.totalRatingsCount > 0
-          ? (cache.ratingSum / cache.totalRatingsCount).toFixed(2)
-          : "0.00";
-
-      const categoryAverages = {};
-      if (cache.categoryData) {
-        Object.entries(cache.categoryData).forEach(([cat, data]) => {
-          categoryAverages[cat] =
-            data.count > 0 ? (data.sum / data.count).toFixed(2) : 0;
-        });
-      }
-
-      return {
-        totalSessions: cache.totalSessions || 0,
-        totalResponses: cache.totalResponses || 0,
-        totalRatingsCount: cache.totalRatingsCount || 0,
-        totalHours: cache.totalHours || 0,
-        avgRating,
-        ratingDistribution: cache.ratingDistribution || {
-          1: 0,
-          2: 0,
-          3: 0,
-          4: 0,
-          5: 0,
-        },
-        categoryAverages,
-        qualitative: cache.qualitative || {
-          high: [],
-          low: [],
-          avg: [],
-          future: [],
-        },
-        topicsLearned: Object.entries(cache.topicsLearned || {})
-          .sort((a, b) => b[1] - a[1])
-          .map(([name, count]) => ({ name, count }))
-          .slice(0, 15),
-      };
+    if (isDefaultView) {
+      // Aggregate from all sessions in context (which are loaded on mount)
+      return aggregateStatsFromSessions(sessions);
     }
 
     // 2. Use Dynamic Data (or empty if loading/error)
@@ -458,29 +515,17 @@ const CollegeOverviewTab = () => {
         ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
         categoryAverages: {},
         qualitative: { high: [], low: [], avg: [], future: [] },
-        topicsLearned: cache?.topicsLearned
-          ? Object.entries(cache.topicsLearned)
-              .sort((a, b) => b[1] - a[1])
-              .map(([name, count]) => ({ name, count }))
-              .slice(0, 15)
-          : [],
+        topicsLearned: [],
+        domainChartData: [],
+        trendData: []
       }
     );
-  }, [analyticsData, cache, filters]);
+  }, [analyticsData, sessions, filters]);
 
-  // Response trend - use cache trends data with day numbers like CollegeAnalytics
-  // Response trend - use normalized trends data (YYYY-MM-DD keys)
+  // Response trend - compute from aggregated stats
   const responseTrend = useMemo(() => {
-    if (!trends || Object.keys(trends).length === 0) return [];
-
-    return Object.entries(trends)
-      .map(([dateStr, data]) => ({
-        day: parseInt(dateStr.split("-")[2]),
-        responses: data.responses || 0,
-        fullDate: dateStr,
-      }))
-      .sort((a, b) => a.fullDate.localeCompare(b.fullDate));
-  }, [trends]);
+    return aggregatedStats.trendData || [];
+  }, [aggregatedStats]);
 
   // Category radar data
   const categoryRadarData = useMemo(() => {
@@ -493,7 +538,7 @@ const CollegeOverviewTab = () => {
       overall: "Overall",
     };
 
-    return Object.entries(aggregatedStats.categoryAverages).map(
+    return Object.entries(aggregatedStats.categoryAverages || {}).map(
       ([key, value]) => ({
         category: categoryLabels[key] || key,
         score: parseFloat(value) || 0,
@@ -502,7 +547,7 @@ const CollegeOverviewTab = () => {
     );
   }, [aggregatedStats]);
 
-  // Rating distribution bar chart data (from collegeCache)
+  // Rating distribution bar chart data
   const ratingDistributionData = useMemo(() => {
     const distribution = aggregatedStats.ratingDistribution || {
       1: 0,
@@ -518,34 +563,13 @@ const CollegeOverviewTab = () => {
     }));
   }, [aggregatedStats]);
 
-  // Domain Analytics Data (from collegeCache.domains)
+  // Domain Analytics Data
   const domainAnalyticsData = useMemo(() => {
-    const domains = cache?.domains || {};
-
-    const domainEntries = Object.entries(domains);
-
-    if (domainEntries.length === 0) {
-      return { chartData: [], totalResponses: 0 };
-    }
-
-    let totalResponses = 0;
-    const chartData = domainEntries.map(([domainName, data]) => {
-      const avgRating =
-        data.totalRatingsCount > 0
-          ? (data.ratingSum / data.totalRatingsCount).toFixed(2)
-          : "0.00";
-      totalResponses += data.totalResponses || 0;
-
-      return {
-        name: domainName.replace(/_/g, " "), // Clean up sanitized names
-        responses: data.totalResponses || 0,
-        avgRating: parseFloat(avgRating),
-        totalRatings: data.totalRatingsCount || 0,
-      };
-    });
-
-    return { chartData, totalResponses };
-  }, [cache]);
+    return { 
+      chartData: aggregatedStats.domainChartData || [], 
+      totalResponses: aggregatedStats.totalResponses || 0 
+    };
+  }, [aggregatedStats]);
 
   // Top trainers
   const topTrainers = useMemo(() => {
@@ -1314,7 +1338,7 @@ const CollegeOverviewTab = () => {
                               className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-100 text-sm font-semibold hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all cursor-default shadow-sm hover:shadow-md"
                             >
                               <Sparkles className="h-3.5 w-3.5 opacity-70 group-hover:animate-pulse" />
-                              {topic.text}
+                              {topic.name}
                             </div>
                           ),
                         )}

@@ -42,7 +42,9 @@ const App = () => {
                   path="/feedback/anonymous/:sessionId"
                   element={<AnonymousFeedback />}
                 />
-                {/* <Route path="/seed-data" element={<SeedData />} /> */}
+                {import.meta.env.DEV && (
+                  <Route path="/seed-data" element={<SeedData />} />
+                )}
 
                 {/* Super Admin Routes - has its own built-in layout */}
                 <Route

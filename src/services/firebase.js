@@ -2,7 +2,19 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
-const firebaseConfig = {
+const isLocalHost5173 = typeof window !== 'undefined' && window.location.hostname === 'localhost' && window.location.port === '5173';
+
+const devConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY_DEV,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN_DEV,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID_DEV,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET_DEV,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID_DEV,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID_DEV,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID_DEV
+};
+
+const prodConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -11,6 +23,9 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
+
+// Use dev config when running on local dev server (localhost:5173). Otherwise use prod config.
+const firebaseConfig = isLocalHost5173 ? devConfig : prodConfig;
 
 // Simple check to see if config is loaded
 const requiredKeys = ['apiKey', 'authDomain', 'projectId'];
