@@ -148,7 +148,8 @@ const SessionWizard = ({
   // If searching, ignore domain filter. If not searching, use domain filter.
   useEffect(() => {
     if (step === 2) {
-      let filtered = trainers;
+      // ALWAYS exclude soft-deleted trainers for NEW sessions
+      let filtered = trainers.filter(t => !t.isDeleted);
 
       if (trainerSearch.trim()) {
         const searchLower = trainerSearch.toLowerCase();

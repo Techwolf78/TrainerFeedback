@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { useParams } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import { getSessionById } from "@/services/superadmin/sessionService";
 import { addResponse } from "@/services/superadmin/responseService";
 import {
@@ -30,6 +30,10 @@ const getDeviceId = () => {
 
 export const AnonymousFeedback = () => {
   const { sessionId } = useParams();
+  const location = useLocation();
+  const queryParams = new URLSearchParams(location.search);
+  const urlPhaseId = queryParams.get("ph");
+  const urlVersion = queryParams.get("v");
 
   const [session, setSession] = useState(null);
   const [responses, setResponses] = useState({});
@@ -51,16 +55,26 @@ export const AnonymousFeedback = () => {
       if (!sessionData) {
         setError("Session not found");
         setIsLoading(false);
-        return;
-      }
-
-      if (sessionData.status !== "active") {
+        retError("Session closed. This feedback phase has ended.");
         setIsClosed(true);
         setIsLoading(false);
         return;
       }
 
-      // Check if session has expired
+      // Phase Validation: Ensure link matches active phase
+      if (urlPhaseId && sessionData.phaseId && urlPhaseId !== sessionData.phaseId) {
+        setError("This feedback link is for an older phase. Please use the current QR code.");
+        setIsClosed(true);
+        setIsLoading(false);
+        return;
+      } else if (!urlPhaseId && urlVersion && Number(urlVersion) !== (sessionData.reactivationCount || 0)) {
+         setError("This feedback link has expired. Please use the current QR code.");
+         setIsClosed(true);
+         setIsLoading(false);
+         return;
+      }
+
+      // Check if session has expired manually set date
       if (
         sessionData.expiresAt &&
         new Date(sessionData.expiresAt) < new Date()
@@ -81,13 +95,9 @@ export const AnonymousFeedback = () => {
   };
 
   const checkPreviousSubmission = (currentSession) => {
-    if (!currentSession) return;
-    const version = currentSession.reactivationCount || 0;
-    const submittedKey = `feedback_submitted_${sessionId}_v${version}`;
-    const submissionData = localStorage.getItem(submittedKey);
-    if (submissionData) {
-      setIsSubmitted(true);
-    }
+    // [MODIFIED] Students can now submit multiple times in the same phase.
+    // We disable the hard block by not setting isSubmitted=true based on localStorage.
+    return;
   };
 
   const handleRatingChange = (index, rating) => {
@@ -158,15 +168,17 @@ export const AnonymousFeedback = () => {
 
       // Submit to Firebase subcollection
       const version = session.reactivationCount || 0;
+      const phaseId = session.phaseId || null;
       await addResponse(sessionId, {
         deviceId: getDeviceId(),
         answers,
         version,
+        phaseId
       });
 
-      // Mark as submitted in localStorage
+      // Mark as submitted in localStorage (for history/UX, not blocking anymore)
       localStorage.setItem(
-        `feedback_submitted_${sessionId}_v${version}`,
+        `feedback_submitted_${sessionId}_ph_${phaseId || version}_${Date.now()}`,
         JSON.stringify({
           submittedAt: new Date().toISOString(),
           deviceId: getDeviceId(),
@@ -399,14 +411,16 @@ export const AnonymousFeedback = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-background to-purple-50 dark:from-background dark:via-background dark:to-background">
-      {/* Bulk Submitter Button */}
-      <Button
-        className="fixed bottom-4 right-4 z-50 bg-orange-600 hover:bg-orange-700 shadow-lg text-white font-bold"
-        onClick={handleBulkSubmit}
-        disabled={isSubmitting}
-      >
-        {isSubmitting ? "Submitting..." : "DEBUG: Submit 50 Responses"}
-      </Button>
+      {/* Bulk Submitter Button (hidden for production) */}
+      {false && (
+        <Button
+          className="fixed bottom-4 right-4 z-50 bg-orange-600 hover:bg-orange-700 shadow-lg text-white font-bold"
+          onClick={handleBulkSubmit}
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? "Submitting..." : "DEBUG: Submit 50 Responses"}
+        </Button>
+      )}
 
       {/* Navbar */}
       <nav className="sticky top-0 z-50 bg-primary shadow-sm">

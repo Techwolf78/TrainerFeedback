@@ -18,8 +18,7 @@ import {
 
 const COLLECTION_NAME = "sessions";
 
-// Helper to generate a unique readable session ID
-const generateSessionId = (data) => {
+const getSessionMetadata = (data) => {
   const collegePart = (data.collegeName || "COL")
     .split(" ")[0]
     .substring(0, 3)
@@ -27,7 +26,12 @@ const generateSessionId = (data) => {
   const datePart = (data.sessionDate || new Date().toISOString().split("T")[0])
     .replace(/-/g, "");
   const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
-  return `SESS-${collegePart}-${datePart}-${randomPart}`;
+  
+  return {
+    datePart,
+    randomPart,
+    sessionId: `SESS-${collegePart}-${datePart}-${randomPart}`
+  };
 };
 
 /**
@@ -37,13 +41,15 @@ const generateSessionId = (data) => {
  */
 export const createSession = async (data) => {
   try {
-    const sessionId = generateSessionId(data);
+    const { datePart, randomPart, sessionId } = getSessionMetadata(data);
     const docRef = doc(db, COLLECTION_NAME, sessionId);
 
     const sessionData = {
       ...data,
       id: sessionId,
       status: "active",
+      phaseId: `PHASE-${datePart}-${randomPart}`,
+      phaseStartedAt: serverTimestamp(),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       reactivationCount: 0,
@@ -409,6 +415,13 @@ export const closeSessionWithStats = async (id) => {
 
       const sessionData = sessionDoc.data();
 
+      // CRITICAL: Prevent any updates to permanently closed sessions
+      if (sessionData.permanentlyClosed) {
+        throw new Error(
+          "Session is permanently closed and cannot be modified. This phase is archived.",
+        );
+      }
+
       // CRITICAL GUARD
       if (sessionData.status === "inactive") {
         throw new Error(
@@ -425,10 +438,12 @@ export const closeSessionWithStats = async (id) => {
         finalMergedStats = mergeStats(sessionData.compiledStats, deltaStats);
       }
 
-      // Update session with status and MERGED compiled stats (Write)
+      // Update session with status, final stats, and phase-out timing
       transaction.update(docRef, {
         status: "inactive",
+        permanentlyClosed: true,
         compiledStats: finalMergedStats,
+        phaseEndedAt: serverTimestamp(),
         closedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });

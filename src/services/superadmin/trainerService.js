@@ -14,6 +14,8 @@ import {
   writeBatch,
   limit,
   startAfter,
+  onSnapshot,
+  orderBy,
 } from "firebase/firestore";
 import { createUserWithoutLoggingIn } from "../authService";
 import { sendTrainerOnboardingEmail } from "../emailJsService";
@@ -22,6 +24,28 @@ const COLLECTION_NAME = "trainers";
 const COUNTER_COLLECTION = "counters";
 const TRAINER_COUNTER_DOC = "trainers";
 const TRAINER_ID_REGEX = /^GA-T\d{3,}$/;
+
+/**
+ * Subscribe to real-time trainer updates
+ * @param {Function} callback - Function called with updated trainers array
+ * @returns {Function} - Unsubscribe function
+ */
+export const subscribeToTrainers = (callback) => {
+  const q = query(collection(db, COLLECTION_NAME), orderBy("name", "asc"));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const trainers = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      callback(trainers);
+    },
+    (error) => {
+      console.error("Error subscribing to trainers:", error);
+    },
+  );
+};
 
 // Get the current trainer ID counter
 export const getTrainerIdCounter = async () => {
@@ -159,16 +183,23 @@ export const deleteTrainer = async (id) => {
 };
 
 // Get all trainers (with pagination)
-export const getAllTrainers = async (limitCount = 10, lastDoc = null) => {
+export const getAllTrainers = async (limitCount = 10, lastDoc = null, includeDeleted = true) => {
   try {
-    let q = query(collection(db, COLLECTION_NAME), limit(limitCount));
+    let q;
+    const baseCol = collection(db, COLLECTION_NAME);
+    
+    if (includeDeleted) {
+      q = query(baseCol, limit(limitCount));
+    } else {
+      q = query(baseCol, where("isDeleted", "!=", true), limit(limitCount));
+    }
 
     if (lastDoc) {
-      q = query(
-        collection(db, COLLECTION_NAME),
-        startAfter(lastDoc),
-        limit(limitCount),
-      );
+      if (includeDeleted) {
+        q = query(baseCol, startAfter(lastDoc), limit(limitCount));
+      } else {
+        q = query(baseCol, where("isDeleted", "!=", true), startAfter(lastDoc), limit(limitCount));
+      }
     }
 
     const querySnapshot = await getDocs(q);

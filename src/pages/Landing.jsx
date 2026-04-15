@@ -73,8 +73,8 @@ const features = [
 export const Landing = () => {
   return (
     <div className="min-h-screen bg-background">
-      {/* 100vh Hero Section Wrapper */}
-      <section className="h-screen flex flex-col relative overflow-hidden">
+      {/* Hero Section Wrapper */}
+      <section className="min-h-screen flex flex-col relative overflow-hidden">
         {/* Navigation */}
         <nav className="fixed top-0 left-0 right-0 z-50 bg-primary shadow-md">
           <div className="container mx-auto px-6 py-4">
@@ -99,7 +99,7 @@ export const Landing = () => {
         </nav>
 
         {/* Main Content Area (Hero) */}
-        <main className="flex-1 flex flex-col justify-center items-center relative z-10 pt-20">
+        <main className="flex-1 flex flex-col justify-center items-center relative z-10 pt-24 md:pt-32">
           {/* Background Decoration */}
           <div className="absolute inset-0 bg-gradient-to-b from-primary/5 to-transparent pointer-events-none" />
           <div className="absolute top-1/2 left-10 w-64 h-64 bg-primary/5 rounded-full blur-3xl pointer-events-none" />

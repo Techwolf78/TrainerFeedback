@@ -980,7 +980,11 @@ const OverviewTab = ({
               description: "Upcoming interests",
               icon: <TrendingUp className="h-3.5 w-3.5 text-violet-600" />,
               color: "border-l-violet-500",
-              items: aggregatedStats.qualitative.future || [],
+              items: (aggregatedStats.qualitative.future || []).map(item => ({
+                ...item,
+                // Ensure avgRating is hidden if it's 0 or null (often happens with text-only data)
+                avgRating: Number(item.avgRating) > 0 ? item.avgRating : null
+              })),
               empty: "No requests yet.",
               theme: "violet"
             },

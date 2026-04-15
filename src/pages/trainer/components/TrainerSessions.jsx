@@ -501,9 +501,9 @@ const TrainerSessions = ({ sessions, loading, onEdit, onRefresh, projectCodes = 
                     <h3 className="font-semibold text-foreground">{session.topic}</h3>
                     <p className="text-xs text-muted-foreground">{session.domain}</p>
                   </div>
-                  <Badge variant="outline" className={cn("capitalize", session.status === 'active' ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-700 border-gray-200")}>
-                      {session.status}
-                  </Badge>
+                   <Badge variant="outline" className={cn("capitalize", session.status === 'active' ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-700 border-gray-200")}>
+                      {session.status === 'active' ? 'Current Phase Open' : 'Phase Closed'}
+                   </Badge>
                 </div>
                 
                 <div className="text-sm text-muted-foreground space-y-1">
@@ -576,7 +576,7 @@ const TrainerSessions = ({ sessions, loading, onEdit, onRefresh, projectCodes = 
                     <div className="flex flex-col gap-1">
                       <Badge variant="outline" className={cn("capitalize font-medium w-fit", 
                         session.status === 'active' ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-700 border-gray-200")}>
-                        {session.status}
+                        {session.status === 'active' ? 'Current Phase Open' : 'Phase Closed'}
                       </Badge>
                       {session.status === 'active' && (
                         <div className="flex items-center gap-1.5 text-[10px] text-green-600 font-medium px-1">

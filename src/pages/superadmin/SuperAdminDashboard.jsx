@@ -219,8 +219,8 @@ const SuperAdminDashboardInner = () => {
             <Button
               variant="ghost"
               className={cn(
-                "w-full justify-start h-10 mb-1 transition-all",
-                isSidebarCollapsed ? "px-2 justify-center" : "px-3 gap-3",
+                "w-full justify-start h-8 mb-0.5 text-xs transition-all",
+                isSidebarCollapsed ? "px-1 justify-center" : "px-2 gap-2",
                 isActive
                   ? "bg-slate-800 text-white shadow-sm"
                   : "text-slate-400 hover:text-white hover:bg-slate-800/50"
@@ -270,11 +270,11 @@ const SuperAdminDashboardInner = () => {
   };
 
   return (
-    <div className="h-screen bg-[#f8fafc] flex overflow-hidden font-sans">
+    <div className="flex h-screen overflow-hidden bg-[#f8fafc] font-sans">
       {/* Full-Height Sidebar */}
       <aside
         className={cn(
-          "bg-slate-900 text-slate-300 flex flex-col transition-all duration-300 ease-in-out h-screen z-30 border-r border-slate-800 shadow-xl",
+          "bg-slate-900 text-slate-300 flex flex-col transition-all duration-300 ease-in-out h-full z-30 border-r border-slate-800 shadow-xl flex-shrink-0",
           isSidebarCollapsed ? "w-20" : "w-64"
         )}
         onMouseEnter={handleMouseEnter}
@@ -300,7 +300,7 @@ const SuperAdminDashboardInner = () => {
         </div>
 
         {/* Sidebar Navigation */}
-        <nav className={cn("flex-1 overflow-y-auto py-6 space-y-1 custom-scrollbar", isSidebarCollapsed ? "px-3" : "px-4")}>
+        <nav className={cn("flex-1 overflow-y-auto py-3 space-y-0.5 custom-scrollbar", isSidebarCollapsed ? "px-2" : "px-3")}>
           <div className="space-y-1">
             {!isSidebarCollapsed && <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest px-3 mb-2">Main</p>}
             <NavItem id="overview" label="Dashboard" icon={LayoutDashboard} path="/super-admin/dashboard" />
