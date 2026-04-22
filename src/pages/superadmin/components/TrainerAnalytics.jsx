@@ -50,6 +50,7 @@ import {
   Cell,
 } from "recharts";
 import { getSessionsByTrainer } from "@/services/superadmin/sessionService";
+import { getResponseTrendData } from "@/services/superadmin/responseService";
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
 
@@ -213,8 +214,10 @@ const TrainerAnalytics = ({ trainerId, trainerName, onBack }) => {
       if (filters.dateRange !== "all") {
         const { startDate, endDate } = getDateRange(filters.dateRange);
         if (startDate && endDate) {
+          // Option C: Include session if ANY response falls within date range
           const sessionDate = new Date(session.sessionDate);
-          if (sessionDate < startDate || sessionDate > endDate) return false;
+          // Include if session was created before endDate
+          if (sessionDate > endDate) return false;
         }
       }
       return true;
@@ -336,25 +339,53 @@ const TrainerAnalytics = ({ trainerId, trainerName, onBack }) => {
     );
   }, [aggregatedStats]);
 
-  const responseTrend = useMemo(() => {
-    const trendMap = {};
-    sessions.forEach((s) => {
-      if (!s.compiledStats) return;
-      const date = s.sessionDate;
-      if (!date) return;
-      if (!trendMap[date]) trendMap[date] = 0;
-      trendMap[date] += s.compiledStats.totalResponses || 0;
-    });
+  const [responseTrendData, setResponseTrendData] = React.useState([]);
+  
+  React.useEffect(() => {
+    const calculateResponseTrend = async () => {
+      const validSessions = sessions.filter((s) => s.id && s.compiledStats);
+      if (validSessions.length === 0) {
+        setResponseTrendData([]);
+        return;
+      }
 
-    return Object.entries(trendMap)
-      .map(([date, responses]) => ({
-        day: parseInt(date.split("-")[2]),
-        fullDate: date,
-        responses,
-      }))
-      .sort((a, b) => a.fullDate.localeCompare(b.fullDate))
-      .slice(-30);
-  }, [sessions]);
+      const sessionIds = validSessions.map((s) => s.id);
+
+      try {
+        const responseTrendMap = await getResponseTrendData(sessionIds);
+
+        // Apply date range filter to responses if selected
+        let trendEntries = Object.entries(responseTrendMap);
+        if (filters.dateRange !== "all") {
+          const { startDate, endDate } = getDateRange(filters.dateRange);
+          if (startDate && endDate) {
+            trendEntries = trendEntries.filter(([dateStr]) => {
+              const responseDate = new Date(dateStr);
+              return responseDate >= startDate && responseDate <= endDate;
+            });
+          }
+        }
+
+        const chartData = trendEntries
+          .map(([date, responses]) => ({
+            day: parseInt(date.split("-")[2]),
+            fullDate: date,
+            responses,
+          }))
+          .sort((a, b) => a.fullDate.localeCompare(b.fullDate))
+          .slice(-30);
+
+        setResponseTrendData(chartData);
+      } catch (error) {
+        console.error("Error calculating response trend:", error);
+        setResponseTrendData([]);
+      }
+    };
+
+    calculateResponseTrend();
+  }, [sessions, filters]);
+  
+  const responseTrend = responseTrendData;
 
   if (isLoading) {
     return (

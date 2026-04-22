@@ -70,7 +70,6 @@ const CollegeOverviewTab = () => {
     college,
     loadSessions,
     loadTrainers,
-    refreshAll,
     loading,
   } = useAdminData();
 
@@ -645,17 +644,6 @@ const CollegeOverviewTab = () => {
               >
                 <RotateCcw className="h-4 w-4" />
                 Reset
-              </Button>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={refreshAll}
-                className="gap-2 bg-primary hover:bg-primary/90 text-white"
-              >
-                <RefreshCw
-                  className={`h-4 w-4 ${loading.college ? "animate-spin" : ""}`}
-                />
-                Refresh
               </Button>
             </div>
           </div>

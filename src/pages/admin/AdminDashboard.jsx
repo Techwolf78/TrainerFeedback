@@ -39,7 +39,7 @@ const AdminDashboardContent = () => {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const { college, loading, refreshAll } = useAdminData();
+  const { college, loading } = useAdminData();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const [runTour, setRunTour] = useState(false);
   const [tourStepIndex, setTourStepIndex] = useState(0);

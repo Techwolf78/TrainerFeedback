@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { format } from "date-fns";
 import {
   Building2,
   Users,
   Star,
   TrendingUp,
   ClipboardList,
-  Calendar,
+  Calendar as CalendarIcon,
   Filter,
   RotateCcw,
   MessageSquare,
@@ -38,6 +39,8 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import {
   BarChart,
   Bar,
@@ -62,7 +65,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSuperAdminData } from "@/contexts/SuperAdminDataContext";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
 import { getAnalyticsSessions } from "@/services/superadmin/sessionService";
+import { getResponseTrendData, getResponses, compileSessionStatsFromResponses } from "@/services/superadmin/responseService";
 import { cn } from "@/lib/utils";
+
 
 const COLORS = [
   "#2563eb", // Blue 600
@@ -86,6 +91,7 @@ const OverviewTab = ({
   const [analyticsCache, setAnalyticsCache] = useState({});
   const [isFetchingAnalytics, setIsFetchingAnalytics] = useState(false);
   const [fetchedFilteredSessions, setFetchedFilteredSessions] = useState([]);
+  const [filteredResponses, setFilteredResponses] = useState([]);
 
   // Filter state
   const [filters, setFilters] = useState({
@@ -96,6 +102,8 @@ const OverviewTab = ({
     year: "all",
     batch: "all",
     dateRange: "all",
+    customStartDate: null,
+    customEndDate: null,
   });
 
   // Academic config for selected college
@@ -199,6 +207,11 @@ const OverviewTab = ({
       }))
       .sort((a, b) => b.count - a.count);
 
+    // Format topics learned as array
+    const topicsLearnedArray = Object.entries(agg.topicsLearned || {})
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => ({ name, count }));
+
     // Formatting category averages
     const categoryAverages = {};
     Object.entries(agg.categoryTotals).forEach(([cat, sum]) => {
@@ -208,6 +221,7 @@ const OverviewTab = ({
 
     return {
       ...agg,
+      topicsLearned: topicsLearnedArray,
       avgRating: agg.ratingCount > 0 ? (agg.ratingSum / agg.ratingCount).toFixed(2) : 0,
       categoryAverages,
       qualitative: {
@@ -239,12 +253,22 @@ const OverviewTab = ({
       year: "all",
       batch: "all",
       dateRange: "all",
+      customStartDate: null,
+      customEndDate: null,
     });
     setAcademicOptions(null);
   };
 
   // Calculate date range boundaries
-  const getDateRange = (range) => {
+  const getDateRange = (range, customStart, customEnd) => {
+    if (range === "custom" && customStart && customEnd) {
+      const startDate = new Date(customStart);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(customEnd);
+      endDate.setHours(23, 59, 59, 999);
+      return { startDate, endDate };
+    }
+    
     const today = new Date();
     today.setHours(23, 59, 59, 999);
     let startDate = null;
@@ -306,7 +330,14 @@ const OverviewTab = ({
 
       setIsFetchingAnalytics(true);
       try {
-        const { startDate: sdObj, endDate: edObj } = getDateRange(filters.dateRange);
+        // Don't pass date filters to getAnalyticsSessions when filtering by response submission date
+        // Instead, load all sessions and filter responses by submission date separately
+        const { startDate: sdObj, endDate: edObj } = getDateRange(
+          filters.dateRange,
+          filters.customStartDate,
+          filters.customEndDate
+        );
+        
         const formatDate = (d) => {
           if (!d) return null;
           const year = d.getFullYear();
@@ -315,14 +346,21 @@ const OverviewTab = ({
           return `${year}-${month}-${day}`;
         };
 
+        // If date range filter is active, don't pass dates to getAnalyticsSessions
+        // We'll filter by response submission date instead
+        const shouldFilterByResponseDate = sdObj && edObj && filters.dateRange !== "all";
+        
         const fetchedSessions = await getAnalyticsSessions({
           ...filters,
-          startDate: formatDate(sdObj),
-          endDate: formatDate(edObj),
+          ...(shouldFilterByResponseDate ? {} : {
+            startDate: formatDate(sdObj),
+            endDate: formatDate(edObj),
+          }),
           limitCount: 50,
           includeActive: true, // Show live analytics in filtered view
         });
 
+        console.log("📊 Sessions fetched for analytics:", fetchedSessions.length, "shouldFilterByResponseDate:", shouldFilterByResponseDate);
         const computedStats = aggregateStatsFromSessions(fetchedSessions);
         const cacheEntry = { stats: computedStats, sessions: fetchedSessions };
 
@@ -341,10 +379,138 @@ const OverviewTab = ({
     return () => clearTimeout(timer);
   }, [filters, isDefaultView]);
 
+  // Load and filter responses by submission date when date range is active
+  useEffect(() => {
+    const loadFilteredResponses = async () => {
+      if (filters.dateRange === "all" || fetchedFilteredSessions.length === 0) {
+        setFilteredResponses([]);
+        return;
+      }
+
+      try {
+        // Load all responses for filtered sessions with sessionId attached
+        const allResponsesToLoad = await Promise.all(
+          fetchedFilteredSessions.map((session) =>
+            getResponses(session.id)
+              .then((responses) =>
+                responses.map((r) => ({ ...r, sessionId: session.id }))
+              )
+              .catch(() => [])
+          )
+        );
+
+        let allResponses = allResponsesToLoad.flat();
+
+        // Filter by response submission date
+        const { startDate, endDate } = getDateRange(
+          filters.dateRange,
+          filters.customStartDate,
+          filters.customEndDate
+        );
+
+        if (startDate && endDate) {
+          allResponses = allResponses.filter((response) => {
+            let responseDate;
+            if (response.submittedAt?.toDate) {
+              responseDate = response.submittedAt.toDate();
+            } else if (typeof response.submittedAt === "string") {
+              responseDate = new Date(response.submittedAt);
+            } else if (response.submittedAt instanceof Date) {
+              responseDate = response.submittedAt;
+            }
+
+            const isInRange = responseDate >= startDate && responseDate <= endDate;
+            return isInRange;
+          });
+        }
+
+        setFilteredResponses(allResponses);
+      } catch (error) {
+        console.error("Error loading filtered responses:", error);
+        setFilteredResponses([]);
+      }
+    };
+
+    loadFilteredResponses();
+  }, [fetchedFilteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate]);
+
   // Calculate aggregated stats from sessions
   const aggregatedStats = useMemo(() => {
     let result = null;
-    if (!isDefaultView && analyticsData) {
+
+    // If date range filter is active and we have filtered responses, recalculate from responses
+    if (!isDefaultView && filters.dateRange !== "all" && filteredResponses.length > 0) {
+      const compiledStats = compileSessionStatsFromResponses(filteredResponses);
+
+      // Build question-to-category map from sessions
+      const questionCategoryMap = {};
+      fetchedFilteredSessions.forEach((session) => {
+        if (session.questions && Array.isArray(session.questions)) {
+          session.questions.forEach((q) => {
+            if (q.id && q.category) {
+              questionCategoryMap[q.id] = q.category;
+            }
+          });
+        }
+      });
+
+      // Calculate category averages from individual responses
+      const categoryStats = {};
+      filteredResponses.forEach((response) => {
+        const answers = response.answers || [];
+        answers.forEach((ans) => {
+          const category = questionCategoryMap[ans.questionId];
+          const isRating = (ans.type || "").toLowerCase() === "rating" || (ans.type || "").toLowerCase() === "overall";
+          const rating = Number(ans.value);
+
+          if (category && isRating && rating > 0) {
+            if (!categoryStats[category]) {
+              categoryStats[category] = { sum: 0, count: 0 };
+            }
+            categoryStats[category].sum += rating;
+            categoryStats[category].count += 1;
+          }
+        });
+      });
+
+      const categoryAverages = {};
+      Object.entries(categoryStats).forEach(([cat, data]) => {
+        categoryAverages[cat] = data.count > 0 ? (data.sum / data.count).toFixed(2) : 0;
+      });
+
+      // Get unique session IDs that actually have responses in this date range
+      const sessionIdsWithResponses = new Set(filteredResponses.map(r => r.sessionId));
+      const sessionsInThisRange = fetchedFilteredSessions.filter(s => sessionIdsWithResponses.has(s.id));
+
+      result = {
+        totalSessions: sessionsInThisRange.length,
+        totalResponses: compiledStats.totalResponses || 0,
+        totalRatingsCount: Object.values(compiledStats.ratingDistribution || {}).reduce((a, b) => a + b, 0),
+        totalHours: (Number(sessionsInThisRange.reduce((sum, s) => sum + (Number(s.sessionDuration) || 60), 0)) || 0) / 60,
+        avgRating: (compiledStats.avgRating || 0).toFixed(2),
+        ratingDistribution: compiledStats.ratingDistribution || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+        categoryAverages,
+        qualitative: {
+          high: compiledStats.topComments || [],
+          low: compiledStats.leastRatedComments || [],
+          future: compiledStats.futureTopics || [],
+        },
+        topicsLearned: compiledStats.topicsLearned || [],
+      };
+    } else if (!isDefaultView && filters.dateRange !== "all" && analyticsData) {
+      // When date range is filtered but we don't have filtered responses yet, return empty structure
+      result = {
+        totalSessions: 0,
+        totalResponses: 0,
+        totalRatingsCount: 0,
+        totalHours: 0,
+        avgRating: 0,
+        ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+        categoryAverages: {},
+        qualitative: { high: [], low: [], future: [] },
+        topicsLearned: [],
+      };
+    } else if (!isDefaultView && analyticsData) {
       result = analyticsData;
     } else if (isDefaultView && sessions.length > 0) {
       result = aggregateStatsFromSessions(sessions);
@@ -363,77 +529,176 @@ const OverviewTab = ({
     }
 
     return result;
-  }, [analyticsData, sessions, isDefaultView, filters]);
+  }, [analyticsData, sessions, isDefaultView, filters, filteredResponses, fetchedFilteredSessions]);
 
   // College performance data for bar chart
   const allCollegesPerformance = useMemo(() => {
-    const sessionList = isDefaultView ? sessions : fetchedFilteredSessions;
-    if (!sessionList || sessionList.length === 0) return [];
+    if (!colleges || colleges.length === 0) return [];
 
-    const collegeStats = {};
-    colleges.forEach((college) => {
-      collegeStats[college.id] = {
-        name: college.code || college.id,
-        fullName: college.name,
-        ratingSum: 0,
-        ratingCount: 0,
-        responses: 0,
-      };
-    });
+    // When date range is filtered, calculate from filteredResponses
+    const shouldUseFilteredResponses = !isDefaultView && filters.dateRange !== "all" && filteredResponses.length > 0;
+    
+    if (shouldUseFilteredResponses) {
+      // Group responses by college
+      const collegeStats = {};
+      colleges.forEach((college) => {
+        collegeStats[college.id] = {
+          name: college.code || college.id,
+          fullName: college.name,
+          ratingSum: 0,
+          ratingCount: 0,
+          responses: 0,
+        };
+      });
 
-    sessionList.forEach((session) => {
-      const stats = collegeStats[session.collegeId];
-      if (!stats) return;
-
-      const cs = session.compiledStats;
-      if (cs) {
-        Object.entries(cs.ratingDistribution || {}).forEach(([rating, count]) => {
-          stats.ratingSum += Number(rating) * count;
-          stats.ratingCount += count;
+      // Calculate from filtered responses
+      filteredResponses.forEach((response) => {
+        const session = fetchedFilteredSessions.find(s => s.id === response.sessionId);
+        if (!session) return;
+        
+        const stats = collegeStats[session.collegeId];
+        if (!stats) return;
+        
+        stats.responses += 1;
+        
+        // Count ratings from answers
+        const answers = response.answers || [];
+        answers.forEach((ans) => {
+          const rating = Number(ans.value);
+          if ((ans.type || "").toLowerCase() === "rating" && rating > 0) {
+            stats.ratingSum += rating;
+            stats.ratingCount += 1;
+          }
         });
-        stats.responses += cs.totalResponses || 0;
+      });
+
+      return Object.values(collegeStats)
+        .map((data) => ({
+          name: data.name,
+          fullName: data.fullName,
+          avgRating: data.ratingCount > 0 ? parseFloat((data.ratingSum / data.ratingCount).toFixed(2)) : 0,
+          responses: data.responses,
+        }))
+        .sort((a, b) => b.avgRating - a.avgRating)
+        .filter((d) => d.responses > 0)
+        .slice(0, 30);
+    } else {
+      // Use session-based calculation for non-filtered view
+      const sessionList = isDefaultView ? sessions : fetchedFilteredSessions;
+      if (!sessionList || sessionList.length === 0) return [];
+
+      const collegeStats = {};
+      colleges.forEach((college) => {
+        collegeStats[college.id] = {
+          name: college.code || college.id,
+          fullName: college.name,
+          ratingSum: 0,
+          ratingCount: 0,
+          responses: 0,
+        };
+      });
+
+      sessionList.forEach((session) => {
+        const stats = collegeStats[session.collegeId];
+        if (!stats) return;
+
+        const cs = session.compiledStats;
+        if (cs) {
+          Object.entries(cs.ratingDistribution || {}).forEach(([rating, count]) => {
+            stats.ratingSum += Number(rating) * count;
+            stats.ratingCount += count;
+          });
+          stats.responses += cs.totalResponses || 0;
+        }
+      });
+
+      return Object.values(collegeStats)
+        .map((data) => ({
+          name: data.name,
+          fullName: data.fullName,
+          avgRating: data.ratingCount > 0 ? parseFloat((data.ratingSum / data.ratingCount).toFixed(2)) : 0,
+          responses: data.responses,
+        }))
+        .sort((a, b) => b.avgRating - a.avgRating)
+        .filter((d) => d.responses > 0)
+        .slice(0, 30);
+    }
+  }, [sessions, fetchedFilteredSessions, isDefaultView, colleges, filters.dateRange, filteredResponses]);
+
+  // Combined trend data for charts - group by response submission dates
+  const [trendData, setTrendData] = React.useState([]);
+  
+  useEffect(() => {
+    const calculateTrendData = async () => {
+      // When date range is filtered, calculate from filteredResponses
+      const shouldUseFilteredResponses = !isDefaultView && filters.dateRange !== "all" && filteredResponses.length > 0;
+      
+      if (shouldUseFilteredResponses) {
+        // Calculate trend from filtered responses
+        const dateMap = {};
+        filteredResponses.forEach((response) => {
+          let responseDate;
+          if (response.submittedAt?.toDate) {
+            responseDate = response.submittedAt.toDate();
+          } else if (typeof response.submittedAt === "string") {
+            responseDate = new Date(response.submittedAt);
+          } else if (response.submittedAt instanceof Date) {
+            responseDate = response.submittedAt;
+          }
+
+          if (responseDate) {
+            const dateStr = `${responseDate.getFullYear()}-${String(responseDate.getMonth() + 1).padStart(2, "0")}-${String(responseDate.getDate()).padStart(2, "0")}`;
+            dateMap[dateStr] = (dateMap[dateStr] || 0) + 1;
+          }
+        });
+
+        const chartData = Object.entries(dateMap)
+          .map(([dateStr, responseCount]) => ({
+            day: parseInt(dateStr.split("-")[2]),
+            responses: responseCount,
+            sessions: 0,
+            fullDate: dateStr,
+          }))
+          .sort((a, b) => a.fullDate.localeCompare(b.fullDate));
+
+        setTrendData(chartData);
+      } else {
+        // Use session-based trend data for non-filtered view
+        const sessionList = isDefaultView ? sessions : fetchedFilteredSessions;
+        if (!sessionList || sessionList.length === 0) {
+          setTrendData([]);
+          return;
+        }
+
+        const sessionIds = sessionList.map((s) => s.id).filter(Boolean);
+        if (sessionIds.length === 0) {
+          setTrendData([]);
+          return;
+        }
+
+        try {
+          const responseTrendMap = await getResponseTrendData(sessionIds);
+
+          const chartData = Object.entries(responseTrendMap)
+            .map(([dateStr, responseCount]) => ({
+              day: parseInt(dateStr.split("-")[2]),
+              responses: responseCount,
+              sessions: 0,
+              fullDate: dateStr,
+            }))
+            .sort((a, b) => a.fullDate.localeCompare(b.fullDate))
+            .slice(-30);
+
+          setTrendData(chartData);
+        } catch (error) {
+          console.error("Error calculating trend data:", error);
+          setTrendData([]);
+        }
       }
-    });
+    };
 
-    return Object.values(collegeStats)
-      .map((data) => ({
-        name: data.name,
-        fullName: data.fullName,
-        avgRating: data.ratingCount > 0 ? parseFloat((data.ratingSum / data.ratingCount).toFixed(2)) : 0,
-        responses: data.responses,
-      }))
-      .sort((a, b) => b.avgRating - a.avgRating)
-      .filter((d) => d.responses > 0)
-      .slice(0, 30);
-  }, [sessions, fetchedFilteredSessions, isDefaultView, colleges]);
-
-  // Combined trend data for charts
-  const trendData = useMemo(() => {
-    const sessionList = isDefaultView ? sessions : fetchedFilteredSessions;
-    if (!sessionList || sessionList.length === 0) return [];
-
-    const trendMap = {};
-    sessionList.forEach((s) => {
-      const date = s.sessionDate;
-      if (!date) return;
-      if (!trendMap[date]) trendMap[date] = { responses: 0, sessions: 0 };
-      const stats = s.compiledStats;
-      if (stats) {
-        trendMap[date].responses += stats.totalResponses || 0;
-        trendMap[date].sessions += 1;
-      }
-    });
-
-    return Object.entries(trendMap)
-      .map(([dateStr, data]) => ({
-        day: parseInt(dateStr.split("-")[2]),
-        responses: data.responses,
-        sessions: data.sessions,
-        fullDate: dateStr,
-      }))
-      .sort((a, b) => a.fullDate.localeCompare(b.fullDate))
-      .slice(-30);
-  }, [sessions, fetchedFilteredSessions, isDefaultView]);
+    calculateTrendData();
+  }, [sessions, fetchedFilteredSessions, isDefaultView, filters.dateRange, filteredResponses]);
 
   const ratingDistributionData = useMemo(() => {
     const distribution = aggregatedStats.ratingDistribution || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
@@ -502,7 +767,7 @@ const OverviewTab = ({
               variant="outline"
               size="sm"
               onClick={resetFilters}
-              className="h-8 gap-1.5 text-[11px] font-medium bg-white hover:bg-slate-50 border-slate-200"
+              className="h-8 gap-1.5 text-[11px] font-medium hover:text-black bg-white hover:bg-slate-50 border-slate-200"
             >
               <RotateCcw className="h-3 w-3" />
               Reset Filters
@@ -513,9 +778,9 @@ const OverviewTab = ({
       {/* Filter Bar */}
       <Card className="border-slate-200/60 shadow-sm bg-white/50 backdrop-blur-sm">
         <CardContent className="p-3 lg:p-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          <div className="flex flex-wrap items-end gap-x-3 gap-y-4">
             {/* Project Code */}
-            <div className="space-y-1">
+            <div className="space-y-1 w-[120px]">
               <Label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Project</Label>
               <Select
                 value={filters.projectCode}
@@ -552,7 +817,7 @@ const OverviewTab = ({
               </Select>
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1 w-[120px]">
               <Label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">College</Label>
               <Select
                 value={filters.collegeId}
@@ -587,7 +852,7 @@ const OverviewTab = ({
               </Select>
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1 w-[120px]">
               <Label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Course</Label>
               <Select
                 value={filters.course}
@@ -620,7 +885,7 @@ const OverviewTab = ({
               </Select>
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1 w-[70px]">
               <Label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Year</Label>
               <Select
                 value={filters.year}
@@ -652,7 +917,7 @@ const OverviewTab = ({
               </Select>
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1 w-[70px]">
               <Label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Batch</Label>
               <Select
                 value={filters.batch}
@@ -683,7 +948,7 @@ const OverviewTab = ({
               </Select>
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1 w-[120px]">
               <Label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Trainer</Label>
               <Select
                 value={filters.trainerId}
@@ -708,7 +973,7 @@ const OverviewTab = ({
               </Select>
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1 w-[120px]">
               <Label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Period</Label>
               <Select
                 value={filters.dateRange}
@@ -727,9 +992,60 @@ const OverviewTab = ({
                   <SelectItem value="7days">Last 7 Days</SelectItem>
                   <SelectItem value="30days">Last 30 Days</SelectItem>
                   <SelectItem value="90days">Last 90 Days</SelectItem>
+                  <SelectItem value="custom">Custom Range</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {filters.dateRange === "custom" && (
+              <div className="space-y-1 self-end mb-0">
+                <Label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 block">Select Dates</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant={"outline"}
+                      className={cn(
+                        "h-8 w-[220px] justify-start text-left font-normal text-xs bg-white border-slate-200",
+                        !filters.customStartDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-3 w-3" />
+                      {filters.customStartDate ? (
+                        filters.customEndDate ? (
+                          <>
+                            {format(filters.customStartDate, "LLL dd, y")}{" - "}
+                            {format(filters.customEndDate, "LLL dd, y")}
+                          </>
+                        ) : (
+                          format(filters.customStartDate, "LLL dd, y")
+                        )
+                      ) : (
+                        <span>Pick dates</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      initialFocus
+                      mode="range"
+                      defaultMonth={filters.customStartDate}
+                      selected={{
+                        from: filters.customStartDate,
+                        to: filters.customEndDate,
+                      }}
+                      onSelect={(range) => {
+                        setFilters({
+                          ...filters,
+                          customStartDate: range?.from,
+                          customEndDate: range?.to,
+                        });
+                      }}
+                      numberOfMonths={2}
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -969,9 +1285,10 @@ const OverviewTab = ({
               description: "Topics mastered",
               icon: <BookOpen className="h-3.5 w-3.5 text-blue-600" />,
               color: "border-l-blue-500",
-              items: Object.entries(aggregatedStats.topicsLearned || {})
-                .sort((a, b) => b[1] - a[1])
-                .map(([name, count]) => ({ text: name, count })),
+              items: (aggregatedStats.topicsLearned || []).map(topic => ({
+                text: topic.name || topic,
+                count: topic.count || 1
+              })),
               empty: "Analysis in progress.",
               theme: "blue"
             },

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge"; // Added for live indicator
 import {
   ArrowLeft,
   Star,
@@ -26,6 +27,9 @@ import {
   User,
   Building2,
   Sparkles,
+  Camera,
+  RefreshCw, // Added for live analytics refresh
+  Loader2, // Added for loading state
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -47,21 +51,83 @@ import {
 } from "recharts";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
+import { toPng } from "html-to-image";
+import { useRef } from "react";
 
 const SessionAnalytics = ({ session, onBack }) => {
+  const analyticsRef = useRef(null);
+  const [stats, setStats] = useState(session?.compiledStats || null);
+  const [loading, setLoading] = useState(!session?.compiledStats);
+  const [isLive, setIsLive] = useState(session?.status === "active");
+  const [learnedLimit, setLearnedLimit] = useState(25);
+  const [futureLimit, setFutureLimit] = useState(25);
+
+  const fetchLiveStats = async (showToast = false) => {
+    try {
+      if (showToast) toast.loading("Fetching live data...");
+      setLoading(true);
+
+      const { getResponses, compileSessionStatsFromResponses } =
+        await import("@/services/superadmin/responseService");
+
+      const responses = await getResponses(session.id);
+
+      // Filter by session version if it exists
+      const currentVersionResponses = responses.filter(
+        (r) => (r.version ?? 0) === (session.version ?? 0),
+      );
+
+      const compiled = compileSessionStatsFromResponses(
+        currentVersionResponses,
+        session.questions || [],
+      );
+
+      setStats(compiled);
+      console.group(`--- Live Analytics: ${session.topic} ---`);
+      console.log("Total Responses:", compiled.totalResponses);
+      console.log("Top Rated Comments:", compiled.topComments);
+      console.log("Average Rated Comments:", compiled.avgComments);
+      console.log("Improvement Areas:", compiled.leastRatedComments);
+      console.log("Full Compiled Stats:", compiled);
+      console.groupEnd();
+      if (showToast) {
+        toast.dismiss();
+        toast.success("Live data updated");
+      }
+    } catch (error) {
+      console.error("Failed to fetch live stats:", error);
+      if (showToast) {
+        toast.dismiss();
+        toast.error("Failed to update live data");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!session?.compiledStats || session?.status === "active") {
+      fetchLiveStats();
+    }
+  }, [session?.id]);
+
   const handleExport = async () => {
-    if (!session?.compiledStats) return;
+    if (!stats) return;
 
     try {
       toast.loading("Exporting report...");
-      const stats = session.compiledStats;
       const workbook = new ExcelJS.Workbook();
       workbook.creator = "Gryphon Academy";
 
       // [NEW] Fetch detailed responses
       const { getResponses } =
         await import("@/services/superadmin/responseService");
-      const responses = await getResponses(session.id);
+      const allResponses = await getResponses(session.id);
+
+      // Filter by session version if it exists
+      const responses = allResponses.filter(
+        (r) => (r.version ?? 0) === (session.version ?? 0),
+      );
 
       // --- SHEET 1: RESPONSES ---
       const responsesSheet = workbook.addWorksheet("Responses");
@@ -181,28 +247,81 @@ const SessionAnalytics = ({ session, onBack }) => {
     }
   };
 
-  if (!session?.compiledStats) {
+  const handleExportSnapshot = async () => {
+    if (!analyticsRef.current) return;
+
+    try {
+      toast.loading("Generating analytics snapshot...");
+
+      // Small delay to ensure any layout/animations are ready
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const dataUrl = await toPng(analyticsRef.current, {
+        pixelRatio: 2,
+        backgroundColor: "#ffffff",
+        cacheBust: true,
+        filter: (node) => {
+          if (node.classList && node.classList.contains("snapshot-ignore")) {
+            return false;
+          }
+          return true;
+        },
+      });
+
+      saveAs(
+        dataUrl,
+        `snapshot_${session.topic.replace(/[^a-z0-9]/gi, "_")}.png`,
+      );
+      toast.dismiss();
+      toast.success("Snapshot saved successfully!");
+    } catch (error) {
+      console.error("Snapshot capture failed:", error);
+      toast.dismiss();
+      toast.error("Failed to capture snapshot");
+    }
+  };
+
+  if (loading && !stats) {
     return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">
-          No analytics data available for this session.
-        </p>
-        <Button
-          variant="outline"
-          size="lg"
-          className="mt-4 gap-2"
-          onClick={onBack}
-        >
-          <ArrowLeft className="h-5 w-5" /> Back to Sessions
-        </Button>
+      <div className="flex flex-col items-center justify-center py-24">
+        <Loader2 className="h-12 w-12 text-primary animate-spin mb-4" />
+        <p className="text-muted-foreground">Calculating live analytics...</p>
       </div>
     );
   }
 
-  const stats = session.compiledStats;
+  if (!stats || stats.totalResponses === 0) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-muted-foreground">
+          {session.status === "active"
+            ? "No responses received yet for this active session."
+            : "No analytics data available for this session."}
+        </p>
+        <div className="flex justify-center gap-4 mt-4">
+          <Button
+            variant="outline"
+            size="lg"
+            className="gap-2"
+            onClick={onBack}
+          >
+            <ArrowLeft className="h-5 w-5" /> Back to Sessions
+          </Button>
+          {session.status === "active" && (
+            <Button
+              variant="default"
+              size="lg"
+              className="gap-2"
+              onClick={() => fetchLiveStats(true)}
+            >
+              <RefreshCw className="h-5 w-5" /> Refresh
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
-  const [learnedLimit, setLearnedLimit] = useState(25);
-  const [futureLimit, setFutureLimit] = useState(25);
   const loadMoreStep = 25;
 
   const learnedToShow = (stats.topicsLearned || []).slice(0, learnedLimit);
@@ -239,41 +358,73 @@ const SessionAnalytics = ({ session, onBack }) => {
   );
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">{session.topic}</h1>
-          <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
-              <span className="flex items-center gap-1">
-                <Building2 className="h-4 w-4" /> {session.collegeName}
-              </span>
-              <span className="flex items-center gap-1">
-                <User className="h-4 w-4" /> {session.assignedTrainer?.name}
-              </span>
-              <span className="flex items-center gap-1">
-                <Calendar className="h-4 w-4" /> {session.sessionDate}
-              </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-             <Button onClick={handleExport} className="gap-2">
-            <Download className="h-4 w-4" /> Export Report
-          </Button>
-          <Button
+    <div className="space-y-6 p-2" ref={analyticsRef}>
+  <div className="flex items-start justify-between">
+    <div>
+      <div className="flex items-center gap-3">
+        <h1 className="text-2xl font-bold">{session.topic}</h1>
+        {session.status === "active" && (
+          <Badge
             variant="outline"
-            size="lg"
-            onClick={onBack}
-            className="gap-2 px-4 py-2 border-2 border-gray-300"
+            className="bg-green-50 text-green-700 border-green-200 animate-pulse flex items-center gap-1.5"
           >
-            <ArrowLeft className="h-5 w-5" />
-            Back
-          </Button>
-       
-        </div>
+            <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+            Live
+          </Badge>
+        )}
       </div>
+      <div className="text-sm text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
+        <span>{session.collegeName}</span>
+        <span className="text-muted-foreground/50">•</span>
+        <div className="flex items-center gap-1.5">
+          <User className="h-3 w-3" />
+          <span>{session.assignedTrainer?.name || "Trainer not assigned"}</span>
+        </div>
+        {session.domain && (
+          <>
+            <span className="text-muted-foreground/50">•</span>
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="h-3 w-3" />
+              <span>{session.domain}</span>
+            </div>
+          </>
+        )}
+        
+      </div>
+    </div>
 
-      {/* Stats Cards */}
+    <div className="flex items-center gap-2 snapshot-ignore">
+      {session.status === "active" && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => fetchLiveStats(true)}
+          className="gap-2"
+          disabled={loading}
+        >
+          <RefreshCw
+            className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+          />
+          Refresh Live Data
+        </Button>
+      )}
+      <Button variant="outline" size="sm" onClick={handleExport}>
+        <Download className="h-4 w-4 mr-2" /> Export
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={handleExportSnapshot}
+        className="gap-2"
+      >
+        <Camera className="h-4 w-4" /> Snapshot
+      </Button>
+      <Button variant="ghost" size="sm" onClick={onBack}>
+        <ArrowLeft className="h-4 w-4 mr-2" /> Back
+      </Button>
+    </div>
+  </div>
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="glass-card">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -404,9 +555,7 @@ const SessionAnalytics = ({ session, onBack }) => {
         </Card>
       </div>
 
-      {/* Charts Section - Reordered: Rating Distribution, Category Performance, Rating Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* 1. Rating Distribution Bar Chart */}
         <Card>
           <CardHeader>
             <CardTitle>Rating Distribution</CardTitle>
@@ -465,7 +614,6 @@ const SessionAnalytics = ({ session, onBack }) => {
           </CardContent>
         </Card>
 
-        {/* 2. Category Performance Radar Chart */}
         <Card>
           <CardHeader>
             <CardTitle>Category Performance</CardTitle>
@@ -568,7 +716,6 @@ const SessionAnalytics = ({ session, onBack }) => {
           </CardContent>
         </Card>
 
-        {/* 3. Rating Breakdown Pie Chart */}
         <Card>
           <CardHeader>
             <CardTitle>Rating Breakdown</CardTitle>
@@ -614,14 +761,17 @@ const SessionAnalytics = ({ session, onBack }) => {
         </Card>
       </div>
 
-      {/* Comments and Topics Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Comments Card with Tabs */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MessageSquare className="h-5 w-5 text-primary" />
-              Student Comments
+            <CardTitle className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-5 w-5 text-primary" />
+                Student Comments
+              </div>
+              <Badge variant="secondary" className="font-mono">
+                {stats.totalResponses} Total
+              </Badge>
             </CardTitle>
             <CardDescription>
               Feedback from different rating levels
@@ -635,70 +785,93 @@ const SessionAnalytics = ({ session, onBack }) => {
                 <TabsTrigger value="improvement">Improvement Areas</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="top" className="space-y-3 mt-4">
-                {(stats.topComments || []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No comments available
-                  </p>
-                ) : (
-                  stats.topComments.map((c, i) => (
-                    <div key={i} className="p-3 rounded-lg border">
-                      <p className="text-sm">{c.text}</p>
-                      <div className="flex items-center gap-1 mt-2">
-                        <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                        <span className="text-xs text-muted-foreground">
-                          {c.avgRating.toFixed(1)}
-                        </span>
+              <TabsContent value="top" className="mt-4">
+                <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
+                  {(stats.topComments || []).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No comments available
+                    </p>
+                  ) : (
+                    stats.topComments.map((c, i) => (
+                      <div
+                        key={i}
+                        className="p-3 rounded-lg border bg-card/50 relative"
+                      >
+                        <div className="absolute top-2 right-2 text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                          #{i + 1}
+                        </div>
+                        <p className="text-sm italic pr-8">"{c.text}"</p>
+                        <div className="flex items-center gap-1 mt-2">
+                          <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                          <span className="text-xs text-muted-foreground">
+                            {c.avgRating.toFixed(1)}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </TabsContent>
 
-              <TabsContent value="average" className="space-y-3 mt-4">
-                {(stats.avgComments || []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No comments available
-                  </p>
-                ) : (
-                  stats.avgComments.map((c, i) => (
-                    <div key={i} className="p-3 rounded-lg border">
-                      <p className="text-sm">{c.text}</p>
-                      <div className="flex items-center gap-1 mt-2">
-                        <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                        <span className="text-xs text-muted-foreground">
-                          {c.avgRating.toFixed(1)}
-                        </span>
+              <TabsContent value="average" className="mt-4">
+                <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
+                  {(stats.avgComments || []).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No comments available
+                    </p>
+                  ) : (
+                    stats.avgComments.map((c, i) => (
+                      <div
+                        key={i}
+                        className="p-3 rounded-lg border bg-card/50 relative"
+                      >
+                        <div className="absolute top-2 right-2 text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                          #{i + 1}
+                        </div>
+                        <p className="text-sm italic pr-8">"{c.text}"</p>
+                        <div className="flex items-center gap-1 mt-2">
+                          <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                          <span className="text-xs text-muted-foreground">
+                            {c.avgRating.toFixed(1)}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </TabsContent>
 
-              <TabsContent value="improvement" className="space-y-3 mt-4">
-                {(stats.leastRatedComments || []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No comments available
-                  </p>
-                ) : (
-                  stats.leastRatedComments.map((c, i) => (
-                    <div key={i} className="p-3 rounded-lg border">
-                      <p className="text-sm">{c.text}</p>
-                      <div className="flex items-center gap-1 mt-2">
-                        <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                        <span className="text-xs text-muted-foreground">
-                          {c.avgRating.toFixed(1)}
-                        </span>
+              <TabsContent value="improvement" className="mt-4">
+                <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
+                  {(stats.leastRatedComments || []).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No comments available
+                    </p>
+                  ) : (
+                    stats.leastRatedComments.map((c, i) => (
+                      <div
+                        key={i}
+                        className="p-3 rounded-lg border bg-card/50 relative"
+                      >
+                        <div className="absolute top-2 right-2 text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                          #{i + 1}
+                        </div>
+                        <p className="text-sm italic pr-8">"{c.text}"</p>
+                        <div className="flex items-center gap-1 mt-2">
+                          <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                          <span className="text-xs text-muted-foreground">
+                            {c.avgRating.toFixed(1)}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </TabsContent>
             </Tabs>
           </CardContent>
         </Card>
 
-        {/* Topics Card with Tabs */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -746,9 +919,21 @@ const SessionAnalytics = ({ session, onBack }) => {
                         <div className="flex justify-center mt-2">
                           <Button
                             size="sm"
-                            onClick={() => setLearnedLimit((v) => Math.min(v + loadMoreStep, stats.topicsLearned.length))}
+                            onClick={() =>
+                              setLearnedLimit((v) =>
+                                Math.min(
+                                  v + loadMoreStep,
+                                  stats.topicsLearned.length,
+                                ),
+                              )
+                            }
                           >
-                            Load {Math.min(loadMoreStep, stats.topicsLearned.length - learnedLimit)} more
+                            Load{" "}
+                            {Math.min(
+                              loadMoreStep,
+                              stats.topicsLearned.length - learnedLimit,
+                            )}{" "}
+                            more
                           </Button>
                         </div>
                       )}
@@ -773,6 +958,9 @@ const SessionAnalytics = ({ session, onBack }) => {
                               key={idx}
                               className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-100 text-sm font-semibold hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all cursor-default shadow-sm hover:shadow-md"
                             >
+                              <div className="flex items-center justify-center bg-white/80 group-hover:bg-blue-500 group-hover:text-white rounded px-1 min-w-[20px] h-5 text-[10px] border border-blue-200/50 transition-colors">
+                                {topic.count}
+                              </div>
                               <Sparkles className="h-3.5 w-3.5 opacity-70 group-hover:animate-pulse" />
                               {label}
                             </div>
@@ -784,9 +972,21 @@ const SessionAnalytics = ({ session, onBack }) => {
                         <div className="flex justify-center mt-2">
                           <Button
                             size="sm"
-                            onClick={() => setFutureLimit((v) => Math.min(v + loadMoreStep, stats.futureTopics.length))}
+                            onClick={() =>
+                              setFutureLimit((v) =>
+                                Math.min(
+                                  v + loadMoreStep,
+                                  stats.futureTopics.length,
+                                ),
+                              )
+                            }
                           >
-                            Load {Math.min(loadMoreStep, stats.futureTopics.length - futureLimit)} more
+                            Load{" "}
+                            {Math.min(
+                              loadMoreStep,
+                              stats.futureTopics.length - futureLimit,
+                            )}{" "}
+                            more
                           </Button>
                         </div>
                       )}

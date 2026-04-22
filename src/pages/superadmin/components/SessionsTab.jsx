@@ -867,6 +867,16 @@ const SessionsTab = ({
                             <Power className="mr-2 h-4 w-4" /> Close Phase
                           </DropdownMenuItem>
                         )}
+                        {/* Live Analytics for Active Sessions */}
+                        {session.status === "active" && (
+                          <DropdownMenuItem
+                            onClick={() =>
+                              setSelectedSessionForAnalytics(session)
+                            }
+                          >
+                            <BarChart3 className="mr-2 h-4 w-4" /> Live Analytics
+                          </DropdownMenuItem>
+                        )}
                         {session.status === "inactive" &&
                           session.compiledStats && (
                             <>

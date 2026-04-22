@@ -8,6 +8,8 @@ import {
   Building,
   Loader2,
   MoreVertical,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,12 +35,16 @@ import {
   createSystemUser,
   updateSystemUser,
   deleteSystemUser,
+  updateAdminPassword,
 } from "@/services/superadmin/userService";
+import { changePassword } from "@/services/authService";
 
 import { useSuperAdminData } from "@/contexts/SuperAdminDataContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
   const { admins, loadAdmins, loading: contextLoading } = useSuperAdminData();
+  const { user: currentUser } = useAuth();
   const loading = contextLoading.admins;
   const [localDialogOpen, setLocalDialogOpen] = useState(false);
   const dialogOpen =
@@ -52,11 +58,16 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
     role: "collegeAdmin", // Default
     collegeId: "",
     password: "", // Only for creation
+    newPassword: "", // For password change when editing own account
+    currentPassword: "", // Current password verification
   };
   const [formData, setFormData] = useState(defaultFormState);
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPasswordFields, setShowPasswordFields] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
 
   // Fetch users on mount using Context (uses cache)
   useEffect(() => {
@@ -67,6 +78,9 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
     setDialog(false);
     setIsEditing(false);
     setEditingId(null);
+    setShowPasswordFields(false);
+    setShowPassword(false);
+    setShowNewPassword(false);
     setFormData(defaultFormState);
   };
 
@@ -106,10 +120,16 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
       return;
     }
 
+    // Validate password fields if changing password
+    if (showPasswordFields && !formData.newPassword) {
+      toast.error("Please enter a new password");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       if (isEditing) {
-        // Update
+        // Update user details
         const updates = {
           name: formData.name,
           role: formData.role,
@@ -117,13 +137,20 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
             formData.role === "collegeAdmin" ? formData.collegeId : null,
         };
         await updateSystemUser(editingId, updates);
-        toast.success("User updated successfully");
+
+        // If SuperAdmin is changing someone's password
+        if (showPasswordFields && formData.newPassword && currentUser?.role === "superAdmin") {
+          await updateAdminPassword(editingId, formData.newPassword);
+          toast.success("User updated and password changed successfully");
+        } else {
+          toast.success("User updated successfully");
+        }
       } else {
         // Create
         await createSystemUser(formData, formData.password);
         toast.success("User created successfully");
       }
-      setDialogOpen(false);
+      closeDialog();
       loadAdmins(true); // Force refresh context cache
       if (onRefresh) onRefresh();
     } catch (error) {
@@ -146,19 +173,6 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
       } catch (error) {
         toast.error("Failed to delete user");
       }
-    }
-  };
-
-  const handlePasswordReset = async () => {
-    if (!formData.email) return;
-    if (!confirm(`Send password reset email to ${formData.email}?`)) return;
-
-    try {
-      const { sendPasswordReset } = await import("@/services/authService");
-      await sendPasswordReset(formData.email);
-      toast.success(`Password reset email sent to ${formData.email}`);
-    } catch (error) {
-      toast.error("Failed to send reset email: " + error.message);
     }
   };
 
@@ -230,40 +244,91 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
                 </div>
 
                 {isEditing && (
-                  <div className="p-3 bg-muted/30 border rounded-lg space-y-2">
+                  <div className="p-3 bg-muted/30 border rounded-lg space-y-3">
                     <Label className="text-xs font-semibold uppercase text-muted-foreground">
                       Security
                     </Label>
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm">
-                        <p className="font-medium">Password Reset</p>
-                        <p className="text-xs text-muted-foreground">
-                          Send a password reset email to this user.
-                        </p>
+
+                    {/* SuperAdmin Password Change Option */}
+                    {currentUser?.role === "superAdmin" && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="changePassword"
+                            checked={showPasswordFields}
+                            onChange={(e) => {
+                              setShowPasswordFields(e.target.checked);
+                              if (!e.target.checked) {
+                                setFormData({...formData, newPassword: "", currentPassword: ""});
+                              }
+                            }}
+                            className="w-4 h-4 cursor-pointer"
+                          />
+                          <Label htmlFor="changePassword" className="text-sm font-medium cursor-pointer">
+                            Change password directly
+                          </Label>
+                        </div>
+
+                        {showPasswordFields && (
+                          <div className="space-y-2 mt-2 pt-2 border-t border-muted">
+                            <div>
+                              <Label className="text-xs">New Password</Label>
+                              <div className="relative">
+                                <Input
+                                  type={showNewPassword ? "text" : "password"}
+                                  value={formData.newPassword}
+                                  onChange={(e) =>
+                                    setFormData({ ...formData, newPassword: e.target.value })
+                                  }
+                                  placeholder="Enter new password"
+                                  className="text-sm pr-10"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowNewPassword(!showNewPassword)}
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                                >
+                                  {showNewPassword ? (
+                                    <EyeOff className="h-4 w-4" />
+                                  ) : (
+                                    <Eye className="h-4 w-4" />
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handlePasswordReset}
-                      >
-                        Send Reset Email
-                      </Button>
-                    </div>
+                    )}
                   </div>
                 )}
 
                 {!isEditing && (
                   <div className="space-y-2">
                     <Label>Password</Label>
-                    <Input
-                      type="password"
-                      value={formData.password}
-                      onChange={(e) =>
-                        setFormData({ ...formData, password: e.target.value })
-                      }
-                      placeholder="******"
-                    />
+                    <div className="relative">
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        value={formData.password}
+                        onChange={(e) =>
+                          setFormData({ ...formData, password: e.target.value })
+                        }
+                        placeholder="Enter password"
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
                   </div>
                 )}
 

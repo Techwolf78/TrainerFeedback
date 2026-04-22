@@ -411,21 +411,12 @@ const SuperAdminDashboardInner = () => {
                 variant="outline"
                 size="sm"
                 onClick={handleExport}
-                className="h-9 gap-2 border-slate-200 text-slate-600 hover:bg-slate-50 font-medium transition-all"
+                className="h-9 gap-2 border-slate-200 bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-900 hover:border-slate-300 font-medium transition-all"
               >
                 <Download className="h-4 w-4" />
                 <span>Export Snapshot</span>
               </Button>
             )}
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={refreshAll}
-              className="h-9 w-9 p-0 border-slate-200 text-slate-600 hover:bg-slate-50 transition-all"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
           </div>
         </header>
 

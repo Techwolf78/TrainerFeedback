@@ -105,6 +105,56 @@ export const getResponseCount = async (sessionId) => {
 };
 
 /**
+ * Get response trend data aggregated across multiple sessions
+ * Groups responses by submission date (YYYY-MM-DD format)
+ * @param {Array<string>} sessionIds - Array of session document IDs
+ * @returns {Promise<Object>} - Object with date keys and response counts: {"2026-04-20": 5, "2026-04-21": 8}
+ */
+export const getResponseTrendData = async (sessionIds) => {
+  try {
+    if (!sessionIds || sessionIds.length === 0) return {};
+
+    const trendMap = {};
+
+    // Fetch responses for all sessions in parallel
+    const responsePromises = sessionIds.map((sessionId) =>
+      getResponses(sessionId).catch((error) => {
+        console.error(`Failed to fetch responses for session ${sessionId}:`, error);
+        return [];
+      })
+    );
+
+    const allResponses = await Promise.all(responsePromises);
+
+    // Aggregate responses by submission date
+    allResponses.forEach((responses) => {
+      responses.forEach((response) => {
+        let date;
+
+        // Extract date from Firestore Timestamp or ISO string
+        if (response.submittedAt?.toDate) {
+          const dateObj = response.submittedAt.toDate();
+          date = dateObj.toISOString().split("T")[0];
+        } else if (typeof response.submittedAt === "string") {
+          date = response.submittedAt.split("T")[0];
+        } else if (response.submittedAt instanceof Date) {
+          date = response.submittedAt.toISOString().split("T")[0];
+        }
+
+        if (date) {
+          trendMap[date] = (trendMap[date] || 0) + 1;
+        }
+      });
+    });
+
+    return trendMap;
+  } catch (error) {
+    console.error("Error getting response trend data:", error);
+    throw error;
+  }
+};
+
+/**
  * Compile statistics from an array of raw response objects (Pure logic for live data)
  * @param {Array} responses - Array of response objects from Firestore
  * @param {Array} sessionQuestions - The questions array from the session document
@@ -174,7 +224,7 @@ export const compileSessionStatsFromResponses = (responses, sessionQuestions = [
   const lowRated = sortedResponses.slice(totalCount - bottomCutoff).reverse();
   const avgRated = sortedResponses.slice(topCutoff, totalCount - bottomCutoff);
 
-  const extractComments = (categoryResponses, count = 5, globalUsedIds = null) => {
+  const extractAllComments = (categoryResponses, globalUsedIds = null) => {
     const comments = [];
     const localUsedResponseIds = new Set();
     
@@ -183,25 +233,22 @@ export const compileSessionStatsFromResponses = (responses, sessionQuestions = [
       if (localUsedResponseIds.has(resp.responseId)) continue;
       
       for (const comment of resp.textComments) {
-        if (comments.length < count) {
-          comments.push({ 
-            text: comment, 
-            avgRating: Math.round(resp.avgRating * 100) / 100,
-            responseId: resp.responseId 
-          });
-          localUsedResponseIds.add(resp.responseId);
-          if (globalUsedIds) globalUsedIds.add(resp.responseId);
-        }
+        comments.push({ 
+          text: comment, 
+          avgRating: Math.round(resp.avgRating * 100) / 100,
+          responseId: resp.responseId 
+        });
+        localUsedResponseIds.add(resp.responseId);
+        if (globalUsedIds) globalUsedIds.add(resp.responseId);
       }
-      if (comments.length >= count) break;
     }
     return comments;
   };
 
   const usedInBuckets = new Set();
-  const topComments = extractComments(highRated, 5, usedInBuckets);
-  const leastRatedComments = extractComments(lowRated, 5, usedInBuckets);
-  const avgComments = extractComments(avgRated, 5, usedInBuckets);
+  const topComments = extractAllComments(highRated, usedInBuckets).sort((a, b) => b.text.length - a.text.length);
+  const leastRatedComments = extractAllComments(lowRated, usedInBuckets).sort((a, b) => b.text.length - a.text.length);
+  const avgComments = extractAllComments(avgRated, usedInBuckets).sort((a, b) => b.text.length - a.text.length);
 
   // Topics/Future
   const topicsLearnedRaw = [];
@@ -250,7 +297,12 @@ export const compileSessionStatsFromResponses = (responses, sessionQuestions = [
   });
 
   const futureTopics = Object.entries(futureTopicCounts)
-    .sort((a, b) => b[1].count - a[1].count)
+    .sort((a, b) => {
+      // Primary sort: Most mentions (count)
+      if (b[1].count !== a[1].count) return b[1].count - a[1].count;
+      // Secondary sort: Longest descriptive text (more specific topics first)
+      return b[0].length - a[0].length;
+    })
     .map(([name, data]) => ({ 
       name,
       text: name,

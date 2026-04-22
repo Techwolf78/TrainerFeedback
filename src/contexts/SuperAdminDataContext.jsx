@@ -21,7 +21,7 @@ import {
   getOlderSessions,
 } from "@/services/superadmin/sessionService";
 import { getAllTemplates } from "@/services/superadmin/templateService";
-import { getAllSystemUsers } from "@/services/superadmin/userService";
+import { getAllSystemUsers, subscribeToAdmins } from "@/services/superadmin/userService";
 import {
   getAllProjectCodes,
   addProjectCodes as addProjectCodesService,
@@ -348,7 +348,7 @@ export const SuperAdminDataProvider = ({ children }) => {
     initializeData();
 
     // Subscribe to real-time updates only if authenticated
-    let unsubSessions, unsubColleges, unsubTrainers;
+    let unsubSessions, unsubColleges, unsubTrainers, unsubAdmins;
     if (auth.currentUser) {
       unsubSessions = subscribeToSessions((liveSessions, lastDoc, hasMore) => {
         if (!cancelled) {
@@ -380,6 +380,13 @@ export const SuperAdminDataProvider = ({ children }) => {
           setLoaded((prev) => ({ ...prev, trainers: true }));
         }
       });
+
+      unsubAdmins = subscribeToAdmins((liveAdmins) => {
+        if (!cancelled) {
+          setAdmins(liveAdmins);
+          setLoaded((prev) => ({ ...prev, admins: true }));
+        }
+      });
     }
 
     return () => {
@@ -387,6 +394,7 @@ export const SuperAdminDataProvider = ({ children }) => {
       unsubSessions && unsubSessions();
       unsubColleges && unsubColleges();
       unsubTrainers && unsubTrainers();
+      unsubAdmins && unsubAdmins();
     };
   }, []); // Only run once on mount
 
