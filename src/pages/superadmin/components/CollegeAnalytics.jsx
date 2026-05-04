@@ -22,6 +22,7 @@ import {
   BookOpen,
   Clock,
   Sparkles,
+  Search,
 } from "lucide-react";
 import {
   Tooltip,
@@ -72,6 +73,27 @@ import { getAllTrainers } from "@/services/superadmin/trainerService";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
 import { getResponseTrendData, getResponses, compileSessionStatsFromResponses } from "@/services/superadmin/responseService";
 
+// Helper function to get a color from red (0) to yellow (2.5) to green (5)
+const getDynamicColor = (rating) => {
+  const safeRating = Number(rating) || 0;
+  // Hue 0 = red, 60 = yellow, 120 = green
+  const hue = Math.max(0, Math.min(120, (safeRating / 5) * 120));
+  // Professional, muted tones (lower saturation)
+  return `hsl(${hue}, 65%, 45%)`;
+};
+
+// Professional palette for categorical data (e.g., domains)
+const DOMAIN_COLORS = [
+  "hsl(215, 85%, 55%)", // Blue
+  "hsl(275, 75%, 60%)", // Purple
+  "hsl(330, 80%, 65%)", // Pink
+  "hsl(175, 75%, 45%)", // Teal
+  "hsl(30, 90%, 60%)",  // Orange
+  "hsl(245, 75%, 65%)", // Indigo
+  "hsl(350, 80%, 65%)", // Coral
+  "hsl(190, 85%, 50%)", // Cyan
+];
+
 const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
   const [loading, setLoading] = useState(true);
 
@@ -93,6 +115,18 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     customStartDate: null,
     customEndDate: null,
   });
+
+  const [searchQueries, setSearchQueries] = useState({
+    trainerId: "",
+    course: "",
+    department: "",
+    year: "",
+    batch: "",
+  });
+
+  const handleSearchChange = (field, value) => {
+    setSearchQueries((prev) => ({ ...prev, [field]: value }));
+  };
 
   // Load Data
   useEffect(() => {
@@ -132,6 +166,13 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
       dateRange: "all",
       customStartDate: null,
       customEndDate: null,
+    });
+    setSearchQueries({
+      trainerId: "",
+      course: "",
+      department: "",
+      year: "",
+      batch: "",
     });
   };
 
@@ -827,7 +868,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
             <h1 className="text-xl font-bold text-foreground">
               {collegeName || "College Analytics"}
             </h1>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Deep dive into institutional performance and feedback
             </p>
           </div>
@@ -857,7 +898,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                 variant="default"
                 size="sm"
                 onClick={resetFilters}
-                className="gap-1 h-6 px-1.5 bg-primary hover:bg-primary/90 text-white text-xs"
+                className="gap-1 h-6 px-1.5 bg-primary hover:bg-primary/90 text-white text-[13px] font-medium"
               >
                 <RotateCcw className="h-3 w-3" />
                 Reset
@@ -868,7 +909,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
         <CardContent className="pt-0 pb-1.5">
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-1.5">
             <div className="space-y-0.5">
-              <Label className="text-[10px] font-medium">Course</Label>
+              <Label className="text-[11px] font-semibold">Course</Label>
               <Select
                 value={filters.course}
                 onValueChange={(v) =>
@@ -881,15 +922,30 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                   })
                 }
               >
-                <SelectTrigger className="h-7 text-xs px-2">
+                <SelectTrigger className="h-7 text-[13px] font-medium px-2">
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all" className="text-xs">
+                  <div className="p-2 sticky top-0 bg-white z-10 border-b border-slate-100">
+                    <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
+                      <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
+                      <input 
+                        type="text" 
+                        placeholder="Search courses..." 
+                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700" 
+                        value={searchQueries.course}
+                        onChange={(e) => handleSearchChange("course", e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()} 
+                      />
+                    </div>
+                  </div>
+                  <SelectItem value="all" className="text-[13px] font-medium">
                     All Courses
                   </SelectItem>
-                  {availableCourses.map((c) => (
-                    <SelectItem key={c} value={c} className="text-xs">
+                  {availableCourses
+                    .filter((c) => !searchQueries.course || c.toLowerCase().includes(searchQueries.course.toLowerCase()))
+                    .map((c) => (
+                    <SelectItem key={c} value={c} className="text-[13px] font-medium">
                       {c}
                     </SelectItem>
                   ))}
@@ -898,7 +954,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
             </div>
 
             <div className="space-y-0.5">
-              <Label className="text-[10px] font-medium">Department</Label>
+              <Label className="text-[11px] font-semibold">Department</Label>
               <Select
                 value={filters.department}
                 onValueChange={(v) =>
@@ -912,16 +968,31 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                 disabled={filters.course === "all"}
               >
                 <SelectTrigger
-                  className={`h-7 text-xs px-2 ${filters.course === "all" ? "opacity-50" : ""}`}
+                  className={`h-7 text-[13px] font-medium px-2 ${filters.course === "all" ? "opacity-50" : ""}`}
                 >
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all" className="text-xs">
+                  <div className="p-2 sticky top-0 bg-white z-10 border-b border-slate-100">
+                    <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
+                      <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
+                      <input 
+                        type="text" 
+                        placeholder="Search departments..." 
+                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700" 
+                        value={searchQueries.department}
+                        onChange={(e) => handleSearchChange("department", e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()} 
+                      />
+                    </div>
+                  </div>
+                  <SelectItem value="all" className="text-[13px] font-medium">
                     All Departments
                   </SelectItem>
-                  {availableDepartments.map((d) => (
-                    <SelectItem key={d} value={d} className="text-xs">
+                  {availableDepartments
+                    .filter((d) => !searchQueries.department || d.toLowerCase().includes(searchQueries.department.toLowerCase()))
+                    .map((d) => (
+                    <SelectItem key={d} value={d} className="text-[13px] font-medium">
                       {d}
                     </SelectItem>
                   ))}
@@ -930,7 +1001,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
             </div>
 
             <div className="space-y-0.5 col-span-1">
-              <Label className="text-[10px] font-medium">Year</Label>
+              <Label className="text-[11px] font-semibold">Year</Label>
               <Select
                 value={filters.year}
                 onValueChange={(v) =>
@@ -939,16 +1010,31 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                 disabled={filters.course === "all"}
               >
                 <SelectTrigger
-                  className={`h-7 text-xs px-2 ${filters.course === "all" ? "opacity-50" : ""}`}
+                  className={`h-7 text-[13px] font-medium px-2 ${filters.course === "all" ? "opacity-50" : ""}`}
                 >
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all" className="text-xs">
+                  <div className="p-2 sticky top-0 bg-white z-10 border-b border-slate-100">
+                    <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
+                      <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
+                      <input 
+                        type="text" 
+                        placeholder="Search years..." 
+                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700" 
+                        value={searchQueries.year}
+                        onChange={(e) => handleSearchChange("year", e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()} 
+                      />
+                    </div>
+                  </div>
+                  <SelectItem value="all" className="text-[13px] font-medium">
                     All Years
                   </SelectItem>
-                  {availableYears.map((y) => (
-                    <SelectItem key={y} value={y} className="text-xs">
+                  {availableYears
+                    .filter((y) => !searchQueries.year || y.toLowerCase().includes(searchQueries.year.toLowerCase()))
+                    .map((y) => (
+                    <SelectItem key={y} value={y} className="text-[13px] font-medium">
                       Year {y}
                     </SelectItem>
                   ))}
@@ -957,23 +1043,38 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
             </div>
 
             <div className="space-y-0.5 col-span-1">
-              <Label className="text-[10px] font-medium">Batch</Label>
+              <Label className="text-[11px] font-semibold">Batch</Label>
               <Select
                 value={filters.batch}
                 onValueChange={(v) => setFilters({ ...filters, batch: v })}
                 disabled={filters.course === "all"}
               >
                 <SelectTrigger
-                  className={`h-7 text-xs px-2 ${filters.course === "all" ? "opacity-50" : ""}`}
+                  className={`h-7 text-[13px] font-medium px-2 ${filters.course === "all" ? "opacity-50" : ""}`}
                 >
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all" className="text-xs">
+                  <div className="p-2 sticky top-0 bg-white z-10 border-b border-slate-100">
+                    <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
+                      <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
+                      <input 
+                        type="text" 
+                        placeholder="Search batches..." 
+                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700" 
+                        value={searchQueries.batch}
+                        onChange={(e) => handleSearchChange("batch", e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()} 
+                      />
+                    </div>
+                  </div>
+                  <SelectItem value="all" className="text-[13px] font-medium">
                     All Batches
                   </SelectItem>
-                  {availableBatches.map((b) => (
-                    <SelectItem key={b} value={b} className="text-xs">
+                  {availableBatches
+                    .filter((b) => !searchQueries.batch || b.toLowerCase().includes(searchQueries.batch.toLowerCase()))
+                    .map((b) => (
+                    <SelectItem key={b} value={b} className="text-[13px] font-medium">
                       {b}
                     </SelectItem>
                   ))}
@@ -982,7 +1083,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
             </div>
 
             <div className="space-y-0.5 col-span-2">
-              <Label className="text-[10px] font-medium">Time Range</Label>
+              <Label className="text-[11px] font-semibold">Time Range</Label>
               <div className="flex gap-1">
                 <Select
                   value={filters.dateRange}
@@ -999,23 +1100,23 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                     }
                   }}
                 >
-                  <SelectTrigger className="h-7 text-xs px-2 flex-1">
+                  <SelectTrigger className="h-7 text-[13px] font-medium px-2 flex-1">
                     <SelectValue placeholder="Select" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all" className="text-xs">
+                    <SelectItem value="all" className="text-[13px] font-medium">
                       All Time
                     </SelectItem>
-                    <SelectItem value="7days" className="text-xs">
+                    <SelectItem value="7days" className="text-[13px] font-medium">
                       Last 7 Days
                     </SelectItem>
-                    <SelectItem value="30days" className="text-xs">
+                    <SelectItem value="30days" className="text-[13px] font-medium">
                       Last 30 Days
                     </SelectItem>
-                    <SelectItem value="90days" className="text-xs">
+                    <SelectItem value="90days" className="text-[13px] font-medium">
                       Last 90 Days
                     </SelectItem>
-                    <SelectItem value="custom" className="text-xs">
+                    <SelectItem value="custom" className="text-[13px] font-medium">
                       Custom
                     </SelectItem>
                   </SelectContent>
@@ -1026,7 +1127,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
-                        className="h-7 text-xs px-2 justify-start text-left font-normal flex-1"
+                        className="h-7 text-[13px] font-medium px-2 justify-start text-left font-normal flex-1"
                       >
                         <CalendarIcon className="mr-1 h-3 w-3 shrink-0" />
                         <span className="truncate">
@@ -1064,20 +1165,35 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
             </div>
 
             <div className="space-y-0.5">
-              <Label className="text-[10px] font-medium">Trainer</Label>
+              <Label className="text-[11px] font-semibold">Trainer</Label>
               <Select
                 value={filters.trainerId}
                 onValueChange={(v) => setFilters({ ...filters, trainerId: v })}
               >
-                <SelectTrigger className="h-7 text-xs px-2">
+                <SelectTrigger className="h-7 text-[13px] font-medium px-2">
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all" className="text-xs">
+                  <div className="p-2 sticky top-0 bg-white z-10 border-b border-slate-100">
+                    <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
+                      <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
+                      <input 
+                        type="text" 
+                        placeholder="Search trainers..." 
+                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700" 
+                        value={searchQueries.trainerId}
+                        onChange={(e) => handleSearchChange("trainerId", e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()} 
+                      />
+                    </div>
+                  </div>
+                  <SelectItem value="all" className="text-[13px] font-medium">
                     All Trainers
                   </SelectItem>
-                  {trainers.map((t) => (
-                    <SelectItem key={t.id} value={t.id} className="text-xs">
+                  {trainers
+                    .filter((t) => !searchQueries.trainerId || t.name.toLowerCase().includes(searchQueries.trainerId.toLowerCase()))
+                    .map((t) => (
+                    <SelectItem key={t.id} value={t.id} className="text-[13px] font-medium">
                       {t.name}
                     </SelectItem>
                   ))}
@@ -1093,22 +1209,23 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
           <CardContent className="pt-3 pb-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-muted-foreground">
+                <p className="text-[13px] font-semibold text-muted-foreground">
                   Overall Rating
                 </p>
                 <h3 className="text-xl font-bold text-primary mt-0.5">
                   {aggregatedStats.avgRating}
                 </h3>
               </div>
-              <div className="bg-primary/10 p-1.5 rounded-full">
-                <Star className="h-4 w-4 text-primary fill-primary" />
+              <div className="p-1.5 rounded-full" style={{ backgroundColor: getDynamicColor(aggregatedStats.avgRating).replace('hsl', 'hsla').replace(')', ', 0.1)') }}>
+                <Star className="h-4 w-4" style={{ fill: getDynamicColor(aggregatedStats.avgRating), color: getDynamicColor(aggregatedStats.avgRating) }} />
               </div>
             </div>
-            <div className="mt-2 h-1 w-full bg-primary/10 rounded-full overflow-hidden">
+            <div className="mt-2 h-1 w-full rounded-full overflow-hidden" style={{ backgroundColor: getDynamicColor(aggregatedStats.avgRating).replace('hsl', 'hsla').replace(')', ', 0.1)') }}>
               <div
-                className="h-full bg-primary rounded-full transition-all duration-500"
+                className="h-full rounded-full transition-all duration-500"
                 style={{
                   width: `${(parseFloat(aggregatedStats.avgRating) / 5) * 100}%`,
+                  backgroundColor: getDynamicColor(aggregatedStats.avgRating)
                 }}
               />
             </div>
@@ -1119,7 +1236,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
           <CardContent className="pt-3 pb-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-muted-foreground">
+                <p className="text-[13px] font-semibold text-muted-foreground">
                   Total Responses
                 </p>
                 <h3 className="text-xl font-bold text-blue-600 mt-0.5">
@@ -1140,7 +1257,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
           <CardContent className="pt-3 pb-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-muted-foreground">
+                <p className="text-[13px] font-semibold text-muted-foreground">
                   Training Hours
                 </p>
                 <h3 className="text-xl font-bold text-green-600 mt-0.5">
@@ -1161,7 +1278,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
           <CardContent className="pt-3 pb-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-muted-foreground">
+                <p className="text-[13px] font-semibold text-muted-foreground">
                   Active Domains
                 </p>
                 <h3 className="text-xl font-bold text-purple-600 mt-0.5">
@@ -1182,8 +1299,8 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
       <div className="grid grid-cols-1 lg:grid-cols-10 gap-4">
         <Card className="lg:col-span-5">
           <CardHeader className="pb-1 pt-2">
-            <CardTitle className="text-xs">Performance Trend</CardTitle>
-            <CardDescription className="text-[9px]">
+            <CardTitle className="text-[13px] font-medium">Performance Trend</CardTitle>
+            <CardDescription className="text-[10px]">
               Response volume
             </CardDescription>
           </CardHeader>
@@ -1238,7 +1355,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                               </p>
                               <div className="flex items-center gap-1.5">
                                 <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                                <p className="text-xs font-bold">
+                                <p className="text-[13px] font-bold">
                                   {payload[0].value} Responses
                                 </p>
                               </div>
@@ -1259,7 +1376,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
+                <div className="flex items-center justify-center h-full text-muted-foreground text-[13px] font-medium">
                   No trend data available
                 </div>
               )}
@@ -1269,8 +1386,8 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
 
         <Card className="lg:col-span-3">
           <CardHeader className="pb-1 pt-2">
-            <CardTitle className="text-xs">Category Scores</CardTitle>
-            <CardDescription className="text-[9px]">
+            <CardTitle className="text-[13px] font-medium">Category Scores</CardTitle>
+            <CardDescription className="text-[10px]">
               Metrics breakdown
             </CardDescription>
           </CardHeader>
@@ -1287,9 +1404,40 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                     <PolarGrid stroke="hsl(var(--muted-foreground)/0.2)" />
                     <PolarAngleAxis
                       dataKey="category"
-                      tick={{
-                        fill: "hsl(var(--muted-foreground))",
-                        fontSize: 9,
+                      tick={(props) => {
+                        const { payload, x, y, textAnchor, index } = props;
+                        const categoryData = categoryRadarData[index];
+                        if (categoryData) {
+                          const isBottom = y > 80;
+                          return (
+                            <g>
+                              <text
+                                x={x}
+                                y={isBottom ? y + 10 : y - 10}
+                                textAnchor={textAnchor}
+                                fill="hsl(var(--foreground))"
+                                fontSize={9}
+                              >
+                                {payload.value}
+                              </text>
+                              <text
+                                x={x}
+                                y={isBottom ? y + 20 : y - 1}
+                                textAnchor={textAnchor}
+                                fill="hsl(215, 85%, 65%)"
+                                fontSize={10}
+                                fontWeight="bold"
+                              >
+                                {categoryData.score.toFixed(1)}
+                              </text>
+                            </g>
+                          );
+                        }
+                        return (
+                          <text x={x} y={y} textAnchor={textAnchor} fill="hsl(var(--muted-foreground))" fontSize={9}>
+                            {payload.value}
+                          </text>
+                        );
                       }}
                     />
                     <PolarRadiusAxis
@@ -1301,15 +1449,15 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                     <Radar
                       name="Score"
                       dataKey="score"
-                      stroke="hsl(var(--primary))"
-                      fill="hsl(var(--primary))"
-                      fillOpacity={0.5}
+                      stroke="hsl(215, 85%, 65%)"
+                      fill="hsl(215, 85%, 65%)"
+                      fillOpacity={0.25}
                     />
                     <RechartsTooltip />
                   </RadarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
+                <div className="flex items-center justify-center h-full text-muted-foreground text-[13px] font-medium">
                   No category data
                 </div>
               )}
@@ -1319,8 +1467,8 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
 
         <Card className="lg:col-span-2">
           <CardHeader className="pb-1 pt-2">
-            <CardTitle className="text-xs">Domain Breakdown</CardTitle>
-            <CardDescription className="text-[9px]">
+            <CardTitle className="text-[13px] font-medium">Domain Breakdown</CardTitle>
+            <CardDescription className="text-[10px]">
               Training performance
             </CardDescription>
           </CardHeader>
@@ -1341,7 +1489,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                       {domainAnalyticsData.chartData.map((entry, index) => (
                         <Cell
                           key={`cell-${index}`}
-                          fill={`hsl(var(--primary) / ${0.3 + index * 0.1})`}
+                          fill={DOMAIN_COLORS[index % DOMAIN_COLORS.length]}
                         />
                       ))}
                     </Pie>
@@ -1349,7 +1497,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
+                <div className="flex items-center justify-center h-full text-muted-foreground text-[13px] font-medium">
                   No domain data available
                 </div>
               )}
@@ -1361,8 +1509,8 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-1 pt-2">
-            <CardTitle className="text-xs">Rating Distribution</CardTitle>
-            <CardDescription className="text-[9px]">
+            <CardTitle className="text-[13px] font-medium">Rating Distribution</CardTitle>
+            <CardDescription className="text-[10px]">
               Feedback volume
             </CardDescription>
           </CardHeader>
@@ -1393,7 +1541,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                       if (active && payload && payload.length) {
                         return (
                           <div className="bg-background border border-border p-1.5 rounded shadow-lg">
-                            <p className="text-xs font-bold">
+                            <p className="text-[13px] font-bold">
                               {payload[0].value} ratings
                             </p>
                           </div>
@@ -1428,8 +1576,8 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
 
         <Card>
           <CardHeader className="pb-1 pt-2">
-            <CardTitle className="text-xs">Trainers</CardTitle>
-            <CardDescription className="text-[9px]">
+            <CardTitle className="text-[13px] font-medium">Trainers</CardTitle>
+            <CardDescription className="text-[10px]">
               Highest rated
             </CardDescription>
           </CardHeader>
@@ -1446,7 +1594,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                         #{idx + 1}
                       </div>
                       <div className="space-y-0.5">
-                        <p className="font-semibold text-xs leading-none">
+                        <p className="font-semibold text-[13px] font-medium leading-none">
                           {trainer.name}
                         </p>
                         <p className="text-[10px] text-muted-foreground">
@@ -1457,7 +1605,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                           {trainer.domains.map((domain, i) => (
                             <span
                               key={i}
-                              className="px-1 py-0.5 bg-blue-500/10 text-blue-600 rounded text-[9px] font-medium"
+                              className="px-1 py-0.5 bg-blue-500/10 text-blue-600 rounded text-[10px] font-medium"
                             >
                               {domain}
                             </span>
@@ -1465,13 +1613,13 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                           {trainer.topics.slice(0, 3).map((topic, i) => (
                             <span
                               key={i}
-                              className="px-1 py-0.5 bg-green-500/10 text-green-600 rounded text-[9px]"
+                              className="px-1 py-0.5 bg-green-500/10 text-green-600 rounded text-[10px]"
                             >
                               {topic}
                             </span>
                           ))}
                           {trainer.topics.length > 3 && (
-                            <span className="text-[9px] text-muted-foreground">
+                            <span className="text-[10px] text-muted-foreground">
                               +{trainer.topics.length - 3} more
                             </span>
                           )}
@@ -1487,7 +1635,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                   </div>
                 ))
               ) : (
-                <div className="text-center py-6 text-muted-foreground text-xs">
+                <div className="text-center py-6 text-muted-foreground text-[13px] font-medium">
                   No trainer data available
                 </div>
               )}
@@ -1497,8 +1645,8 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
 
         <Card>
           <CardHeader className="pb-1 pt-2">
-            <CardTitle className="text-xs">Topics Summary</CardTitle>
-            <CardDescription className="text-[9px]">
+            <CardTitle className="text-[13px] font-medium">Topics Summary</CardTitle>
+            <CardDescription className="text-[10px]">
               Frequent topics
             </CardDescription>
           </CardHeader>
@@ -1510,7 +1658,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                     key={i}
                     className="flex items-center gap-1 bg-primary/5 border border-primary/20 px-2 py-1 rounded-full whitespace-nowrap"
                   >
-                    <span className="text-[10px] font-medium">
+                    <span className="text-[11px] font-semibold">
                       {topic.name}
                     </span>
                     <span className="text-[8px] bg-primary/10 px-1 rounded-full text-primary">
@@ -1519,7 +1667,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                   </div>
                 ))
               ) : (
-                <div className="text-center py-6 text-muted-foreground text-xs w-full">
+                <div className="text-center py-6 text-muted-foreground text-[13px] font-medium w-full">
                   No topic data available
                 </div>
               )}
