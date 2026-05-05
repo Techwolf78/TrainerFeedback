@@ -594,7 +594,7 @@ const AdminDashboardContent = () => {
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-y-auto bg-muted/5 p-6 scroll-smooth">
+        <main className="flex-1 overflow-y-auto bg-muted/5 p-2 scroll-smooth">
           <div
             className={` mx-auto transition-all duration-300 ${isSidebarCollapsed ? "px-6" : "px-0"}`}
           >

@@ -10,6 +10,9 @@ import {
   MoreVertical,
   Eye,
   EyeOff,
+  Search,
+  School,
+  UserPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import Loader from "@/components/ui/Loader";
 import {
   createSystemUser,
@@ -45,7 +49,7 @@ import { useAuth } from "@/contexts/AuthContext";
 const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
   const { admins, loadAdmins, loading: contextLoading } = useSuperAdminData();
   const { user: currentUser } = useAuth();
-  const loading = contextLoading.admins;
+  const loading = contextLoading.admins || contextLoading.colleges;
   const [localDialogOpen, setLocalDialogOpen] = useState(false);
   const dialogOpen =
     isDialogOpen !== undefined ? isDialogOpen : localDialogOpen;
@@ -178,8 +182,15 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
 
   // Helper to get college name
   const getCollegeName = (id) => {
+    if (!id) return "Unknown College";
     const college = colleges.find((c) => c.id === id);
-    return college ? college.name : "Unknown College";
+    if (college) return college.name;
+
+    // If still loading or not found, but we have a collegeId, return "Loading..." variant or "Not Found"
+    // instead of defaulting immediately to "Unknown College" if it might just be a loading issue
+    if (contextLoading.colleges) return "Loading...";
+
+    return "Unknown College";
   };
 
   // Helper to format college dropdown labels with code/initials
@@ -196,10 +207,61 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
     return `${initials} - ${college.name}`;
   };
 
+  const [searchTerm, setSearchTerm] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+
+  const filteredAdmins = admins.filter((admin) => {
+    const searchLower = searchTerm.toLowerCase();
+    const collegeName =
+      admin.role === "superAdmin"
+        ? "Gryphon Academy Pvt Ltd"
+        : getCollegeName(admin.collegeId);
+
+    const matchesSearch = (admin.name || "").toLowerCase().includes(searchLower) ||
+      (admin.email || "").toLowerCase().includes(searchLower) ||
+      collegeName.toLowerCase().includes(searchLower);
+
+    const matchesRole = roleFilter === "all" || admin.role === roleFilter;
+
+    return matchesSearch && matchesRole;
+  });
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div></div>
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+        {/* Search Bar */}
+        <div className="relative flex-1 group">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
+          <Input
+            placeholder="Search admins or colleges..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 h-11 bg-background/50 backdrop-blur-sm border-muted-foreground/20 focus:border-primary/50 transition-all rounded-xl w-full"
+          />
+        </div>
+
+        {/* Role Filters */}
+        <div className="flex bg-muted/40 p-1 rounded-xl border border-border/50 backdrop-blur-sm self-start lg:self-auto">
+          {[
+            { id: "all", label: "All Users", icon: Users },
+            { id: "superAdmin", label: "Super Admins", icon: ShieldCheck },
+            { id: "collegeAdmin", label: "College Admins", icon: Building },
+          ].map((role) => (
+            <button
+              key={role.id}
+              onClick={() => setRoleFilter(role.id)}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
+                roleFilter === role.id
+                  ? "bg-white text-primary shadow-sm ring-1 ring-border"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/50"
+              )}
+            >
+              <role.icon className={cn("h-4 w-4", roleFilter === role.id ? "text-primary" : "text-muted-foreground")} />
+              {role.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {dialogOpen && (
@@ -398,7 +460,7 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
       )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {admins.map((user, index) => (
+        {filteredAdmins.map((user, index) => (
           <div
             key={user.id}
             className="group relative flex flex-col bg-card border rounded-xl shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 animate-fade-up overflow-hidden"
@@ -484,14 +546,16 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
           </div>
         )}
 
-        {!loading && admins.length === 0 && (
+        {!loading && filteredAdmins.length === 0 && (
           <div className="col-span-full text-center py-12">
-            <Shield className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+            <Search className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
             <h3 className="text-lg font-medium text-muted-foreground mb-2">
-              No admins found
+              {admins.length === 0 ? "No admins found" : "No matching admins found"}
             </h3>
             <p className="text-muted-foreground">
-              Create your first system administrator.
+              {admins.length === 0 
+                ? "Create your first system administrator."
+                : `No results found for "${searchTerm}"`}
             </p>
           </div>
         )}
