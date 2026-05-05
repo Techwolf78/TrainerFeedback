@@ -54,6 +54,15 @@ import { saveAs } from "file-saver";
 import { toPng } from "html-to-image";
 import { useRef } from "react";
 
+// Helper function to get a color from red (0) to yellow (2.5) to green (5)
+const getDynamicColor = (rating) => {
+  const safeRating = Number(rating) || 0;
+  // Hue 0 = red, 60 = yellow, 120 = green
+  const hue = Math.max(0, Math.min(120, (safeRating / 5) * 120));
+  // Professional, muted tones (lower saturation)
+  return `hsl(${hue}, 65%, 45%)`;
+};
+
 const SessionAnalytics = ({ session, onBack }) => {
   const analyticsRef = useRef(null);
   const [stats, setStats] = useState(session?.compiledStats || null);
@@ -358,305 +367,390 @@ const SessionAnalytics = ({ session, onBack }) => {
   );
 
   return (
-    <div className="space-y-6 p-2" ref={analyticsRef}>
-  <div className="flex items-start justify-between">
-    <div>
-      <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-bold">{session.topic}</h1>
-        {session.status === "active" && (
-          <Badge
-            variant="outline"
-            className="bg-green-50 text-green-700 border-green-200 animate-pulse flex items-center gap-1.5"
+    <div className="space-y-4 p-2 bg-background" ref={analyticsRef}>
+      {/* Top Header Section */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onBack}
+            className="hover:bg-primary/5 print:hidden h-8 w-8"
           >
-            <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
-            Live
-          </Badge>
-        )}
-      </div>
-      <div className="text-sm text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
-        <span>{session.collegeName}</span>
-        <span className="text-muted-foreground/50">•</span>
-        <div className="flex items-center gap-1.5">
-          <User className="h-3 w-3" />
-          <span>{session.assignedTrainer?.name || "Trainer not assigned"}</span>
-        </div>
-        {session.domain && (
-          <>
-            <span className="text-muted-foreground/50">•</span>
-            <div className="flex items-center gap-1.5">
-              <Sparkles className="h-3 w-3" />
-              <span>{session.domain}</span>
+            <ArrowLeft className="h-4 w-4 text-primary" />
+          </Button>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-foreground">
+                {session.topic}
+              </h1>
+              {session.status === "active" && (
+                <Badge
+                  variant="outline"
+                  className="bg-green-50 text-green-700 border-green-200 animate-pulse flex items-center gap-1 h-5 text-[10px] px-1.5 py-0 font-medium"
+                >
+                  <div className="h-1 w-1 rounded-full bg-green-500" />
+                  Live
+                </Badge>
+              )}
             </div>
-          </>
-        )}
-        
+            <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5 flex-wrap">
+              <span>{session.collegeName}</span>
+              <span className="text-muted-foreground/50">•</span>
+              <div className="flex items-center gap-1">
+                <User className="h-3 w-3" />
+                <span>{session.assignedTrainer?.name || "Trainer not assigned"}</span>
+              </div>
+              {session.domain && (
+                <>
+                  <span className="text-muted-foreground/50">•</span>
+                  <div className="flex items-center gap-1">
+                    <Sparkles className="h-3 w-3" />
+                    <span>{session.domain}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 snapshot-ignore">
+          {session.status === "active" && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchLiveStats(true)}
+              className="gap-1 h-7 text-[13px] px-2 font-medium"
+              disabled={loading}
+            >
+              <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            className="gap-1 h-7 text-[13px] px-2 font-medium"
+          >
+            <Download className="h-3 w-3" /> Export
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportSnapshot}
+            className="gap-1 h-7 text-[13px] px-2 font-medium"
+          >
+            <Camera className="h-3 w-3" /> Snapshot
+          </Button>
+        </div>
       </div>
-    </div>
 
-    <div className="flex items-center gap-2 snapshot-ignore">
-      {session.status === "active" && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => fetchLiveStats(true)}
-          className="gap-2"
-          disabled={loading}
-        >
-          <RefreshCw
-            className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
-          />
-          Refresh Live Data
-        </Button>
-      )}
-      <Button variant="outline" size="sm" onClick={handleExport}>
-        <Download className="h-4 w-4 mr-2" /> Export
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={handleExportSnapshot}
-        className="gap-2"
-      >
-        <Camera className="h-4 w-4" /> Snapshot
-      </Button>
-      <Button variant="ghost" size="sm" onClick={onBack}>
-        <ArrowLeft className="h-4 w-4 mr-2" /> Back
-      </Button>
-    </div>
-  </div>
+      {/* Advanced Metric Cards Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {/* Overall Rating */}
+        <Card className="bg-primary/5 border-primary/20">
+          <CardContent className="pt-3 pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[13px] font-semibold text-muted-foreground leading-tight">
+                  Overall Rating
+                </p>
+                <h3 className="text-xl font-bold text-primary mt-1">
+                  {stats.avgRating.toFixed(2)}
+                </h3>
+              </div>
+              <div
+                className="p-1.5 rounded-full"
+                style={{
+                  backgroundColor: getDynamicColor(stats.avgRating)
+                    .replace("hsl", "hsla")
+                    .replace(")", ", 0.1)"),
+                }}
+              >
+                <Star
+                  className="h-4 w-4"
+                  style={{
+                    fill: getDynamicColor(stats.avgRating),
+                    color: getDynamicColor(stats.avgRating),
+                  }}
+                />
+              </div>
+            </div>
+            <div
+              className="mt-2 h-1 w-full rounded-full overflow-hidden"
+              style={{
+                backgroundColor: getDynamicColor(stats.avgRating)
+                  .replace("hsl", "hsla")
+                  .replace(")", ", 0.1)"),
+              }}
+            >
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${(parseFloat(stats.avgRating) / 5) * 100}%`,
+                  backgroundColor: getDynamicColor(stats.avgRating),
+                }}
+              />
+            </div>
+          </CardContent>
+        </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">
-              Total Responses
-            </CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">{stats.totalResponses}</div>
-            <p className="text-xs text-muted-foreground mt-1">
+        {/* Total Responses */}
+        <Card className="bg-blue-500/5 border-blue-500/20">
+          <CardContent className="pt-3 pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[13px] font-semibold text-muted-foreground leading-tight">
+                  Total Responses
+                </p>
+                <h3 className="text-xl font-bold text-blue-600 mt-1">
+                  {stats.totalResponses}
+                </h3>
+              </div>
+              <div className="bg-blue-500/10 p-1.5 rounded-full">
+                <Users className="h-4 w-4 text-blue-600" />
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-2">
               Student submissions
             </p>
           </CardContent>
         </Card>
 
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">
-              Average Rating
-            </CardTitle>
-            <Star className="h-4 w-4 text-yellow-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {stats.avgRating.toFixed(2)}
+        {/* Top Rating */}
+        <Card className="bg-green-500/5 border-green-500/20">
+          <CardContent className="pt-3 pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[13px] font-semibold text-muted-foreground leading-tight">
+                  Top Rating
+                </p>
+                <h3 className="text-xl font-bold text-green-600 mt-1">
+                  {stats.topRating.toFixed(2)}
+                </h3>
+              </div>
+              <div className="bg-green-500/10 p-1.5 rounded-full">
+                <TrendingUp className="h-4 w-4 text-green-600" />
+              </div>
             </div>
-            <div className="flex items-center gap-1 mt-1">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Star
-                  key={i}
-                  className={`h-3 w-3 ${i <= Math.round(stats.avgRating) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"}`}
-                />
-              ))}
-              <span className="text-xs text-muted-foreground ml-1">
-                out of 5.0
-              </span>
-            </div>
+            <p className="text-[10px] text-muted-foreground mt-2">Highest score</p>
           </CardContent>
         </Card>
 
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Top Rating</CardTitle>
-            <TrendingUp className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {stats.topRating.toFixed(2)}
+        {/* Content */}
+        <Card className="bg-cyan-500/5 border-cyan-500/20">
+          <CardContent className="pt-3 pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[13px] font-semibold text-muted-foreground leading-tight">
+                  Content Quality
+                </p>
+                <h3 className="text-xl font-bold text-cyan-600 mt-1">
+                  {(stats.categoryAverages?.content || 0).toFixed(2)}
+                </h3>
+              </div>
+              <div className="bg-cyan-500/10 p-1.5 rounded-full">
+                <MessageSquare className="h-4 w-4 text-cyan-600" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Highest score</p>
+            <p className="text-[10px] text-muted-foreground mt-2">Subject relevance</p>
           </CardContent>
         </Card>
 
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Content</CardTitle>
-            <MessageSquare className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {(stats.categoryAverages?.content || 0).toFixed(2)}
+        {/* Knowledge */}
+        <Card className="bg-amber-500/5 border-amber-500/20">
+          <CardContent className="pt-3 pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[13px] font-semibold text-muted-foreground leading-tight">
+                  Knowledge
+                </p>
+                <h3 className="text-xl font-bold text-amber-600 mt-1">
+                  {(stats.categoryAverages?.knowledge || 0).toFixed(2)}
+                </h3>
+              </div>
+              <div className="bg-amber-500/10 p-1.5 rounded-full">
+                <User className="h-4 w-4 text-amber-600" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Content quality
-            </p>
+            <p className="text-[10px] text-muted-foreground mt-2">Expertise of trainer</p>
           </CardContent>
         </Card>
 
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Knowledge</CardTitle>
-            <User className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {(stats.categoryAverages?.knowledge || 0).toFixed(2)}
+        {/* Engagement */}
+        <Card className="bg-purple-500/5 border-purple-500/20">
+          <CardContent className="pt-3 pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[13px] font-semibold text-muted-foreground leading-tight">
+                  Engagement
+                </p>
+                <h3 className="text-xl font-bold text-purple-600 mt-1">
+                  {(stats.categoryAverages?.engagement || 0).toFixed(2)}
+                </h3>
+              </div>
+              <div className="bg-purple-500/10 p-1.5 rounded-full">
+                <Users className="h-4 w-4 text-purple-600" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Trainer expertise
-            </p>
+            <p className="text-[10px] text-muted-foreground mt-2">Student involvement</p>
           </CardContent>
         </Card>
 
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Engagement</CardTitle>
-            <Users className="h-4 w-4 text-purple-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {(stats.categoryAverages?.engagement || 0).toFixed(2)}
+        {/* Communication */}
+        <Card className="bg-pink-500/5 border-pink-500/20">
+          <CardContent className="pt-3 pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[13px] font-semibold text-muted-foreground leading-tight">
+                  Communication
+                </p>
+                <h3 className="text-xl font-bold text-pink-600 mt-1">
+                  {(stats.categoryAverages?.communication || 0).toFixed(2)}
+                </h3>
+              </div>
+              <div className="bg-pink-500/10 p-1.5 rounded-full">
+                <MessageSquare className="h-4 w-4 text-pink-600" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Student involvement
-            </p>
+            <p className="text-[10px] text-muted-foreground mt-2">Clarity & delivery</p>
           </CardContent>
         </Card>
 
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Communication</CardTitle>
-            <MessageSquare className="h-4 w-4 text-orange-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {(stats.categoryAverages?.communication || 0).toFixed(2)}
+        {/* Delivery */}
+        <Card className="bg-indigo-500/5 border-indigo-500/20">
+          <CardContent className="pt-3 pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[13px] font-semibold text-muted-foreground leading-tight">
+                  Delivery
+                </p>
+                <h3 className="text-xl font-bold text-indigo-600 mt-1">
+                  {(stats.categoryAverages?.delivery || 0).toFixed(2)}
+                </h3>
+              </div>
+              <div className="bg-indigo-500/10 p-1.5 rounded-full">
+                <TrendingUp className="h-4 w-4 text-indigo-600" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Clarity & delivery
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Delivery</CardTitle>
-            <TrendingUp className="h-4 w-4 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {(stats.categoryAverages?.delivery || 0).toFixed(2)}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Presentation skills
-            </p>
+            <p className="text-[10px] text-muted-foreground mt-2">Presentation skills</p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Rating Distribution</CardTitle>
-            <CardDescription>
-              Number of responses per rating level
+      {/* Advanced Chart Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-10 gap-4">
+        {/* Rating Distribution (BarChart) */}
+        <Card className="lg:col-span-4">
+          <CardHeader className="pb-1 pt-2">
+            <CardTitle className="text-[13px] font-medium">
+              Rating Distribution
+            </CardTitle>
+            <CardDescription className="text-[10px]">
+              Response count per rating level
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="h-64">
+          <CardContent className="pt-0 pb-2">
+            <div className="h-[160px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={ratingDataAll}>
-                  <defs>
-                    <linearGradient
-                      id="barGradient"
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop
-                        offset="0%"
-                        stopColor="hsl(var(--primary))"
-                        stopOpacity={1}
-                      />
-                      <stop
-                        offset="100%"
-                        stopColor="hsl(var(--primary))"
-                        stopOpacity={0.6}
-                      />
-                    </linearGradient>
-                  </defs>
+                <BarChart data={ratingDataAll} layout="vertical">
                   <CartesianGrid
                     strokeDasharray="3 3"
-                    className="stroke-muted"
+                    horizontal={true}
                     vertical={false}
+                    stroke="hsl(var(--muted-foreground)/0.1)"
                   />
-                  <XAxis dataKey="name" className="text-xs" />
-                  <YAxis allowDecimals={false} className="text-xs" />
-                  <RechartsTooltip
-                    cursor={false}
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
+                  <XAxis type="number" hide />
+                  <YAxis
+                    dataKey="name"
+                    type="category"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{
+                      fill: "hsl(var(--muted-foreground))",
+                      fontSize: 11,
                     }}
-                    formatter={(value) => [value, "Responses"]}
                   />
-                  <Bar
-                    dataKey="value"
-                    fill="url(#barGradient)"
-                    radius={[4, 4, 0, 0]}
+                  <RechartsTooltip
+                    cursor={{ fill: "hsl(var(--muted)/0.4)" }}
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="bg-background border border-border p-1.5 rounded shadow-lg">
+                            <p className="text-[13px] font-bold">
+                              {payload[0].value} responses
+                            </p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
                   />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={16}>
+                    {ratingDataAll.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={
+                          entry.rating === 5
+                            ? "#22c55e"
+                            : entry.rating === 4
+                              ? "#84cc16"
+                              : entry.rating === 3
+                                ? "#eab308"
+                                : entry.rating === 2
+                                  ? "#f97316"
+                                  : "#ef4444"
+                        }
+                      />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Category Performance</CardTitle>
-            <CardDescription>
-              Average scores across evaluation categories
+        {/* Category Performance (RadarChart) */}
+        <Card className="lg:col-span-3">
+          <CardHeader className="pb-1 pt-2">
+            <CardTitle className="text-[13px] font-medium">
+              Category Scores
+            </CardTitle>
+            <CardDescription className="text-[10px]">
+              Metrics breakdown
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="h-64">
+          <CardContent className="pt-0 pb-2">
+            <div className="h-[160px] w-full">
               {radarData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart
-                    cx="50%"
-                    cy="53%"
-                    outerRadius="50%"
-                    data={radarData}
-                  >
-                    <PolarGrid stroke="hsl(var(--border))" />
+                  <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
+                    <PolarGrid stroke="hsl(var(--muted-foreground)/0.2)" />
                     <PolarAngleAxis
                       dataKey="category"
                       tick={(props) => {
                         const { payload, x, y, textAnchor, index } = props;
                         const categoryData = radarData[index];
                         if (categoryData) {
-                          const isBottom = y > 128;
+                          const isBottom = y > 80;
                           return (
                             <g>
                               <text
                                 x={x}
-                                y={isBottom ? y + 12 : y - 15}
+                                y={isBottom ? y + 10 : y - 10}
                                 textAnchor={textAnchor}
                                 fill="hsl(var(--foreground))"
-                                fontSize={10}
-                                fontWeight="normal"
+                                fontSize={9}
                               >
                                 {payload.value}
                               </text>
                               <text
                                 x={x}
-                                y={isBottom ? y + 26 : y - 1}
+                                y={isBottom ? y + 20 : y - 1}
                                 textAnchor={textAnchor}
-                                fill="hsl(var(--primary))"
-                                fontSize={11}
+                                fill="hsl(215, 85%, 65%)"
+                                fontSize={10}
                                 fontWeight="bold"
                               >
                                 {categoryData.score.toFixed(1)}
@@ -669,8 +763,8 @@ const SessionAnalytics = ({ session, onBack }) => {
                             x={x}
                             y={y}
                             textAnchor={textAnchor}
-                            fill="hsl(var(--foreground))"
-                            fontSize={10}
+                            fill="hsl(var(--muted-foreground))"
+                            fontSize={9}
                           >
                             {payload.value}
                           </text>
@@ -678,130 +772,118 @@ const SessionAnalytics = ({ session, onBack }) => {
                       }}
                     />
                     <PolarRadiusAxis
-                      angle={90}
+                      angle={30}
                       domain={[0, 5]}
-                      tick={{
-                        fill: "hsl(var(--muted-foreground))",
-                        fontSize: 9,
-                      }}
-                      tickCount={6}
+                      tick={false}
+                      axisLine={false}
                     />
                     <Radar
                       name="Score"
                       dataKey="score"
-                      stroke="hsl(var(--primary))"
-                      fill="hsl(var(--primary))"
-                      fillOpacity={0.4}
-                      strokeWidth={2}
+                      stroke="hsl(215, 85%, 65%)"
+                      fill="hsl(215, 85%, 65%)"
+                      fillOpacity={0.25}
                     />
-                    <RechartsTooltip
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                      }}
-                      formatter={(value) => [
-                        parseFloat(value).toFixed(2),
-                        "Score",
-                      ]}
-                    />
+                    <RechartsTooltip />
                   </RadarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                  No category data available
+                <div className="flex items-center justify-center h-full text-muted-foreground text-[13px] font-medium">
+                  No category data
                 </div>
               )}
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Rating Breakdown</CardTitle>
-            <CardDescription>
-              Percentage distribution of ratings
+        {/* Rating Breakdown (PieChart) */}
+        <Card className="lg:col-span-3">
+          <CardHeader className="pb-1 pt-2">
+            <CardTitle className="text-[13px] font-medium">
+              Rating Breakdown
+            </CardTitle>
+            <CardDescription className="text-[10px]">
+              Percentage distribution
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={ratingDataFiltered}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={80}
-                    paddingAngle={2}
-                    dataKey="value"
-                    label={({ name, percent }) =>
-                      `${name} (${(percent * 100).toFixed(0)}%)`
-                    }
-                    labelLine={false}
-                  >
-                    {ratingDataFiltered.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={`hsl(var(--primary) / ${0.4 + index * 0.15})`}
-                      />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+          <CardContent className="pt-0 pb-2">
+            <div className="h-[160px] w-full">
+              {ratingDataFiltered.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={ratingDataFiltered}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={45}
+                      outerRadius={65}
+                      paddingAngle={3}
+                      dataKey="value"
+                    >
+                      {ratingDataFiltered.map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={`hsl(215, 85%, ${75 - index * 6}%)`}
+                        />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-[13px] font-medium">
+                  No distribution data
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5 text-primary" />
+      {/* Advanced Lower Layout: Comments & Topics */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Student Comments */}
+        <Card className="flex flex-col">
+          <CardHeader className="pb-1 pt-2 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-[13px] font-medium">
                 Student Comments
-              </div>
-              <Badge variant="secondary" className="font-mono">
-                {stats.totalResponses} Total
-              </Badge>
-            </CardTitle>
-            <CardDescription>
-              Feedback from different rating levels
-            </CardDescription>
+              </CardTitle>
+              <CardDescription className="text-[10px]">
+                Feedback by rating level
+              </CardDescription>
+            </div>
+            <Badge variant="secondary" className="font-mono text-[10px] h-5 px-1 bg-secondary text-secondary-foreground">
+              {stats.totalResponses} Total
+            </Badge>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-0 pb-2">
             <Tabs defaultValue="top" className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="top">Top Comments</TabsTrigger>
-                <TabsTrigger value="average">Average Comments</TabsTrigger>
-                <TabsTrigger value="improvement">Improvement Areas</TabsTrigger>
+              <TabsList className="grid w-full grid-cols-3 h-7 p-0.5 bg-muted rounded-md mb-2">
+                <TabsTrigger value="top" className="text-[11px] font-medium py-1">Top</TabsTrigger>
+                <TabsTrigger value="average" className="text-[11px] font-medium py-1">Average</TabsTrigger>
+                <TabsTrigger value="improvement" className="text-[11px] font-medium py-1">Areas of Imp</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="top" className="mt-4">
-                <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
+              <TabsContent value="top" className="mt-0">
+                <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
                   {(stats.topComments || []).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      No comments available
+                    <p className="text-xs text-muted-foreground italic py-4 text-center">
+                      No top comments available
                     </p>
                   ) : (
                     stats.topComments.map((c, i) => (
                       <div
                         key={i}
-                        className="p-3 rounded-lg border bg-card/50 relative"
+                        className="p-2 rounded-lg border border-border/60 bg-card/50 relative hover:border-primary/20 transition-colors"
                       >
-                        <div className="absolute top-2 right-2 text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                        <div className="absolute top-1.5 right-1.5 text-[9px] font-mono text-muted-foreground bg-muted px-1 py-0.5 rounded">
                           #{i + 1}
                         </div>
-                        <p className="text-sm italic pr-8">"{c.text}"</p>
-                        <div className="flex items-center gap-1 mt-2">
+                        <p className="text-xs italic pr-8 text-foreground leading-normal">
+                          "{c.text}"
+                        </p>
+                        <div className="flex items-center gap-1 mt-1">
                           <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
                           <span className="text-xs text-muted-foreground">
                             {c.avgRating.toFixed(1)}
@@ -813,23 +895,25 @@ const SessionAnalytics = ({ session, onBack }) => {
                 </div>
               </TabsContent>
 
-              <TabsContent value="average" className="mt-4">
-                <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
+              <TabsContent value="average" className="mt-0">
+                <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
                   {(stats.avgComments || []).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      No comments available
+                    <p className="text-xs text-muted-foreground italic py-4 text-center">
+                      No average comments available
                     </p>
                   ) : (
                     stats.avgComments.map((c, i) => (
                       <div
                         key={i}
-                        className="p-3 rounded-lg border bg-card/50 relative"
+                        className="p-2 rounded-lg border border-border/60 bg-card/50 relative hover:border-primary/20 transition-colors"
                       >
-                        <div className="absolute top-2 right-2 text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                        <div className="absolute top-1.5 right-1.5 text-[9px] font-mono text-muted-foreground bg-muted px-1 py-0.5 rounded">
                           #{i + 1}
                         </div>
-                        <p className="text-sm italic pr-8">"{c.text}"</p>
-                        <div className="flex items-center gap-1 mt-2">
+                        <p className="text-xs italic pr-8 text-foreground leading-normal">
+                          "{c.text}"
+                        </p>
+                        <div className="flex items-center gap-1 mt-1">
                           <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
                           <span className="text-xs text-muted-foreground">
                             {c.avgRating.toFixed(1)}
@@ -841,23 +925,25 @@ const SessionAnalytics = ({ session, onBack }) => {
                 </div>
               </TabsContent>
 
-              <TabsContent value="improvement" className="mt-4">
-                <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
+              <TabsContent value="improvement" className="mt-0">
+                <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
                   {(stats.leastRatedComments || []).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      No comments available
+                    <p className="text-xs text-muted-foreground italic py-4 text-center">
+                      No improvement areas recorded
                     </p>
                   ) : (
                     stats.leastRatedComments.map((c, i) => (
                       <div
                         key={i}
-                        className="p-3 rounded-lg border bg-card/50 relative"
+                        className="p-2 rounded-lg border border-border/60 bg-card/50 relative hover:border-primary/20 transition-colors"
                       >
-                        <div className="absolute top-2 right-2 text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                        <div className="absolute top-1.5 right-1.5 text-[9px] font-mono text-muted-foreground bg-muted px-1 py-0.5 rounded">
                           #{i + 1}
                         </div>
-                        <p className="text-sm italic pr-8">"{c.text}"</p>
-                        <div className="flex items-center gap-1 mt-2">
+                        <p className="text-xs italic pr-8 text-foreground leading-normal">
+                          "{c.text}"
+                        </p>
+                        <div className="flex items-center gap-1 mt-1">
                           <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
                           <span className="text-xs text-muted-foreground">
                             {c.avgRating.toFixed(1)}
@@ -872,41 +958,43 @@ const SessionAnalytics = ({ session, onBack }) => {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-blue-500" />
-              Session Topics
-            </CardTitle>
-            <CardDescription>
-              Topics learned and future suggestions
-            </CardDescription>
+        {/* Session Topics */}
+        <Card className="flex flex-col">
+          <CardHeader className="pb-1 pt-2 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-[13px] font-medium">
+                Topics & Suggestions
+              </CardTitle>
+              <CardDescription className="text-[10px]">
+                Topics covered and future requests
+              </CardDescription>
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-0 pb-2">
             <Tabs defaultValue="learned" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="learned">Topics Learned</TabsTrigger>
-                <TabsTrigger value="future">Future Topics</TabsTrigger>
+              <TabsList className="grid w-full grid-cols-2 h-7 p-0.5 bg-muted rounded-md mb-2">
+                <TabsTrigger value="learned" className="text-[11px] font-medium py-1">Learned</TabsTrigger>
+                <TabsTrigger value="future" className="text-[11px] font-medium py-1">Future</TabsTrigger>
               </TabsList>
 
               <TabsContent value="learned" className="mt-0">
-                <div className="max-h-80 overflow-y-auto pr-1">
+                <div className="max-h-[160px] overflow-y-auto pr-1">
                   {(stats.topicsLearned || []).length > 0 ? (
                     <>
-                      <div className="flex flex-wrap gap-2 p-2">
+                      <div className="flex flex-wrap gap-1.5 p-1">
                         <TooltipProvider>
                           {learnedToShow.map((topic, idx) => (
                             <Tooltip key={idx}>
                               <TooltipTrigger asChild>
-                                <div className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-100 text-sm font-semibold hover:bg-amber-600 hover:text-white hover:border-amber-600 transition-all cursor-default shadow-sm hover:shadow-md">
-                                  <div className="flex items-center justify-center bg-white/80 group-hover:bg-amber-500 group-hover:text-white rounded px-1 min-w-[20px] h-5 text-[10px] border border-amber-200/50 transition-colors">
+                                <div className="group flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-100 text-xs font-semibold hover:bg-amber-600 hover:text-white hover:border-amber-600 transition-all cursor-default shadow-sm hover:shadow-md">
+                                  <div className="flex items-center justify-center bg-white/80 group-hover:bg-amber-500 group-hover:text-white rounded px-1 min-w-[16px] h-4 text-[9px] border border-amber-200/50 transition-colors">
                                     {topic.count}
                                   </div>
                                   {topic.name || topic.text}
                                 </div>
                               </TooltipTrigger>
                               <TooltipContent side="top">
-                                <p className="font-semibold text-xs">
+                                <p className="font-semibold text-[10px]">
                                   {topic.count} Student Mentions
                                 </p>
                               </TooltipContent>
@@ -919,6 +1007,7 @@ const SessionAnalytics = ({ session, onBack }) => {
                         <div className="flex justify-center mt-2">
                           <Button
                             size="sm"
+                            className="h-6 px-2 text-[11px] font-medium"
                             onClick={() =>
                               setLearnedLimit((v) =>
                                 Math.min(
@@ -939,7 +1028,7 @@ const SessionAnalytics = ({ session, onBack }) => {
                       )}
                     </>
                   ) : (
-                    <div className="text-center py-8 text-muted-foreground text-sm italic">
+                    <div className="text-center py-4 text-muted-foreground text-xs italic">
                       No topics recorded yet.
                     </div>
                   )}
@@ -947,21 +1036,21 @@ const SessionAnalytics = ({ session, onBack }) => {
               </TabsContent>
 
               <TabsContent value="future" className="mt-0">
-                <div className="max-h-80 overflow-y-auto pr-1">
+                <div className="max-h-[160px] overflow-y-auto pr-1">
                   {(stats.futureTopics || []).length > 0 ? (
                     <>
-                      <div className="flex flex-wrap gap-2 p-2">
+                      <div className="flex flex-wrap gap-1.5 p-1">
                         {futureToShow.map((topic, idx) => {
                           const label = topic.text || topic.name || "";
                           return (
                             <div
                               key={idx}
-                              className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-100 text-sm font-semibold hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all cursor-default shadow-sm hover:shadow-md"
+                              className="group flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-100 text-xs font-semibold hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all cursor-default shadow-sm hover:shadow-md"
                             >
-                              <div className="flex items-center justify-center bg-white/80 group-hover:bg-blue-500 group-hover:text-white rounded px-1 min-w-[20px] h-5 text-[10px] border border-blue-200/50 transition-colors">
+                              <div className="flex items-center justify-center bg-white/80 group-hover:bg-blue-500 group-hover:text-white rounded px-1 min-w-[16px] h-4 text-[9px] border border-blue-200/50 transition-colors">
                                 {topic.count}
                               </div>
-                              <Sparkles className="h-3.5 w-3.5 opacity-70 group-hover:animate-pulse" />
+                              <Sparkles className="h-3 w-3 opacity-70 group-hover:animate-pulse" />
                               {label}
                             </div>
                           );
@@ -972,6 +1061,7 @@ const SessionAnalytics = ({ session, onBack }) => {
                         <div className="flex justify-center mt-2">
                           <Button
                             size="sm"
+                            className="h-6 px-2 text-[11px] font-medium"
                             onClick={() =>
                               setFutureLimit((v) =>
                                 Math.min(
@@ -992,7 +1082,7 @@ const SessionAnalytics = ({ session, onBack }) => {
                       )}
                     </>
                   ) : (
-                    <div className="text-center py-8 text-muted-foreground text-sm italic">
+                    <div className="text-center py-4 text-muted-foreground text-xs italic">
                       No future topics suggested yet.
                     </div>
                   )}

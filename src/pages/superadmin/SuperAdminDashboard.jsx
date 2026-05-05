@@ -91,6 +91,8 @@ const SuperAdminDashboardInner = () => {
       // Small delay for chart rendering
       await new Promise((resolve) => setTimeout(resolve, 400));
 
+      el.classList.add("exporting-snapshot");
+
       const dataUrl = await toPng(el, {
         quality: 0.95,
         backgroundColor: "#ffffff",
@@ -111,12 +113,17 @@ const SuperAdminDashboardInner = () => {
         },
       });
 
+      el.classList.remove("exporting-snapshot");
+
       const link = document.createElement("a");
       link.download = `TrainerFeedBack-${new Date().toLocaleDateString().replace(/\//g, "-")}.png`;
       link.href = dataUrl;
       link.click();
       toast.success("Snapshot saved", { id: toastId });
     } catch (err) {
+      if (dashboardRef.current) {
+        dashboardRef.current.classList.remove("exporting-snapshot");
+      }
       console.error("Export failed:", err);
       toast.error(
         "Export failed. Check internet connection or CORS settings.",

@@ -387,22 +387,20 @@ export const closeSessionWithStats = async (id) => {
   try {
     // Import compileSessionStats dynamically to avoid circular dependency
 
-    // 1. Compile statistics first (outside transaction)
-    // compileSessionStats filters responses by version (reactivationCount),
-    // so only responses from the current activation cycle are compiled.
-    // This is the "delta" stats for this version.
-    const { compileSessionStats, mergeStats } =
-      await import("./responseService");
+    // 1. Compile statistics directly from ALL responses (outside transaction)
+    // We completely bypass delta stats and merging logic to prevent double-counting.
+    // This simply recalculates the true state from the raw response documents.
+    const { getResponses, compileSessionStatsFromResponses } = await import("./responseService");
     const { runTransaction } = await import("firebase/firestore");
 
-    // Read the session's current reactivationCount to filter responses by version
     const sessionSnap = await getDoc(doc(db, COLLECTION_NAME, id));
-    const currentVersion = sessionSnap.exists() ? (sessionSnap.data().reactivationCount || 0) : 0;
+    if (!sessionSnap.exists()) throw new Error("Session not found");
+    const sessionDataToCompile = sessionSnap.data();
 
-    const deltaStats = await compileSessionStats(id, currentVersion);
+    const allResponses = await getResponses(id);
+    const finalMergedStats = compileSessionStatsFromResponses(allResponses, sessionDataToCompile.questions || []);
 
     let sessionDataForCache = null;
-    let finalMergedStats = deltaStats;
 
     // 2. Run Transaction
     await runTransaction(db, async (transaction) => {
@@ -431,12 +429,6 @@ export const closeSessionWithStats = async (id) => {
 
       const session = { id: sessionDoc.id, ...sessionData };
       sessionDataForCache = session;
-
-      // If the session was previously closed and reactivated, it will already have compiledStats.
-      // We need to merge the existing stats with the new delta stats for the session document,
-      if (sessionData.compiledStats) {
-        finalMergedStats = mergeStats(sessionData.compiledStats, deltaStats);
-      }
 
       // Update session with status, final stats, and phase-out timing
       transaction.update(docRef, {

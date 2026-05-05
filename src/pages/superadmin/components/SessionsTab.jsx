@@ -64,8 +64,9 @@ import {
   updateSession,
   closeSessionWithStats,
 } from "@/services/superadmin/sessionService";
-import { compileSessionStats } from "@/services/superadmin/responseService";
-import { serverTimestamp } from "firebase/firestore";
+import { compileSessionStats, getResponses, compileSessionStatsFromResponses } from "@/services/superadmin/responseService";
+import { serverTimestamp, doc, updateDoc } from "firebase/firestore";
+import { db } from "@/services/firebase";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
@@ -239,6 +240,24 @@ const SessionsTab = ({
       toast.error("Failed to delete session");
     }
   };
+
+/*
+  const handleRecalculateStats = async (session) => {
+    if (!confirm("Are you sure you want to recalculate stats from raw responses? This will overwrite the existing compiled stats.")) return;
+    const toastId = toast.loading("Recalculating stats...");
+    try {
+      const allResponses = await getResponses(session.id);
+      const newStats = compileSessionStatsFromResponses(allResponses, session.questions || []);
+      await updateDoc(doc(db, "sessions", session.id), {
+        compiledStats: newStats
+      });
+      toast.success("Stats recalculated successfully!", { id: toastId });
+    } catch (error) {
+      toast.error("Failed to recalculate stats", { id: toastId });
+      console.error(error);
+    }
+  };
+*/
 
   const handleCompileStats = async (session) => {
     // Only allow manual compilation for active sessions
@@ -880,6 +899,13 @@ const SessionsTab = ({
                         {session.status === "inactive" &&
                           session.compiledStats && (
                             <>
+                              {/*
+                              <DropdownMenuItem
+                                onClick={() => handleRecalculateStats(session)}
+                              >
+                                <RotateCcw className="mr-2 h-4 w-4" /> Recalculate Stats
+                              </DropdownMenuItem>
+                              */}
                               <DropdownMenuItem
                                 onClick={() =>
                                   setSelectedSessionForAnalytics(session)

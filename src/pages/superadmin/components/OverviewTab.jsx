@@ -15,6 +15,7 @@ import {
   BookOpen,
   Sparkles,
   AlertTriangle,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -105,6 +106,19 @@ const OverviewTab = ({
     customStartDate: null,
     customEndDate: null,
   });
+
+  const [searchQueries, setSearchQueries] = useState({
+    projectCode: "",
+    collegeId: "",
+    trainerId: "",
+    course: "",
+    year: "",
+    batch: "",
+  });
+
+  const handleSearchChange = (field, value) => {
+    setSearchQueries((prev) => ({ ...prev, [field]: value }));
+  };
 
   // Academic config for selected college
   const [academicOptions, setAcademicOptions] = useState(null);
@@ -255,6 +269,14 @@ const OverviewTab = ({
       dateRange: "all",
       customStartDate: null,
       customEndDate: null,
+    });
+    setSearchQueries({
+      projectCode: "",
+      collegeId: "",
+      trainerId: "",
+      course: "",
+      year: "",
+      batch: "",
     });
     setAcademicOptions(null);
   };
@@ -805,9 +827,22 @@ const OverviewTab = ({
                   <SelectValue placeholder="All Projects" />
                 </SelectTrigger>
                 <SelectContent>
+                  <div className="p-2 sticky top-0 bg-white z-10 border-b border-slate-100">
+                    <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
+                      <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
+                      <input 
+                        type="text" 
+                        placeholder="Search projects..." 
+                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700" 
+                        value={searchQueries.projectCode}
+                        onChange={(e) => handleSearchChange("projectCode", e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()} 
+                      />
+                    </div>
+                  </div>
                   <SelectItem value="all">All Projects</SelectItem>
                   {projectCodes
-                    .filter((pc) => pc.collegeId)
+                    .filter((pc) => pc.collegeId && (!searchQueries.projectCode || pc.code.toLowerCase().includes(searchQueries.projectCode.toLowerCase())))
                     .map((pc) => (
                       <SelectItem key={pc.code} value={pc.code}>
                         {pc.code}
@@ -842,8 +877,23 @@ const OverviewTab = ({
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
+                  <div className="p-2 sticky top-0 bg-white z-10 border-b border-slate-100">
+                    <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
+                      <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
+                      <input 
+                        type="text" 
+                        placeholder="Search colleges..." 
+                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700" 
+                        value={searchQueries.collegeId}
+                        onChange={(e) => handleSearchChange("collegeId", e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()} 
+                      />
+                    </div>
+                  </div>
                   <SelectItem value="all">All Colleges</SelectItem>
-                  {colleges.map((c) => (
+                  {colleges
+                    .filter((c) => !searchQueries.collegeId || c.code.toLowerCase().includes(searchQueries.collegeId.toLowerCase()))
+                    .map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.code}
                     </SelectItem>
@@ -875,8 +925,23 @@ const OverviewTab = ({
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
+                  <div className="p-2 sticky top-0 bg-white z-10 border-b border-slate-100">
+                    <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
+                      <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
+                      <input 
+                        type="text" 
+                        placeholder="Search courses..." 
+                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700" 
+                        value={searchQueries.course}
+                        onChange={(e) => handleSearchChange("course", e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()} 
+                      />
+                    </div>
+                  </div>
                   <SelectItem value="all">All Courses</SelectItem>
-                  {availableCourses.map((c) => (
+                  {availableCourses
+                    .filter((c) => !searchQueries.course || c.toLowerCase().includes(searchQueries.course.toLowerCase()))
+                    .map((c) => (
                     <SelectItem key={c} value={c}>
                       {c}
                     </SelectItem>
@@ -907,8 +972,23 @@ const OverviewTab = ({
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
+                  <div className="p-2 sticky top-0 bg-white z-10 border-b border-slate-100">
+                    <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
+                      <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
+                      <input 
+                        type="text" 
+                        placeholder="Search years..." 
+                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700" 
+                        value={searchQueries.year}
+                        onChange={(e) => handleSearchChange("year", e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()} 
+                      />
+                    </div>
+                  </div>
                   <SelectItem value="all">All Years</SelectItem>
-                  {availableYears.map((y) => (
+                  {availableYears
+                    .filter((y) => !searchQueries.year || y.toLowerCase().includes(searchQueries.year.toLowerCase()))
+                    .map((y) => (
                     <SelectItem key={y} value={y}>
                       {y}
                     </SelectItem>
@@ -938,8 +1018,23 @@ const OverviewTab = ({
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
+                  <div className="p-2 sticky top-0 bg-white z-10 border-b border-slate-100">
+                    <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
+                      <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
+                      <input 
+                        type="text" 
+                        placeholder="Search batches..." 
+                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700" 
+                        value={searchQueries.batch}
+                        onChange={(e) => handleSearchChange("batch", e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()} 
+                      />
+                    </div>
+                  </div>
                   <SelectItem value="all">All Batches</SelectItem>
-                  {availableBatches.map((b) => (
+                  {availableBatches
+                    .filter((b) => !searchQueries.batch || b.toLowerCase().includes(searchQueries.batch.toLowerCase()))
+                    .map((b) => (
                     <SelectItem key={b} value={b}>
                       {b}
                     </SelectItem>
@@ -963,8 +1058,23 @@ const OverviewTab = ({
                   <SelectValue placeholder="All Trainers" />
                 </SelectTrigger>
                 <SelectContent>
+                  <div className="p-2 sticky top-0 bg-white z-10 border-b border-slate-100">
+                    <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
+                      <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
+                      <input 
+                        type="text" 
+                        placeholder="Search trainers..." 
+                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700" 
+                        value={searchQueries.trainerId}
+                        onChange={(e) => handleSearchChange("trainerId", e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()} 
+                      />
+                    </div>
+                  </div>
                   <SelectItem value="all">All Trainers</SelectItem>
-                  {trainers.map((t) => (
+                  {trainers
+                    .filter((t) => !searchQueries.trainerId || t.name.toLowerCase().includes(searchQueries.trainerId.toLowerCase()))
+                    .map((t) => (
                     <SelectItem key={t.id} value={t.id}>
                       {t.name}
                     </SelectItem>
