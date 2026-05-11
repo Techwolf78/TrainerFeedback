@@ -1,245 +1,576 @@
 {
-    "indexes": [
+  "indexes": [
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
         {
-            "collectionGroup": "feedbackSessions",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "collegeId",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "isActive",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "createdAt",
-                    "order": "DESCENDING"
-                }
-            ]
+          "fieldPath": "assignedTrainer.id",
+          "order": "ASCENDING"
         },
         {
-            "collectionGroup": "feedbackSessions",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "facultyId",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "isActive",
-                    "order": "ASCENDING"
-                }
-            ]
+          "fieldPath": "batch",
+          "order": "ASCENDING"
         },
         {
-            "collectionGroup": "feedbackSessions",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "departmentId",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "isActive",
-                    "order": "ASCENDING"
-                }
-            ]
+          "fieldPath": "collegeId",
+          "order": "ASCENDING"
         },
         {
-            "collectionGroup": "feedbackSubmissions",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "collegeId",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "submittedAt",
-                    "order": "DESCENDING"
-                }
-            ]
+          "fieldPath": "course",
+          "order": "ASCENDING"
         },
         {
-            "collectionGroup": "feedbackSubmissions",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "facultyId",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "submittedAt",
-                    "order": "DESCENDING"
-                }
-            ]
+          "fieldPath": "projectCode",
+          "order": "ASCENDING"
         },
         {
-            "collectionGroup": "feedbackSubmissions",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "departmentId",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "submittedAt",
-                    "order": "DESCENDING"
-                }
-            ]
+          "fieldPath": "status",
+          "order": "ASCENDING"
         },
         {
-            "collectionGroup": "feedbackSubmissions",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "sessionId",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "submittedAt",
-                    "order": "DESCENDING"
-                }
-            ]
+          "fieldPath": "year",
+          "order": "ASCENDING"
         },
         {
-            "collectionGroup": "questions",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "collegeId",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "categoryOrder",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "order",
-                    "order": "ASCENDING"
-                }
-            ]
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
         },
         {
-            "collectionGroup": "questions",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "collegeId",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "isActive",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "categoryOrder",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "order",
-                    "order": "ASCENDING"
-                }
-            ]
-        },
-        {
-            "collectionGroup": "feedbackStats",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "type",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "collegeId",
-                    "order": "ASCENDING"
-                }
-            ]
-        },
-        {
-            "collectionGroup": "feedbackStats",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "type",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "departmentId",
-                    "order": "ASCENDING"
-                }
-            ]
-        },
-        {
-            "collectionGroup": "departments",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "collegeId",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "isActive",
-                    "order": "ASCENDING"
-                }
-            ]
-        },
-        {
-            "collectionGroup": "faculty",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "collegeId",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "departmentId",
-                    "order": "ASCENDING"
-                }
-            ]
-        },
-        {
-            "collectionGroup": "faculty",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "collegeId",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "isActive",
-                    "order": "ASCENDING"
-                }
-            ]
-        },
-        {
-            "collectionGroup": "users",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "collegeId",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "role",
-                    "order": "ASCENDING"
-                }
-            ]
-        },
-        {
-            "collectionGroup": "accessCodes",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "sessionId",
-                    "order": "ASCENDING"
-                },
-                {
-                    "fieldPath": "used",
-                    "order": "ASCENDING"
-                }
-            ]
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
         }
-    ],
-    "fieldOverrides": []
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "assignedTrainer.id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "batch",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "collegeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "course",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "assignedTrainer.id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "batch",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "collegeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "course",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "year",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "assignedTrainer.id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "collegeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "course",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "assignedTrainer.id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "collegeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "course",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "year",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "assignedTrainer.id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "collegeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "assignedTrainer.id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "projectCode",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "assignedTrainer.id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "assignedTrainer.id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "assignedTrainer.id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "collegeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "assignedTrainer.id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "batch",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "collegeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "course",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "year",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "collegeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "course",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "collegeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "course",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "year",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "collegeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "collegeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "collegeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "collegeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "projectCode",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sessionDate",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "tickets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "raisedBy.uid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    }
+  ],
+  "fieldOverrides": []
 }

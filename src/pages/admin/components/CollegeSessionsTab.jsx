@@ -35,6 +35,7 @@ import {
   Share2,
   BarChart3,
   Calendar,
+  Activity,
 } from "lucide-react";
 import {
   format,
@@ -461,7 +462,7 @@ const CollegeSessionsTab = () => {
               <TableHead>Course / Batch</TableHead>
               <TableHead>Trainer</TableHead>
               <TableHead>Schedule</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead>Stats</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -479,14 +480,25 @@ const CollegeSessionsTab = () => {
               filteredSessions.map((session) => (
                 <TableRow
                   key={session.id}
-                  className="hover:bg-muted/50 transition-colors"
+                  className={cn(
+                    "hover:bg-muted/50 transition-colors",
+                    session.isLive && "bg-blue-50/30 hover:bg-blue-50/50"
+                  )}
                 >
                   <TableCell className="text-sm font-medium">
                     {session.projectCode || "-"}
                   </TableCell>
                   <TableCell>
-                    <div className="font-medium text-foreground">
-                      {session.topic}
+                    <div className="flex items-center gap-2">
+                      <div className="font-medium text-foreground">
+                        {session.topic}
+                      </div>
+                      {session.isLive && (
+                         <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-full bg-blue-100 text-[10px] font-bold text-blue-700 animate-pulse border border-blue-200">
+                           <Activity className="h-2.5 w-2.5" />
+                           LIVE
+                         </div>
+                      )}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {session.domain}
@@ -522,55 +534,54 @@ const CollegeSessionsTab = () => {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "capitalize",
-                        session.status === "active"
-                          ? "bg-green-100 text-green-700 border-green-200"
-                          : "bg-gray-100 text-gray-700 border-gray-200",
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-sm font-bold">{session.responseCount || 0}</span>
+                        <span className="text-[10px] text-muted-foreground uppercase">Resp</span>
+                      </div>
+                      {session.compiledStats?.avgRating && (
+                         <div className="flex items-center gap-1">
+                           <div className="h-1.5 w-1.5 rounded-full bg-yellow-400" />
+                           <span className="text-[11px] font-medium text-muted-foreground">
+                             {session.compiledStats.avgRating} / 5
+                           </span>
+                         </div>
                       )}
-                    >
-                      {session.status}
-                    </Badge>
+                    </div>
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      {session.status === "active" && (
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-primary"
-                                onClick={() => copyLink(session.id)}
-                              >
-                                <Share2 className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Copy Feedback Link</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      )}
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-foreground"
+                              onClick={() => setSelectedSession(session)}
+                            >
+                              <BarChart3 className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>View Analytics</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
 
-                      {session.status === "inactive" && (
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-foreground"
-                                onClick={() => setSelectedSession(session)}
-                              >
-                                <BarChart3 className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>View Analytics</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      )}
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-primary"
+                              onClick={() => copyLink(session.id)}
+                            >
+                              <Share2 className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Copy Feedback Link</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </div>
                   </TableCell>
                 </TableRow>

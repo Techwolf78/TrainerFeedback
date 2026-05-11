@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Clock,
   Sparkles,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,22 +49,12 @@ import {
   PolarRadiusAxis,
 } from "recharts";
 import { useAuth } from "@/contexts/AuthContext";
-import { sessionsApi, collegesApi } from "@/lib/dataService";
-import {
-  getTrainerCache,
-  getTrainerTrends,
-} from "@/services/superadmin/cacheService";
-import { getAnalyticsSessions } from "@/services/superadmin/sessionService"; // New import
+// Removed legacy mock imports
+import { getAnalyticsSessions } from "@/services/superadmin/sessionService"; 
 import { toast } from "sonner";
 
-const TrainerOverview = () => {
+const TrainerOverview = ({ sessions = [], isLoading: isDashboardLoading = false }) => {
   const { user } = useAuth();
-
-  // Data state
-  const [cache, setCache] = useState(null);
-  const [trends, setTrends] = useState(null);
-  const [sessions, setSessions] = useState([]); // Still used for initial/list, but analytics will go dynamic
-  const [isLoading, setIsLoading] = useState(true);
 
   // Analytics State
   const [analyticsData, setAnalyticsData] = useState(null);
@@ -79,51 +70,6 @@ const TrainerOverview = () => {
     batch: "all",
     dateRange: "all",
   });
-
-  // Load Trainer Data
-  useEffect(() => {
-    const loadTrainerData = async () => {
-      const trainerId = user?.id || user?.uid;
-
-      if (!trainerId) {
-        if (user) setIsLoading(false); // Only set false if user loaded but no ID found (rare)
-        return;
-      }
-
-      setIsLoading(true);
-      try {
-        // 1. Load Cache & Trends (Fast path for initial view)
-        // Check if using local storage or firestore services
-        // If sessionsApi is local, we might not have cache/trends in firebase for this user yet
-        const [cacheData, trendsData] = await Promise.all([
-          getTrainerCache(trainerId).catch((err) => {
-            console.warn("Cache fetch failed", err);
-            return null;
-          }),
-          getTrainerTrends(trainerId).catch((err) => {
-            console.warn("Trends fetch failed", err);
-            return null;
-          }),
-        ]);
-        setCache(cacheData);
-        setTrends(trendsData);
-
-        // 2. Load Sessions (for granular filtering)
-        // In a real app we might defer this or paginate, but for now we load all trainer sessions
-        const trainerSessions = sessionsApi.getByTrainer(trainerId);
-        setSessions(trainerSessions);
-      } catch (error) {
-        console.error("Failed to load trainer data:", error);
-        toast.error("Failed to load dashboard data");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    if (user) {
-      loadTrainerData();
-    }
-  }, [user]);
 
   // Reset Filters
   const resetFilters = () => {
@@ -167,13 +113,13 @@ const TrainerOverview = () => {
 
   // Unique Colleges from Sessions
   const availableColleges = useMemo(() => {
-    const uniqueIds = [...new Set(sessions.map((s) => s.collegeId))].filter(
-      Boolean,
-    );
-    return uniqueIds.map((id) => {
-      const college = collegesApi.getById(id);
-      return { id, name: college?.name || "Unknown College" };
+    const uniqueMap = new Map();
+    sessions.forEach((s) => {
+      if (s.collegeId && s.collegeName) {
+        uniqueMap.set(s.collegeId, s.collegeName);
+      }
     });
+    return Array.from(uniqueMap, ([id, name]) => ({ id, name }));
   }, [sessions]);
 
   // Unique Courses
@@ -258,6 +204,8 @@ const TrainerOverview = () => {
       categoryTotals: {},
       categoryCounts: {},
       totalSessions: sessionList.length,
+      totalHours: 0,
+      qualitative: { high: [], low: [], avg: [], future: [] }
     };
 
     sessionList.forEach((session) => {
@@ -280,6 +228,29 @@ const TrainerOverview = () => {
           (stats.categoryTotals[cat] || 0) + avg * count;
         stats.categoryCounts[cat] = (stats.categoryCounts[cat] || 0) + count;
       });
+
+      // Comment date fallback helper for UI
+      const withDate = (comment) => ({
+        ...comment,
+        date:
+          comment.date ||
+          comment.createdAt ||
+          comment.submittedAt ||
+          session.sessionDate ||
+          session.closedAt ||
+          session.updatedAt ||
+          null,
+      });
+
+      // Aggregate qualitative feedback with date fallback
+      if (cs.topComments)
+        stats.qualitative.high.push(...cs.topComments.map((c) => withDate(c)));
+      if (cs.leastRatedComments)
+        stats.qualitative.low.push(...cs.leastRatedComments.map((c) => withDate(c)));
+      if (cs.avgComments)
+        stats.qualitative.avg.push(...cs.avgComments.map((c) => withDate(c)));
+      if (cs.futureTopics)
+        stats.qualitative.future.push(...cs.futureTopics.map((c) => withDate(c)));
     });
 
     const avgRating =
@@ -295,6 +266,7 @@ const TrainerOverview = () => {
           : 0;
     });
 
+    // Sort and limit qualitative insights
     return {
       totalSessions: stats.totalSessions,
       totalResponses: stats.totalResponses,
@@ -303,7 +275,11 @@ const TrainerOverview = () => {
       avgRating,
       ratingDistribution: stats.ratingDistribution,
       categoryAverages,
-      qualitative: { high: [], low: [], avg: [] },
+      qualitative: {
+        high: stats.qualitative.high.sort((a, b) => (b.avgRating || 0) - (a.avgRating || 0)).slice(0, 5),
+        low: stats.qualitative.low.sort((a, b) => (a.avgRating || 0) - (b.avgRating || 0)).slice(0, 5),
+        future: stats.qualitative.future.sort((a, b) => (b.count || 0) - (a.count || 0)).slice(0, 10)
+      },
     };
   };
 
@@ -311,19 +287,6 @@ const TrainerOverview = () => {
     const fetchAnalytics = async () => {
       const trainerId = user?.id || user?.uid;
       if (!trainerId) return;
-
-      // Skip dynamic fetch when default view — trainer cache is used instead
-      const isDefault =
-        filters.collegeId === "all" &&
-        filters.course === "all" &&
-        filters.department === "all" &&
-        filters.year === "all" &&
-        filters.batch === "all" &&
-        filters.dateRange === "all";
-      if (isDefault) {
-        setAnalyticsData(null);
-        return;
-      }
 
       const cacheKey = getCacheKey(filters);
       if (analyticsCache[cacheKey]) {
@@ -336,7 +299,8 @@ const TrainerOverview = () => {
         const fetchedSessions = await getAnalyticsSessions({
           trainerId,
           ...filters,
-          limitCount: 30,
+          limitCount: 50,
+          includeActive: true, // include active sessions too
         });
 
         const computedStats = aggregateStatsFromSessions(fetchedSessions);
@@ -358,7 +322,7 @@ const TrainerOverview = () => {
   const filteredSessions = useMemo(() => [], []);
 
   const aggregatedStats = useMemo(() => {
-    // 1. Initial State / Global View -> Use Cache
+    // 1. Initial State / Global View -> Use aggregation of all trainer sessions
     const isDefaultView =
       filters.collegeId === "all" &&
       filters.course === "all" &&
@@ -367,35 +331,8 @@ const TrainerOverview = () => {
       filters.batch === "all" &&
       filters.dateRange === "all";
 
-    if (isDefaultView && cache) {
-      const avgRating =
-        cache.totalRatingsCount > 0
-          ? (cache.ratingSum / cache.totalRatingsCount).toFixed(2)
-          : "0.00";
-
-      return {
-        totalSessions: cache.totalSessions || 0,
-        totalResponses: cache.totalResponses || 0,
-        totalRatingsCount: cache.totalRatingsCount || 0,
-        totalHours: cache.totalHours || 0,
-        avgRating,
-        ratingDistribution: cache.ratingDistribution || {
-          1: 0,
-          2: 0,
-          3: 0,
-          4: 0,
-          5: 0,
-        },
-        categoryAverages: cache.categoryData
-          ? Object.fromEntries(
-              Object.entries(cache.categoryData).map(([k, v]) => [
-                k,
-                v.count > 0 ? (v.sum / v.count).toFixed(2) : 0,
-              ]),
-            )
-          : {},
-        qualitative: cache.qualitative || { high: [], low: [], future: [] },
-      };
+    if (isDefaultView && sessions.length > 0) {
+      return aggregateStatsFromSessions(sessions);
     }
 
     // 2. Filtered View -> Use Dynamic Data
@@ -411,7 +348,7 @@ const TrainerOverview = () => {
         qualitative: { high: [], low: [], future: [] },
       }
     );
-  }, [analyticsData, cache, filters]);
+  }, [analyticsData, sessions, filters]);
 
   // 1. Rating Distribution
   const ratingDistributionData = useMemo(() => {
@@ -447,22 +384,49 @@ const TrainerOverview = () => {
     );
   }, [aggregatedStats]);
 
-  // Response Trend - use cache trends data with day numbers like CollegeAnalytics
+  // Response Trend - compute from sessions instead of cache trends
   const responseTrend = useMemo(() => {
-    if (!trends?.dailyResponses) return [];
+    if (!sessions || sessions.length === 0) return [];
 
-    return Object.entries(trends.dailyResponses)
-      .map(([day, count]) => ({
-        day: parseInt(day),
-        responses: count,
+    const trendMap = {};
+    sessions.forEach((s) => {
+      const date = s.sessionDate; // 'YYYY-MM-DD'
+      if (!date) return;
+
+      if (!trendMap[date]) trendMap[date] = { responses: 0, sessions: 0 };
+      const stats = s.compiledStats;
+      if (stats) {
+        trendMap[date].responses += stats.totalResponses || 0;
+        trendMap[date].sessions += 1;
+      }
+    });
+
+    return Object.entries(trendMap)
+      .map(([dateStr, data]) => ({
+        day: parseInt(dateStr.split("-")[2]),
+        responses: data.responses,
+        sessions: data.sessions,
+        fullDate: dateStr,
       }))
-      .sort((a, b) => a.day - b.day);
-  }, [trends]);
+      .sort((a, b) => a.fullDate.localeCompare(b.fullDate))
+      .slice(-30);
+  }, [sessions]);
 
-  if (isLoading) {
+  const trendPeriod = useMemo(() => {
+    if (!responseTrend || responseTrend.length === 0) return "current month";
+    const first = responseTrend[0].fullDate;
+    const last = responseTrend[responseTrend.length - 1].fullDate;
+    const firstMonth = first?.slice(0, 7);
+    const lastMonth = last?.slice(0, 7);
+    if (!firstMonth || !lastMonth) return "current month";
+    return firstMonth === lastMonth ? firstMonth : `${firstMonth} - ${lastMonth}`;
+  }, [responseTrend]);
+
+  if (isDashboardLoading) {
     return (
-      <div className="flex items-center justify-center p-12 text-muted-foreground">
-        Loading analytics...
+      <div className="flex flex-col items-center justify-center p-12 text-muted-foreground gap-3">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p>Loading analytics...</p>
       </div>
     );
   }
@@ -824,7 +788,7 @@ const TrainerOverview = () => {
           <CardHeader>
             <CardTitle>Response Trend</CardTitle>
             <CardDescription>
-              X: Day | Y: Responses ({trends?.yearMonth || "current month"})
+              X: Day | Y: Responses ({trendPeriod})
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -941,13 +905,17 @@ const TrainerOverview = () => {
                                   {[1, 2, 3, 4, 5].map((star) => (
                                     <Star
                                       key={star}
-                                      className={`h-3 w-3 ${star <= Math.round(Number(comment.rating)) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground/30"}`}
+                                      className={`h-3 w-3 ${star <= Math.round(Number(comment.rating || comment.avgRating || 0)) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground/30"}`}
                                     />
                                   ))}
                                 </div>
-                                <span className="text-[10px] text-muted-foreground">
-                                  {new Date(comment.date).toLocaleDateString()}
-                                </span>
+                                {comment.date || comment.createdAt ? (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {new Date(comment.date || comment.createdAt).toLocaleDateString()}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground">No date</span>
+                                )}
                               </div>
                               <p className="text-sm italic text-foreground/80 mb-2">
                                 "{comment.text}"
@@ -984,7 +952,7 @@ const TrainerOverview = () => {
                               className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-100 text-sm font-semibold hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all cursor-default shadow-sm hover:shadow-md"
                             >
                               <Sparkles className="h-3.5 w-3.5 opacity-70 group-hover:animate-pulse" />
-                              {topic.text}
+                              {topic.name || topic.text}
                             </div>
                           ),
                         )}

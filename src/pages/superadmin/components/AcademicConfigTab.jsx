@@ -918,6 +918,7 @@ const AcademicConfigTab = ({ colleges }) => {
                 {colleges.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.name}
+                    {c.code ? ` (${c.code})` : ""}
                   </SelectItem>
                 ))}
               </SelectContent>

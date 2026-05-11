@@ -104,10 +104,10 @@ export const DashboardSidebar = ({
 
   return (
     <aside className={cn(
-      "fixed left-0 top-0 z-40 h-screen gradient-hero transition-all duration-300 ease-in-out",
+      "fixed left-0 top-0 z-40 h-screen max-h-screen overflow-hidden gradient-hero transition-all duration-300 ease-in-out",
       isCollapsed ? "w-16" : "w-56"
     )}>
-      <div className="flex h-full flex-col">
+      <div className="flex h-full min-h-full flex-col">
         {/* Logo and Toggle */}
         {isCollapsed ? (
           <div className="flex flex-col items-center px-4 py-5 border-b border-sidebar-border gap-3">
@@ -167,14 +167,14 @@ export const DashboardSidebar = ({
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
+        <nav className="flex-1 space-y-1 px-3 py-2 overflow-y-auto">
           {links.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
               className={({ isActive }) =>
                 cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
                   isCollapsed ? "justify-center px-2" : "",
                   isActive
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"

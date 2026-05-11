@@ -7,7 +7,8 @@ import {
   updateDoc,
   serverTimestamp,
   query,
-  where
+  where,
+  onSnapshot
 } from 'firebase/firestore';
 import { createUserWithoutLoggingIn } from '../authService';
 import { sendAdminOnboardingEmail, sendSuperAdminOnboardingEmail } from '../emailJsService';
@@ -102,19 +103,25 @@ export const deleteSystemUser = async (uid) => {
 };
 
 /**
- * Get all system users
+ * Get all system users (excluding soft-deleted ones)
+ * Handles both old users (without isDeleted field) and new users (with field)
  */
 export const getAllSystemUsers = async () => {
   try {
-    const q = query(
-      collection(db, COLLECTION_NAME),
-      where('isDeleted', '==', false)
-    );
+    const q = query(collection(db, COLLECTION_NAME));
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    return querySnapshot.docs
+      .filter(doc => {
+        const data = doc.data();
+        // Include documents that either:
+        // 1. Don't have isDeleted field (legacy users)
+        // 2. Have isDeleted field set to false
+        return data.isDeleted !== true;
+      })
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
   } catch (error) {
     console.error('Error getting users:', error);
     throw error;
@@ -122,22 +129,108 @@ export const getAllSystemUsers = async () => {
 };
 
 /**
- * Get users by role
+ * Get users by role (excluding soft-deleted ones)
+ * Handles both old users (without isDeleted field) and new users (with field)
  */
 export const getUsersByRole = async (role) => {
   try {
     const q = query(
       collection(db, COLLECTION_NAME),
-      where('role', '==', role),
-      where('isDeleted', '==', false)
+      where('role', '==', role)
     );
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    return querySnapshot.docs
+      .filter(doc => {
+        const data = doc.data();
+        // Include documents that either:
+        // 1. Don't have isDeleted field (legacy users)
+        // 2. Have isDeleted field set to false
+        return data.isDeleted !== true;
+      })
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
   } catch (error) {
     console.error(`Error getting users by role ${role}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Subscribe to real-time updates of all system users (excluding soft-deleted ones)
+ * Returns an unsubscribe function
+ */
+export const subscribeToAdmins = (callback) => {
+  try {
+    const q = query(collection(db, COLLECTION_NAME));
+    
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const admins = querySnapshot.docs
+        .filter(doc => {
+          const data = doc.data();
+          // Include documents that either:
+          // 1. Don't have isDeleted field (legacy users)
+          // 2. Have isDeleted field set to false
+          return data.isDeleted !== true;
+        })
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+      
+      callback(admins);
+    }, (error) => {
+      console.error('Error subscribing to admins:', error);
+    });
+
+    return unsubscribe;
+  } catch (error) {
+    console.error('Error setting up admins subscription:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update another user's password (SuperAdmin only via Cloud Function)
+ * This requires a Cloud Function with admin access to be deployed.
+ * 
+ * If the Cloud Function is not available, returns an error message
+ * with instructions for setup.
+ */
+export const updateAdminPassword = async (uid, newPassword) => {
+  try {
+    // Call Cloud Function to update password
+    // Format: https://us-central1-{projectId}.cloudfunctions.net/updateUserPassword
+    const projectId = 'trainer-feedback-f59f0';
+    const functionUrl = `https://us-central1-${projectId}.cloudfunctions.net/updateUserPassword`;
+    
+    const response = await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        uid,
+        newPassword,
+      }),
+    });
+
+    if (!response.ok) {
+      // If 404, Cloud Function not found
+      if (response.status === 404) {
+        throw new Error(
+          'Cloud Function not deployed. Please deploy the updateUserPassword Cloud Function to enable direct password updates.'
+        );
+      }
+      const error = await response.json();
+      throw new Error(error.message || `HTTP ${response.status}: Failed to update password`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Error updating admin password:', error);
     throw error;
   }
 };

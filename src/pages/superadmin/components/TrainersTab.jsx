@@ -10,6 +10,8 @@ import {
   BarChart3,
   Search,
   MoreVertical,
+  RotateCcw,
+  ShieldBan,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,6 +63,7 @@ const TrainersTab = () => {
   const loading = contextLoading.trainers;
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
 
   // Dialog states
   const [trainerDialogOpen, setTrainerDialogOpen] = useState(false);
@@ -88,9 +91,17 @@ const TrainersTab = () => {
 
   // Force refresh trainers from context
   const refreshTrainers = () => loadTrainers(true);
+  
   // Filter Logic
-  const filteredTrainers = trainers
+  const allFilteredTrainers = trainers
     .filter((t) => {
+      // Primary filter: isDeleted status
+      if (showArchived) {
+        if (!t.isDeleted) return false;
+      } else {
+        if (t.isDeleted) return false;
+      }
+
       if (!searchQuery) return true;
       const searchLower = searchQuery.toLowerCase();
       return (
@@ -105,6 +116,8 @@ const TrainersTab = () => {
         numeric: true,
       }),
     );
+
+  const filteredTrainers = allFilteredTrainers;
 
   // Handlers
   const openCreateDialog = async () => {
@@ -201,14 +214,28 @@ const TrainersTab = () => {
   };
 
   const handleDeleteTrainer = async (id) => {
-    if (confirm("Are you sure you want to delete this trainer?")) {
+    if (confirm("Are you sure you want to delete this trainer? Deletion is soft and for safe records.")) {
       try {
         await deleteTrainer(id);
         toast.success("Trainer deleted");
-        updateTrainersList((prev) => prev.filter((t) => t.id !== id));
+        updateTrainersList((prev) => 
+          prev.map((t) => (t.id === id ? { ...t, isDeleted: true } : t))
+        );
       } catch (error) {
         toast.error("Failed to delete trainer");
       }
+    }
+  };
+
+  const handleRestoreTrainer = async (id) => {
+    try {
+      await updateTrainer(id, { isDeleted: false, deletedAt: null });
+      toast.success("Trainer restored successfully");
+      updateTrainersList((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, isDeleted: false, deletedAt: null } : t))
+      );
+    } catch (error) {
+      toast.error("Failed to restore trainer");
     }
   };
 
@@ -277,253 +304,279 @@ const TrainersTab = () => {
   return (
     <div className="space-y-6">
       {/* Header Section - All items on same line */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex-1 flex max-w-md items-center gap-3">
-          <div className="relative flex-1">
-            <Input
-              placeholder="Search by name, email, or domain..."
-              className="pl-10 bg-card/50 shadow-sm"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-4">
+           <Button 
+            variant={showArchived ? "ghost" : "default"} 
+            size="sm" 
+            onClick={() => setShowArchived(false)}
+            className="rounded-full shadow-sm"
+          >
+            All Active
+          </Button>
+          <Button 
+            variant={showArchived ? "default" : "ghost"} 
+            size="sm" 
+            onClick={() => setShowArchived(true)}
+            className="rounded-full shadow-sm gap-2"
+          >
+            <ShieldBan className="h-3.5 w-3.5" />
+            Archived/Deleted
+          </Button>
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex-1 flex max-w-md items-center gap-3">
+            <div className="relative flex-1">
+              <Input
+                placeholder={`Search ${showArchived ? "archived" : "active"} by name, email, or domain...`}
+                className="pl-10 bg-card/50 shadow-sm"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="text-sm font-medium text-muted-foreground whitespace-nowrap bg-muted/50 px-3 py-1.5 rounded-md border">
+              {filteredTrainers.length}{" "}
+              {filteredTrainers.length === 1 ? "Trainer" : "Trainers"}
+            </div>
           </div>
-          <div className="text-sm font-medium text-muted-foreground whitespace-nowrap bg-muted/50 px-3 py-1.5 rounded-md border">
-            {filteredTrainers.length}{" "}
-            {filteredTrainers.length === 1 ? "Trainer" : "Trainers"}
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {/* Batch Import Button */}
+            {!showArchived && (
+              <>
+                <Button
+                  variant="outline"
+                  className="gap-2 shadow-sm border-dashed"
+                  onClick={() => setBatchDialogOpen(true)}
+                >
+                  <Upload className="h-4 w-4" />
+                  <span className="hidden md:inline">Batch Import</span>
+                </Button>
+
+                {/* Add Trainer Button */}
+                <Button
+                  className="gap-2 gradient-hero text-primary-foreground shadow-md hover:shadow-lg transition-all"
+                  onClick={openCreateDialog}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Trainer
+                </Button>
+              </>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          {/* Batch Import Button */}
-          <Button
-            variant="outline"
-            className="gap-2 shadow-sm border-dashed"
-            onClick={() => setBatchDialogOpen(true)}
-          >
-            <Upload className="h-4 w-4" />
-            <span className="hidden md:inline">Batch Import</span>
-          </Button>
 
-          {/* Add Trainer Button */}
-          <Button
-            className="gap-2 gradient-hero text-primary-foreground shadow-md hover:shadow-lg transition-all"
-            onClick={openCreateDialog}
-          >
-            <Plus className="h-4 w-4" />
-            Add Trainer
-          </Button>
-
-          {/* Batch Import Modal */}
-          {batchDialogOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-              <div className="bg-background rounded-xl shadow-xl w-full max-w-lg border border-border animate-in zoom-in-95 duration-200 flex flex-col">
-                <div className="flex flex-col space-y-1.5 p-6 pb-4">
-                  <h2 className="text-lg font-semibold leading-none tracking-tight">
-                    Batch Import Trainers
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    Upload a JSON file containing an array of trainer objects.
-                  </p>
-                </div>
-                <div className="p-6 pt-0 space-y-4">
-                  <div className="flex justify-between items-center">
-                    <p className="text-sm font-medium">Select File</p>
-                    <a
-                      href="/sample-trainers.json"
-                      download="sample-trainers.json"
-                      className="text-xs text-primary hover:underline flex items-center gap-1"
-                    >
-                      Download Sample JSON
-                    </a>
-                  </div>
-                  <Input
-                    type="file"
-                    accept=".json"
-                    onChange={handleBatchFileChange}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Format: JSON array of objects with trainer_id, name, etc.
-                  </p>
-                </div>
-                <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 p-6 pt-0">
-                  <Button
-                    variant="outline"
-                    onClick={() => setBatchDialogOpen(false)}
+        {/* Batch Import Modal */}
+        {batchDialogOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-background rounded-xl shadow-xl w-full max-w-lg border border-border animate-in zoom-in-95 duration-200 flex flex-col">
+              <div className="flex flex-col space-y-1.5 p-6 pb-4">
+                <h2 className="text-lg font-semibold leading-none tracking-tight">
+                  Batch Import Trainers
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Upload a JSON file containing an array of trainer objects.
+                </p>
+              </div>
+              <div className="p-6 pt-0 space-y-4">
+                <div className="flex justify-between items-center">
+                  <p className="text-sm font-medium">Select File</p>
+                  <a
+                    href="/sample-trainers.json"
+                    download="sample-trainers.json"
+                    className="text-xs text-primary hover:underline flex items-center gap-1"
                   >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleBatchUpload}
-                    disabled={!batchFile || isUploading}
-                    className="gradient-hero text-primary-foreground"
-                  >
-                    {isUploading ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    ) : null}
-                    Upload
-                  </Button>
+                    Download Sample JSON
+                  </a>
                 </div>
+                <Input
+                  type="file"
+                  accept=".json"
+                  onChange={handleBatchFileChange}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Format: JSON array of objects with trainer_id, name, etc.
+                </p>
+              </div>
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 p-6 pt-0">
+                <Button
+                  variant="outline"
+                  onClick={() => setBatchDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleBatchUpload}
+                  disabled={!batchFile || isUploading}
+                  className="gradient-hero text-primary-foreground"
+                >
+                  {isUploading ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : null}
+                  Upload
+                </Button>
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Add/Edit Trainer Modal */}
-          {trainerDialogOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-              <div className="bg-background rounded-xl shadow-xl w-full max-w-lg border border-border animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-                <div className="flex flex-col space-y-1.5 p-6 pb-4">
-                  <h2 className="text-lg font-semibold leading-none tracking-tight">
-                    {isEditing ? "Edit Trainer" : "Add New Trainer"}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    {isEditing
-                      ? "Update trainer details"
-                      : "Add a new trainer to the platform"}
-                  </p>
-                </div>
-                <div className="p-6 pt-0 overflow-y-auto space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Trainer ID * (Format: GA-TXXX)</Label>
-                      <Input
-                        value={currentTrainer.trainer_id}
-                        onChange={(e) => {
-                          const val = e.target.value.toUpperCase();
-                          setCurrentTrainer({
-                            ...currentTrainer,
-                            trainer_id: val,
-                            // If create mode, also update password if they were matched
-                            password:
-                              !isEditing &&
-                              currentTrainer.password ===
-                                currentTrainer.trainer_id
-                                ? val
-                                : currentTrainer.password,
-                          });
-                        }}
-                        disabled={isEditing}
-                        placeholder="GA-T001"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Full Name *</Label>
-                      <Input
-                        value={currentTrainer.name}
-                        onChange={(e) =>
-                          setCurrentTrainer({
-                            ...currentTrainer,
-                            name: e.target.value,
-                          })
-                        }
-                        placeholder="John Doe"
-                      />
-                    </div>
-                  </div>
+        {/* Add/Edit Trainer Modal */}
+        {trainerDialogOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-background rounded-xl shadow-xl w-full max-w-lg border border-border animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+              <div className="flex flex-col space-y-1.5 p-6 pb-4">
+                <h2 className="text-lg font-semibold leading-none tracking-tight">
+                  {isEditing ? "Edit Trainer" : "Add New Trainer"}
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  {isEditing
+                    ? "Update trainer details"
+                    : "Add a new trainer to the platform"}
+                </p>
+              </div>
+              <div className="p-6 pt-0 overflow-y-auto space-y-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Email *</Label>
+                    <Label>Trainer ID * (Format: GA-TXXX)</Label>
                     <Input
-                      type="email"
-                      value={currentTrainer.email}
-                      onChange={(e) =>
+                      value={currentTrainer.trainer_id}
+                      onChange={(e) => {
+                        const val = e.target.value.toUpperCase();
                         setCurrentTrainer({
                           ...currentTrainer,
-                          email: e.target.value,
-                        })
-                      }
-                      placeholder="john@example.com"
+                          trainer_id: val,
+                          // If create mode, also update password if they were matched
+                          password:
+                            !isEditing &&
+                            currentTrainer.password ===
+                              currentTrainer.trainer_id
+                              ? val
+                              : currentTrainer.password,
+                        });
+                      }}
+                      disabled={isEditing}
+                      placeholder="GA-T001"
                     />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Domain</Label>
-                      <Select
-                        value={currentTrainer.domain}
-                        onValueChange={(value) =>
-                          setCurrentTrainer({
-                            ...currentTrainer,
-                            domain: value,
-                          })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select Domain" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Technical">Technical</SelectItem>
-                          <SelectItem value="Soft Skills">
-                            Soft Skills
-                          </SelectItem>
-                          <SelectItem value="Aptitude">Aptitude</SelectItem>
-                          <SelectItem value="Tools">Tools</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Specialisation</Label>
-                      <Input
-                        value={currentTrainer.specialisation}
-                        onChange={(e) =>
-                          setCurrentTrainer({
-                            ...currentTrainer,
-                            specialisation: e.target.value,
-                          })
-                        }
-                        placeholder="Core expertise"
-                      />
-                    </div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Topics (comma separated)</Label>
-                    <Textarea
-                      value={currentTrainer.topics}
+                    <Label>Full Name *</Label>
+                    <Input
+                      value={currentTrainer.name}
                       onChange={(e) =>
                         setCurrentTrainer({
                           ...currentTrainer,
-                          topics: e.target.value,
+                          name: e.target.value,
                         })
                       }
-                      placeholder="Java, Python, React, System Design"
-                      rows={3}
+                      placeholder="John Doe"
                     />
                   </div>
-                  {!isEditing && (
-                    <div className="space-y-2">
-                      <Label>Password (Initial)</Label>
-                      <Input
-                        type="password"
-                        value={currentTrainer.password}
-                        onChange={(e) =>
-                          setCurrentTrainer({
-                            ...currentTrainer,
-                            password: e.target.value,
-                          })
-                        }
-                        placeholder="******"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Account will be created with this password.
-                      </p>
-                    </div>
-                  )}
                 </div>
-                <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 p-6 pt-0">
-                  <Button
-                    variant="outline"
-                    onClick={() => setTrainerDialogOpen(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleSaveTrainer}
-                    className="gradient-hero text-primary-foreground"
-                  >
-                    {isEditing ? "Update" : "Create"}
-                  </Button>
+                <div className="space-y-2">
+                  <Label>Email *</Label>
+                  <Input
+                    type="email"
+                    value={currentTrainer.email}
+                    onChange={(e) =>
+                      setCurrentTrainer({
+                        ...currentTrainer,
+                        email: e.target.value,
+                      })
+                    }
+                    placeholder="john@example.com"
+                  />
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Domain</Label>
+                    <Select
+                      value={currentTrainer.domain}
+                      onValueChange={(value) =>
+                        setCurrentTrainer({
+                          ...currentTrainer,
+                          domain: value,
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Domain" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Technical">Technical</SelectItem>
+                        <SelectItem value="Soft Skills">
+                          Soft Skills
+                        </SelectItem>
+                        <SelectItem value="Aptitude">Aptitude</SelectItem>
+                        <SelectItem value="Tools">Tools</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Specialisation</Label>
+                    <Input
+                      value={currentTrainer.specialisation}
+                      onChange={(e) =>
+                        setCurrentTrainer({
+                          ...currentTrainer,
+                          specialisation: e.target.value,
+                        })
+                      }
+                      placeholder="Core expertise"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Topics (comma separated)</Label>
+                  <Textarea
+                    value={currentTrainer.topics}
+                    onChange={(e) =>
+                      setCurrentTrainer({
+                        ...currentTrainer,
+                        topics: e.target.value,
+                      })
+                    }
+                    placeholder="Java, Python, React, System Design"
+                    rows={3}
+                  />
+                </div>
+                {!isEditing && (
+                  <div className="space-y-2">
+                    <Label>Password (Initial)</Label>
+                    <Input
+                      type="password"
+                      value={currentTrainer.password}
+                      onChange={(e) =>
+                        setCurrentTrainer({
+                          ...currentTrainer,
+                          password: e.target.value,
+                        })
+                      }
+                      placeholder="******"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Account will be created with this password.
+                    </p>
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 p-6 pt-0">
+                <Button
+                  variant="outline"
+                  onClick={() => setTrainerDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSaveTrainer}
+                  className="gradient-hero text-primary-foreground"
+                >
+                  {isEditing ? "Update" : "Create"}
+                </Button>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Redesigned Trainers Grid */}
@@ -543,7 +596,7 @@ const TrainersTab = () => {
               {/* Details Column */}
               <div className="flex-1 min-w-0 space-y-1.5">
                 <div className="flex items-center gap-3">
-                  <h3 className="font-bold text-lg text-foreground leading-none">
+                  <h3 className={`font-bold text-lg leading-none ${trainer.isDeleted ? "text-muted-foreground/70" : "text-foreground"}`}>
                     {trainer.name}
                   </h3>
                   <span className="text-[10px] font-mono bg-muted px-2 py-0.5 rounded-full text-muted-foreground border shrink-0">
@@ -551,13 +604,13 @@ const TrainersTab = () => {
                   </span>
                 </div>
 
-                <p className="text-sm text-muted-foreground leading-none">
+                <p className={`text-sm leading-none ${trainer.isDeleted ? "text-muted-foreground/60" : "text-muted-foreground"}`}>
                   {trainer.email}
                 </p>
 
                 {/* Domain & Specialisation */}
                 {(trainer.domain || trainer.specialisation) && (
-                  <div className="pt-2 flex flex-wrap gap-2 text-xs">
+                  <div className={`pt-2 flex flex-wrap gap-2 text-xs ${trainer.isDeleted ? "opacity-50 grayscale" : ""}`}>
                     {trainer.domain && (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary text-primary-foreground font-medium shadow-sm">
                         {trainer.domain}
@@ -572,7 +625,7 @@ const TrainersTab = () => {
                 )}
 
                 {/* Skills / Topics */}
-                <div className="pt-2">
+                <div className={`pt-2 ${trainer.isDeleted ? "opacity-50" : ""}`}>
                   <div className="flex flex-wrap gap-1.5">
                     {trainer.topics && trainer.topics.length > 0 ? (
                       <>
@@ -621,12 +674,21 @@ const TrainersTab = () => {
                   <DropdownMenuItem onClick={() => openEditDialog(trainer)}>
                     <Pencil className="mr-2 h-4 w-4" /> Edit Profile
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                    onClick={() => handleDeleteTrainer(trainer.id)}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" /> Delete Trainer
-                  </DropdownMenuItem>
+                  {trainer.isDeleted ? (
+                    <DropdownMenuItem
+                      className="text-primary focus:text-primary focus:bg-primary/10"
+                      onClick={() => handleRestoreTrainer(trainer.id)}
+                    >
+                      <RotateCcw className="mr-2 h-4 w-4" /> Restore Trainer
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                      onClick={() => handleDeleteTrainer(trainer.id)}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" /> Delete Trainer
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

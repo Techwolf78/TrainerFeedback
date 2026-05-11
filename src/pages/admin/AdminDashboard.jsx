@@ -39,7 +39,7 @@ const AdminDashboardContent = () => {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const { college, loading, refreshAll } = useAdminData();
+  const { college, loading } = useAdminData();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const [runTour, setRunTour] = useState(false);
   const [tourStepIndex, setTourStepIndex] = useState(0);
@@ -594,9 +594,9 @@ const AdminDashboardContent = () => {
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-y-auto bg-muted/5 p-6 scroll-smooth">
+        <main className="flex-1 overflow-y-auto bg-muted/5 p-2 scroll-smooth">
           <div
-            className={`max-w-8xl mx-auto transition-all duration-300 ${isSidebarCollapsed ? "px-6" : "px-0"}`}
+            className={` mx-auto transition-all duration-300 ${isSidebarCollapsed ? "px-6" : "px-0"}`}
           >
             {activeTab === "overview" && <CollegeOverviewTab />}
             {activeTab === "feedback" && <TrainerFeedbackTab />}

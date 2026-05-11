@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { useParams } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import { getSessionById } from "@/services/superadmin/sessionService";
 import { addResponse } from "@/services/superadmin/responseService";
 import {
@@ -30,6 +30,10 @@ const getDeviceId = () => {
 
 export const AnonymousFeedback = () => {
   const { sessionId } = useParams();
+  const location = useLocation();
+  const queryParams = new URLSearchParams(location.search);
+  const urlPhaseId = queryParams.get("ph");
+  const urlVersion = queryParams.get("v");
 
   const [session, setSession] = useState(null);
   const [responses, setResponses] = useState({});
@@ -51,16 +55,26 @@ export const AnonymousFeedback = () => {
       if (!sessionData) {
         setError("Session not found");
         setIsLoading(false);
-        return;
-      }
-
-      if (sessionData.status !== "active") {
+        retError("Session closed. This feedback phase has ended.");
         setIsClosed(true);
         setIsLoading(false);
         return;
       }
 
-      // Check if session has expired
+      // Phase Validation: Ensure link matches active phase
+      if (urlPhaseId && sessionData.phaseId && urlPhaseId !== sessionData.phaseId) {
+        setError("This feedback link is for an older phase. Please use the current QR code.");
+        setIsClosed(true);
+        setIsLoading(false);
+        return;
+      } else if (!urlPhaseId && urlVersion && Number(urlVersion) !== (sessionData.reactivationCount || 0)) {
+         setError("This feedback link has expired. Please use the current QR code.");
+         setIsClosed(true);
+         setIsLoading(false);
+         return;
+      }
+
+      // Check if session has expired manually set date
       if (
         sessionData.expiresAt &&
         new Date(sessionData.expiresAt) < new Date()
@@ -81,13 +95,9 @@ export const AnonymousFeedback = () => {
   };
 
   const checkPreviousSubmission = (currentSession) => {
-    if (!currentSession) return;
-    const version = currentSession.reactivationCount || 0;
-    const submittedKey = `feedback_submitted_${sessionId}_v${version}`;
-    const submissionData = localStorage.getItem(submittedKey);
-    if (submissionData) {
-      setIsSubmitted(true);
-    }
+    // [MODIFIED] Students can now submit multiple times in the same phase.
+    // We disable the hard block by not setting isSubmitted=true based on localStorage.
+    return;
   };
 
   const handleRatingChange = (index, rating) => {
@@ -97,10 +107,10 @@ export const AnonymousFeedback = () => {
     }));
   };
 
-  const handleTextChange = (index, text) => {
+  const handleTextChange = (index, value, type = "text") => {
     setResponses((prev) => ({
       ...prev,
-      [index]: { ...prev[index], value: text },
+      [index]: { ...prev[index], value, type },
     }));
   };
 
@@ -157,15 +167,18 @@ export const AnonymousFeedback = () => {
         .filter((a) => a.value !== null);
 
       // Submit to Firebase subcollection
+      const version = session.reactivationCount || 0;
+      const phaseId = session.phaseId || null;
       await addResponse(sessionId, {
         deviceId: getDeviceId(),
         answers,
+        version,
+        phaseId
       });
 
-      // Mark as submitted in localStorage
-      const version = session.reactivationCount || 0;
+      // Mark as submitted in localStorage (for history/UX, not blocking anymore)
       localStorage.setItem(
-        `feedback_submitted_${sessionId}_v${version}`,
+        `feedback_submitted_${sessionId}_ph_${phaseId || version}_${Date.now()}`,
         JSON.stringify({
           submittedAt: new Date().toISOString(),
           deviceId: getDeviceId(),
@@ -342,16 +355,73 @@ export const AnonymousFeedback = () => {
     }
   };
 
+  const handleBulkSubmit = async () => {
+    if (!session || !session.questions) return;
+    setIsSubmitting(true);
+    try {
+      const promises = [];
+      const countToSubmit = 50;
+
+      for (let i = 1; i <= countToSubmit; i++) {
+        // Determine star rating based on sequence (approx 10 of each rating)
+        const ratingValue = Math.ceil(i / 10); // 1-10: 1, 11-20: 2, etc.
+
+        const answers = session.questions.map((q) => {
+          let value;
+          const type = q.type || q.responseType || "rating";
+
+          if (type === "rating" || q.responseType === "rating" || q.responseType === "both") {
+            value = ratingValue > 5 ? 5 : ratingValue;
+          } else if (type === "mcq" && q.options) {
+            value = q.options[Math.floor(Math.random() * q.options.length)];
+          } else if (type === "multiselect" && q.options) {
+            const shuffled = [...q.options].sort(() => 0.5 - Math.random());
+            value = shuffled.slice(0, Math.floor(Math.random() * 2) + 1);
+          } else if (type === "futureSession") {
+            value = `Future skills suggestion ${i}: Advanced AI workflows, LLM prompt design, production ML`;
+          } else if (type === "topicslearned") {
+            value = `Topics learned ${i}: model training, evaluation metrics, deployment pipelines`;
+          } else {
+            // "text" type or "any other feedback"
+            value = `Additional feedback ${i}: session was highly informative and well paced`;
+          }
+
+          return {
+            questionId: q.id,
+            value,
+            type,
+          };
+        });
+
+        const deviceId = `bulk_${Date.now()}_${i}`;
+        const version = session.reactivationCount || 0;
+        promises.push(addResponse(sessionId, { deviceId, answers, version }));
+      }
+
+      await Promise.all(promises);
+      toast.success(`Successfully submitted ${countToSubmit} sequential responses!`);
+      setIsSubmitted(true);
+    } catch (err) {
+      console.error("Bulk submission failed:", err);
+      toast.error("Bulk submission failed");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-background to-purple-50 dark:from-background dark:via-background dark:to-background">
-      {/* Debug Seeder Button */}
-      {/* <Button 
-        className="fixed bottom-4 right-4 z-50 bg-red-600 hover:bg-red-700 shadow-lg text-white font-bold"
-        onClick={handleSeedData}
-        disabled={isSubmitting}
-      >
-        {isSubmitting ? 'Seeding...' : 'DEBUG: Seed 10 Responses'}
-      </Button> */}
+      {/* Bulk Submitter Button (hidden for production) */}
+      {false && (
+        <Button
+          className="fixed bottom-4 right-4 z-50 bg-orange-600 hover:bg-orange-700 shadow-lg text-white font-bold"
+          onClick={handleBulkSubmit}
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? "Submitting..." : "DEBUG: Submit 50 Responses"}
+        </Button>
+      )}
+
       {/* Navbar */}
       <nav className="sticky top-0 z-50 bg-primary shadow-sm">
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center">
@@ -553,7 +623,11 @@ export const AnonymousFeedback = () => {
                           placeholder="Share your thoughts..."
                           value={responses[index]?.value || ""}
                           onChange={(e) =>
-                            handleTextChange(index, e.target.value)
+                            handleTextChange(
+                              index,
+                              e.target.value,
+                              question.type || "text",
+                            )
                           }
                           rows={3}
                         />
@@ -567,7 +641,7 @@ export const AnonymousFeedback = () => {
                           placeholder="What topics or skills would you like covered in future sessions?"
                           value={responses[index]?.value || ""}
                           onChange={(e) =>
-                            handleTextChange(index, e.target.value)
+                            handleTextChange(index, e.target.value, "futureSession")
                           }
                           rows={3}
                         />
@@ -585,7 +659,7 @@ export const AnonymousFeedback = () => {
                           placeholder="e.g. Topic 1, Topic 2, Topic 3"
                           value={responses[index]?.value || ""}
                           onChange={(e) =>
-                            handleTextChange(index, e.target.value)
+                            handleTextChange(index, e.target.value, "topicslearned")
                           }
                           rows={3}
                         />

@@ -1,7 +1,7 @@
 import { db } from "../firebase";
 import {
   collection,
-  addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   doc,
@@ -18,56 +18,192 @@ import {
 
 const COLLECTION_NAME = "sessions";
 
-// Create a new session
-export const createSession = async (sessionData) => {
+const getSessionMetadata = (data) => {
+  const collegePart = (data.collegeName || "COL")
+    .split(" ")[0]
+    .substring(0, 3)
+    .toUpperCase();
+  const datePart = (data.sessionDate || new Date().toISOString().split("T")[0])
+    .replace(/-/g, "");
+  const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
+  
+  return {
+    datePart,
+    randomPart,
+    sessionId: `SESS-${collegePart}-${datePart}-${randomPart}`
+  };
+};
+
+/**
+ * Create a new session with a custom human-readable document ID
+ * @param {Object} data - Session data
+ * @returns {Promise<Object>} - Created session
+ */
+export const createSession = async (data) => {
   try {
-    const {
-      collegeId,
-      collegeName,
-      academicYear,
-      course,
-      branch,
-      batch,
-      year,
-      sessionTime, // 'Morning' | 'Afternoon'
-      sessionDate,
-      assignedTrainer, // { id, name }
-      topic,
-      domain,
-      sessionDuration = 60, // minutes
-      questions = [],
-      ttl = 24, // hours until expiry
-      projectId = "",
-      projectCode = "",
-    } = sessionData;
+    const { datePart, randomPart, sessionId } = getSessionMetadata(data);
+    const docRef = doc(db, COLLECTION_NAME, sessionId);
 
-    const docRef = await addDoc(collection(db, COLLECTION_NAME), {
-      collegeId,
-      collegeName,
-      academicYear,
-      course,
-      branch,
-      batch,
-      year,
-      sessionTime,
-      sessionDate,
-      assignedTrainer,
-      topic,
-      domain,
-      sessionDuration,
-      questions,
-      projectId,
-      projectCode,
+    const sessionData = {
+      ...data,
+      id: sessionId,
       status: "active",
-      templateId: sessionData.templateId || null,
+      phaseId: `PHASE-${datePart}-${randomPart}`,
+      phaseStartedAt: serverTimestamp(),
       createdAt: serverTimestamp(),
-    });
+      updatedAt: serverTimestamp(),
+      reactivationCount: 0,
+    };
 
-    return { id: docRef.id, ...sessionData };
+    await setDoc(docRef, sessionData);
+    return sessionData;
   } catch (error) {
     console.error("Error creating session:", error);
     throw error;
   }
+};
+
+/**
+ * Subscribe to real-time session updates with live responses for active sessions
+ * @param {Function} callback - (sessions, lastDoc, hasMore)
+ */
+export const subscribeToSessions = (callback) => {
+  const q = query(
+    collection(db, COLLECTION_NAME),
+    orderBy("createdAt", "desc"),
+    limit(50),
+  );
+
+  let activeSessionUnsubscribes = {}; // { sessionId: unsubscribeFunction }
+
+  return onSnapshot(q, (snapshot) => {
+    const sessions = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    // Identify sessions that need live response tracking or have existing stats in doc
+    // We now start listeners for ALL fetched sessions so that stats are loaded correctly in lists
+    const sessionIdsInView = new Set(sessions.map((s) => s.id));
+
+    // Cleanup unsubscribes for sessions that are no longer in view
+    Object.keys(activeSessionUnsubscribes).forEach((id) => {
+      if (!sessionIdsInView.has(id)) {
+        activeSessionUnsubscribes[id]();
+        delete activeSessionUnsubscribes[id];
+      }
+    });
+
+    // Setup new unsubscribes for sessions
+    sessions.forEach((session) => {
+      if (!activeSessionUnsubscribes[session.id]) {
+        // console.log(`[Stats] Starting sub-listener for session: ${session.id}`);
+        const responsesRef = collection(db, COLLECTION_NAME, session.id, "responses");
+        const responsesQuery = query(responsesRef, orderBy("submittedAt", "desc"));
+
+        activeSessionUnsubscribes[session.id] = onSnapshot(responsesQuery, async (responseSnapshot) => {
+          const responses = responseSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+          if (responses.length > 0) {
+            const { compileSessionStatsFromResponses } = await import("./responseService");
+            const liveStats = compileSessionStatsFromResponses(responses, session.questions || []);
+
+            // Identify current session in the list and update it
+            const updatedSessions = sessions.map(s => 
+              s.id === session.id ? { ...s, compiledStats: liveStats, isLive: s.status === "active", responseCount: responses.length } : s
+            );
+            
+            callback(
+              updatedSessions,
+              snapshot.docs[snapshot.docs.length - 1],
+              snapshot.docs.length === 50
+            );
+          }
+        });
+      }
+    });
+
+    // Initial callback for the main sessions update
+    callback(
+      sessions,
+      snapshot.docs[snapshot.docs.length - 1],
+      snapshot.docs.length === 50,
+    );
+  });
+};
+
+/**
+ * Subscribe to real-time session updates for a specific college
+ * @param {string} collegeId - College ID to filter sessions
+ * @param {Function} callback - (sessions, lastDoc, hasMore)
+ */
+export const subscribeToCollegeSessions = (collegeId, callback) => {
+  if (!collegeId) return () => {};
+
+  const q = query(
+    collection(db, COLLECTION_NAME),
+    where("collegeId", "==", collegeId),
+    orderBy("createdAt", "desc"),
+    limit(100),
+  );
+
+  let activeSessionUnsubscribes = {};
+
+  return onSnapshot(q, (snapshot) => {
+    let currentSessions = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    // Identify sessions that need live response tracking or have existing stats
+    // We now start listeners for ALL fetched sessions so that stats are loaded correctly in lists
+    const sessionIdsInView = new Set(currentSessions.map((s) => s.id));
+
+    // Cleanup unsubscribes
+    Object.keys(activeSessionUnsubscribes).forEach((id) => {
+      if (!sessionIdsInView.has(id)) {
+        if (typeof activeSessionUnsubscribes[id] === "function") {
+          activeSessionUnsubscribes[id]();
+        }
+        delete activeSessionUnsubscribes[id];
+      }
+    });
+
+    // Setup sub-listeners for sessions
+    currentSessions.forEach((session) => {
+      if (!activeSessionUnsubscribes[session.id]) {
+        const responsesRef = collection(db, COLLECTION_NAME, session.id, "responses");
+        const responsesQuery = query(responsesRef, orderBy("submittedAt", "desc"));
+
+        activeSessionUnsubscribes[session.id] = onSnapshot(responsesQuery, async (responseSnapshot) => {
+          const responses = responseSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+          if (responses.length > 0) {
+            const { compileSessionStatsFromResponses } = await import("./responseService");
+            const liveStats = compileSessionStatsFromResponses(responses, session.questions || []);
+
+            // Update the specific session in the list
+            currentSessions = currentSessions.map(s => 
+              s.id === session.id ? { ...s, compiledStats: liveStats, isLive: s.status === "active", responseCount: responses.length } : s
+            );
+            
+            callback(
+              currentSessions,
+              snapshot.docs[snapshot.docs.length - 1],
+              snapshot.docs.length === 100
+            );
+          }
+        });
+      }
+    });
+
+    // Initial callback
+    callback(
+      currentSessions,
+      snapshot.docs[snapshot.docs.length - 1],
+      snapshot.docs.length === 100,
+    );
+  });
 };
 
 // Update an existing session
@@ -95,24 +231,7 @@ export const deleteSession = async (id) => {
       const session = { id: docSnap.id, ...docSnap.data() };
 
       // If session contributed to analytics, remove its stats from cache
-      if (session.status === "inactive" && session.compiledStats) {
-        try {
-          // Dynamic import to avoid circular dependency
-          const { updateCollegeCache, updateTrainerCache } =
-            await import("./cacheService");
-
-          await Promise.all([
-            updateCollegeCache(session, session.compiledStats, true), // true = isDelete
-            updateTrainerCache(session, session.compiledStats, true),
-          ]);
-        } catch (cacheErr) {
-          console.error(
-            "Failed to cleanup cache for deleted session:",
-            cacheErr,
-          );
-          // Continue with deletion anyway
-        }
-      }
+      /* Cache removal logic deprecated: all dashboards now read from sessions directly */
     }
 
     await deleteDoc(docRef);
@@ -153,28 +272,17 @@ export const getAllSessions = async (collegeId = null) => {
 // Get sessions by Trainer ID
 export const getSessionsByTrainer = async (trainerId) => {
   try {
-    // Note: Removed orderBy to avoid strict index requirement for now
     const q = query(
       collection(db, COLLECTION_NAME),
       where("assignedTrainer.id", "==", trainerId),
+      orderBy("createdAt", "desc"),
     );
 
     const querySnapshot = await getDocs(q);
-    const sessions = querySnapshot.docs.map((doc) => ({
+    return querySnapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
-
-    // Client-side sort by createdAt desc
-    return sessions.sort((a, b) => {
-      const dateA = a.createdAt?.toDate
-        ? a.createdAt.toDate()
-        : new Date(a.createdAt || 0);
-      const dateB = b.createdAt?.toDate
-        ? b.createdAt.toDate()
-        : new Date(b.createdAt || 0);
-      return dateB - dateA;
-    });
   } catch (error) {
     console.error("Error getting trainer sessions:", error);
     throw error;
@@ -279,23 +387,20 @@ export const closeSessionWithStats = async (id) => {
   try {
     // Import compileSessionStats dynamically to avoid circular dependency
 
-    // 1. Compile statistics first (outside transaction)
-    // IMPORTANT: compileSessionStats now ONLY compiles the *current* responses in the subcollection.
-    // Due to the reactivation clear logic, this represents the "delta" stats since the last activation.
-    const { compileSessionStats, mergeStats } =
-      await import("./responseService");
-    const {
-      updateCollegeCache,
-      updateTrainerCache,
-      getCollegeCacheRefs,
-      getTrainerCacheRefs,
-    } = await import("./cacheService");
+    // 1. Compile statistics directly from ALL responses (outside transaction)
+    // We completely bypass delta stats and merging logic to prevent double-counting.
+    // This simply recalculates the true state from the raw response documents.
+    const { getResponses, compileSessionStatsFromResponses } = await import("./responseService");
     const { runTransaction } = await import("firebase/firestore");
 
-    const deltaStats = await compileSessionStats(id);
+    const sessionSnap = await getDoc(doc(db, COLLECTION_NAME, id));
+    if (!sessionSnap.exists()) throw new Error("Session not found");
+    const sessionDataToCompile = sessionSnap.data();
+
+    const allResponses = await getResponses(id);
+    const finalMergedStats = compileSessionStatsFromResponses(allResponses, sessionDataToCompile.questions || []);
 
     let sessionDataForCache = null;
-    let finalMergedStats = deltaStats;
 
     // 2. Run Transaction
     await runTransaction(db, async (transaction) => {
@@ -308,6 +413,13 @@ export const closeSessionWithStats = async (id) => {
 
       const sessionData = sessionDoc.data();
 
+      // CRITICAL: Prevent any updates to permanently closed sessions
+      if (sessionData.permanentlyClosed) {
+        throw new Error(
+          "Session is permanently closed and cannot be modified. This phase is archived.",
+        );
+      }
+
       // CRITICAL GUARD
       if (sessionData.status === "inactive") {
         throw new Error(
@@ -318,81 +430,18 @@ export const closeSessionWithStats = async (id) => {
       const session = { id: sessionDoc.id, ...sessionData };
       sessionDataForCache = session;
 
-      // If the session was previously closed and reactivated, it will already have compiledStats.
-      // We need to merge the existing stats with the new delta stats for the session document,
-      // but we ONLY send the deltaStats to the ecosystem caches to prevent double-counting.
-      if (sessionData.compiledStats) {
-        finalMergedStats = mergeStats(sessionData.compiledStats, deltaStats);
-      }
-
-      // ============ PRE-FETCH CACHE DOCS ============
-      // We must perform ALL reads before ANY writes to satisfy Firestore Transaction rules.
-      // We can't rely on updateCollegeCache/updateTrainerCache to read, because
-      // updateCollegeCache would Write, preventing updateTrainerCache from Reading.
-
-      const { cacheRef: cRef, trendRef: ctRef } = getCollegeCacheRefs(
-        session.collegeId,
-        session.sessionDate,
-      );
-      let tRef, ttRef;
-      const reads = [transaction.get(cRef), transaction.get(ctRef)];
-
-      if (session.assignedTrainer?.id) {
-        const { cacheRef, trendRef } = getTrainerCacheRefs(
-          session.assignedTrainer.id,
-          session.sessionDate,
-        );
-        tRef = cacheRef;
-        ttRef = trendRef;
-        reads.push(transaction.get(tRef));
-        reads.push(transaction.get(ttRef));
-      }
-
-      const snapshots = await Promise.all(reads);
-
-      // Unpack snapshots
-      const collegeCacheDoc = snapshots[0];
-      const collegeTrendDoc = snapshots[1];
-      const trainerCacheDoc = session.assignedTrainer?.id ? snapshots[2] : null;
-      const trainerTrendDoc = session.assignedTrainer?.id ? snapshots[3] : null;
-
-      // ============ EXECUTE UPDATES ============
-      // Pass pre-fetched docs to update functions so they don't try to read again.
-      // pass deltaStats so we only increment by the new responses
-      await updateCollegeCache(session, deltaStats, false, transaction, {
-        cacheDoc: collegeCacheDoc,
-        trendDoc: collegeTrendDoc,
-      });
-
-      if (session.assignedTrainer?.id) {
-        // pass deltaStats so we only increment by the new responses
-        await updateTrainerCache(session, deltaStats, false, transaction, {
-          cacheDoc: trainerCacheDoc,
-          trendDoc: trainerTrendDoc,
-        });
-      }
-
-      // Update session with status and MERGED compiled stats (Write)
+      // Update session with status, final stats, and phase-out timing
       transaction.update(docRef, {
         status: "inactive",
+        permanentlyClosed: true,
         compiledStats: finalMergedStats,
+        phaseEndedAt: serverTimestamp(),
         closedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
     });
 
-    // 3. Post-Transaction: Update Qualitative Cache (Experience Data)
-    // This is run asynchronously and does not
-    //  block the success return if it takes time.
-    // It handles merging top/worst comments into the global cache.
-    if (sessionDataForCache) {
-      const { updateQualitativeCache } = await import("./cacheService");
-      updateQualitativeCache(sessionDataForCache, compiledStats).catch((err) =>
-        console.error("Background qualitative update failed:", err),
-      );
-    }
-
-    return { id, status: "inactive", compiledStats };
+    return { id, status: "inactive", compiledStats: finalMergedStats };
   } catch (error) {
     if (error.message.includes("Session is already closed")) {
       console.warn("Session close ignored:", error.message);
@@ -402,37 +451,6 @@ export const closeSessionWithStats = async (id) => {
     console.error("Error closing session with stats:", error);
     throw error;
   }
-};
-
-/**
- * Subscribe to real-time session updates
- * Limited to 50 most recent sessions to reduce read costs
- * @param {Function} callback - Callback function receiving (sessions, lastDoc, hasMore)
- * @returns {Function} - Unsubscribe function
- */
-export const subscribeToSessions = (callback) => {
-  const PAGE_SIZE = 50;
-  const q = query(
-    collection(db, COLLECTION_NAME),
-    orderBy("createdAt", "desc"),
-    limit(PAGE_SIZE),
-  );
-
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const sessions = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      const lastDoc = snapshot.docs[snapshot.docs.length - 1] || null;
-      const hasMore = snapshot.docs.length === PAGE_SIZE;
-      callback(sessions, lastDoc, hasMore);
-    },
-    (error) => {
-      console.error("Error in sessions subscription:", error);
-    },
-  );
 };
 
 /**
@@ -487,11 +505,15 @@ export const getAnalyticsSessions = async (params) => {
       startDate, // 'YYYY-MM-DD'
       endDate, // 'YYYY-MM-DD'
       limitCount = 30,
+      includeActive = false, // New parameter to include live sessions
     } = params;
 
-    const constraints = [
-      where("status", "==", "inactive"), // Only closed sessions have stats
-    ];
+    const constraints = [];
+    
+    // Only filter by status if we explicitly want only inactive sessions
+    if (!includeActive) {
+      constraints.push(where("status", "==", "inactive"));
+    }
 
     if (collegeId && collegeId !== "all")
       constraints.push(where("collegeId", "==", collegeId));
@@ -517,7 +539,36 @@ export const getAnalyticsSessions = async (params) => {
     const q = query(collection(db, COLLECTION_NAME), ...constraints);
 
     const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const sessions = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+    // For active sessions (live), ensure we can still show stats even if they have not been closed/compiled yet.
+    const activeWithoutStats = sessions.filter(
+      (s) => s.status === "active" && !s.compiledStats,
+    );
+
+    if (activeWithoutStats.length > 0) {
+      try {
+        const { compileSessionStats } = await import("./responseService");
+        await Promise.all(
+          activeWithoutStats.map(async (s) => {
+            try {
+              const reactivationCount = s.reactivationCount || 0;
+              s.compiledStats = await compileSessionStats(s.id, reactivationCount);
+            } catch (err) {
+              // Best-effort: leave compiledStats undefined if compilation fails
+              console.warn(
+                `Failed to compile stats for active session ${s.id}:`,
+                err,
+              );
+            }
+          }),
+        );
+      } catch (err) {
+        console.warn("Failed to dynamically import responseService for live stats:", err);
+      }
+    }
+
+    return sessions;
   } catch (error) {
     console.error("Error fetching analytics sessions:", error);
     // Return empty array on error to prevent crash

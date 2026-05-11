@@ -183,6 +183,14 @@ service cloud.firestore {
         allow write: if isAdminOrAbove();
       }
     }
+    
+    // ============ COUNTERS COLLECTION ============
+    // Document ID = entity name (e.g., "trainers")
+    // Fields: lastId
+    match /counters/{counterId} {
+      allow read: if isSuperAdmin();
+      allow write: if isSuperAdmin();
+    }
 
     // ============ DENY ALL OTHER COLLECTIONS ============
     // Explicit deny-all for any collection not defined above

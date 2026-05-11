@@ -2,15 +2,32 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
+// Environment-aware configuration
+// For manual GoDaddy deployment, ensure you are running 'npm run build'
+const isDevelopment = import.meta.env.MODE === 'development';
+
+const devConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCdRbGZVROkMOt5QaFQSSB1dQnz5waQlkw',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'trainer-feedback-f59f0.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'trainer-feedback-f59f0',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'trainer-feedback-f59f0.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '978849822812',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:978849822812:web:1de5014f1ddc802e1b8e99',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || 'G-W0MK9LDYYJ'
 };
+
+const prodConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCdRbGZVROkMOt5QaFQSSB1dQnz5waQlkw',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'trainer-feedback-f59f0.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'trainer-feedback-f59f0',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'trainer-feedback-f59f0.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '978849822812',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:978849822812:web:1de5014f1ddc802e1b8e99',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || 'G-W0MK9LDYYJ'
+};
+
+// Use dev config during 'npm run dev', prod config for 'npm run build'
+const firebaseConfig = isDevelopment ? devConfig : prodConfig;
 
 // Simple check to see if config is loaded
 const requiredKeys = ['apiKey', 'authDomain', 'projectId'];

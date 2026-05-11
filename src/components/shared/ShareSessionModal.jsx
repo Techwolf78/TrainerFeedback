@@ -18,8 +18,8 @@ export const ShareSessionModal = ({ open, onOpenChange, session }) => {
   
   if (!session) return null;
 
-  const versionQuery = session.reactivationCount ? `?v=${session.reactivationCount}` : '';
-  const shareUrl = `${window.location.origin}/feedback/anonymous/${session.id}${versionQuery}`;
+  const phaseParam = session.phaseId ? `?ph=${session.phaseId}` : (session.reactivationCount ? `?v=${session.reactivationCount}` : '');
+  const shareUrl = `${window.location.origin}/feedback/anonymous/${session.id}${phaseParam}`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(shareUrl);

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { auth } from "@/services/firebase";
-import { getSessionsByTrainer } from "@/services/superadmin/sessionService";
+import { getSessionsByTrainer, subscribeToSessions } from "@/services/superadmin/sessionService";
 import {
   getCollegeById,
   getAllColleges,
@@ -84,6 +84,19 @@ const TrainerDashboard = () => {
     }
   }, [user]);
 
+  // Real-time updates for Trainer
+  useEffect(() => {
+    const trainerId = user?.uid || user?.id;
+    if (!trainerId) return;
+
+    const unsubscribe = subscribeToSessions((allSessions) => {
+      const mySessions = allSessions.filter(s => s.assignedTrainer?.id === trainerId);
+      setSessions(mySessions);
+    });
+
+    return () => unsubscribe();
+  }, [user?.uid, user?.id]);
+
   const loadData = async () => {
     // Skip if no authenticated user (prevents post-logout errors)
     if (!auth.currentUser) return;
@@ -110,12 +123,10 @@ const TrainerDashboard = () => {
           }
         }
 
-        // 2. Load Sessions (Firestore)
-        // Use uid (Firebase Auth ID) primarily, fallback to id if needed
+        // 2. Load Sessions (Real-time subscription handles this, but we can do a one-shot fetch for initial load if needed)
+        // However, the useEffect with subscribeToSessions already handles the primary data flow.
         const trainerId = user.uid || user.id;
-        const sessionData = await getSessionsByTrainer(trainerId);
-        setSessions(sessionData);
-
+        
         // 3. Load Project Codes
         // Trainers need project codes for filtering and session creation
         try {
@@ -442,7 +453,7 @@ const TrainerDashboard = () => {
         {/* Main Content */}
         <main className="flex-1 overflow-y-auto bg-muted/5 p-3 md:p-6 scroll-smooth">
           <div
-            className={`max-w-8xl mx-auto transition-all duration-300 ${isSidebarCollapsed ? "px-0 lg:px-6" : "px-0"}`}
+            className={`mx-auto transition-all duration-300 ${isSidebarCollapsed ? "px-0 lg:px-6" : "px-0"}`}
           >
             {/* Session Form Modal (Shared for Create/Edit) - HIDDEN
             <Modal open={isSessionFormOpen} onOpenChange={setIsSessionFormOpen} className="sm:max-w-[600px]">
@@ -476,7 +487,9 @@ const TrainerDashboard = () => {
             </Modal>
 
             {/* Content Tabs */}
-            {activeTab === "overview" && <TrainerOverview />}
+            {activeTab === "overview" && (
+              <TrainerOverview sessions={sessions} isLoading={isLoading} />
+            )}
 
             {activeTab === "sessions" && (
               <div className="space-y-6 animate-in fade-in-50 duration-500">

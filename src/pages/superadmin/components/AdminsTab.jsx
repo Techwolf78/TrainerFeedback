@@ -8,6 +8,11 @@ import {
   Building,
   Loader2,
   MoreVertical,
+  Eye,
+  EyeOff,
+  Search,
+  School,
+  UserPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,18 +33,23 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import Loader from "@/components/ui/Loader";
 import {
   createSystemUser,
   updateSystemUser,
   deleteSystemUser,
+  updateAdminPassword,
 } from "@/services/superadmin/userService";
+import { changePassword } from "@/services/authService";
 
 import { useSuperAdminData } from "@/contexts/SuperAdminDataContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
   const { admins, loadAdmins, loading: contextLoading } = useSuperAdminData();
-  const loading = contextLoading.admins;
+  const { user: currentUser } = useAuth();
+  const loading = contextLoading.admins || contextLoading.colleges;
   const [localDialogOpen, setLocalDialogOpen] = useState(false);
   const dialogOpen =
     isDialogOpen !== undefined ? isDialogOpen : localDialogOpen;
@@ -52,11 +62,16 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
     role: "collegeAdmin", // Default
     collegeId: "",
     password: "", // Only for creation
+    newPassword: "", // For password change when editing own account
+    currentPassword: "", // Current password verification
   };
   const [formData, setFormData] = useState(defaultFormState);
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPasswordFields, setShowPasswordFields] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
 
   // Fetch users on mount using Context (uses cache)
   useEffect(() => {
@@ -67,6 +82,9 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
     setDialog(false);
     setIsEditing(false);
     setEditingId(null);
+    setShowPasswordFields(false);
+    setShowPassword(false);
+    setShowNewPassword(false);
     setFormData(defaultFormState);
   };
 
@@ -106,10 +124,16 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
       return;
     }
 
+    // Validate password fields if changing password
+    if (showPasswordFields && !formData.newPassword) {
+      toast.error("Please enter a new password");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       if (isEditing) {
-        // Update
+        // Update user details
         const updates = {
           name: formData.name,
           role: formData.role,
@@ -117,13 +141,20 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
             formData.role === "collegeAdmin" ? formData.collegeId : null,
         };
         await updateSystemUser(editingId, updates);
-        toast.success("User updated successfully");
+
+        // If SuperAdmin is changing someone's password
+        if (showPasswordFields && formData.newPassword && currentUser?.role === "superAdmin") {
+          await updateAdminPassword(editingId, formData.newPassword);
+          toast.success("User updated and password changed successfully");
+        } else {
+          toast.success("User updated successfully");
+        }
       } else {
         // Create
         await createSystemUser(formData, formData.password);
         toast.success("User created successfully");
       }
-      setDialogOpen(false);
+      closeDialog();
       loadAdmins(true); // Force refresh context cache
       if (onRefresh) onRefresh();
     } catch (error) {
@@ -149,29 +180,88 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
     }
   };
 
-  const handlePasswordReset = async () => {
-    if (!formData.email) return;
-    if (!confirm(`Send password reset email to ${formData.email}?`)) return;
-
-    try {
-      const { sendPasswordReset } = await import("@/services/authService");
-      await sendPasswordReset(formData.email);
-      toast.success(`Password reset email sent to ${formData.email}`);
-    } catch (error) {
-      toast.error("Failed to send reset email: " + error.message);
-    }
-  };
-
   // Helper to get college name
   const getCollegeName = (id) => {
+    if (!id) return "Unknown College";
     const college = colleges.find((c) => c.id === id);
-    return college ? college.name : "Unknown College";
+    if (college) return college.name;
+
+    // If still loading or not found, but we have a collegeId, return "Loading..." variant or "Not Found"
+    // instead of defaulting immediately to "Unknown College" if it might just be a loading issue
+    if (contextLoading.colleges) return "Loading...";
+
+    return "Unknown College";
   };
+
+  // Helper to format college dropdown labels with code/initials
+  const getCollegeDisplayLabel = (college) => {
+    if (!college) return "";
+    const code = college.code?.trim();
+    if (code) return `${code} - ${college.name}`;
+
+    const initials = college.name
+      .split(/\s+/)
+      .map((w) => w[0])
+      .join("")
+      .toUpperCase();
+    return `${initials} - ${college.name}`;
+  };
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+
+  const filteredAdmins = admins.filter((admin) => {
+    const searchLower = searchTerm.toLowerCase();
+    const collegeName =
+      admin.role === "superAdmin"
+        ? "Gryphon Academy Pvt Ltd"
+        : getCollegeName(admin.collegeId);
+
+    const matchesSearch = (admin.name || "").toLowerCase().includes(searchLower) ||
+      (admin.email || "").toLowerCase().includes(searchLower) ||
+      collegeName.toLowerCase().includes(searchLower);
+
+    const matchesRole = roleFilter === "all" || admin.role === roleFilter;
+
+    return matchesSearch && matchesRole;
+  });
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div></div>
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+        {/* Search Bar */}
+        <div className="relative flex-1 group">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
+          <Input
+            placeholder="Search admins or colleges..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 h-11 bg-background/50 backdrop-blur-sm border-muted-foreground/20 focus:border-primary/50 transition-all rounded-xl w-full"
+          />
+        </div>
+
+        {/* Role Filters */}
+        <div className="flex bg-muted/40 p-1 rounded-xl border border-border/50 backdrop-blur-sm self-start lg:self-auto">
+          {[
+            { id: "all", label: "All Users", icon: Users },
+            { id: "superAdmin", label: "Super Admins", icon: ShieldCheck },
+            { id: "collegeAdmin", label: "College Admins", icon: Building },
+          ].map((role) => (
+            <button
+              key={role.id}
+              onClick={() => setRoleFilter(role.id)}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
+                roleFilter === role.id
+                  ? "bg-white text-primary shadow-sm ring-1 ring-border"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/50"
+              )}
+            >
+              <role.icon className={cn("h-4 w-4", roleFilter === role.id ? "text-primary" : "text-muted-foreground")} />
+              {role.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {dialogOpen && (
@@ -216,40 +306,91 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
                 </div>
 
                 {isEditing && (
-                  <div className="p-3 bg-muted/30 border rounded-lg space-y-2">
+                  <div className="p-3 bg-muted/30 border rounded-lg space-y-3">
                     <Label className="text-xs font-semibold uppercase text-muted-foreground">
                       Security
                     </Label>
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm">
-                        <p className="font-medium">Password Reset</p>
-                        <p className="text-xs text-muted-foreground">
-                          Send a password reset email to this user.
-                        </p>
+
+                    {/* SuperAdmin Password Change Option */}
+                    {currentUser?.role === "superAdmin" && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="changePassword"
+                            checked={showPasswordFields}
+                            onChange={(e) => {
+                              setShowPasswordFields(e.target.checked);
+                              if (!e.target.checked) {
+                                setFormData({...formData, newPassword: "", currentPassword: ""});
+                              }
+                            }}
+                            className="w-4 h-4 cursor-pointer"
+                          />
+                          <Label htmlFor="changePassword" className="text-sm font-medium cursor-pointer">
+                            Change password directly
+                          </Label>
+                        </div>
+
+                        {showPasswordFields && (
+                          <div className="space-y-2 mt-2 pt-2 border-t border-muted">
+                            <div>
+                              <Label className="text-xs">New Password</Label>
+                              <div className="relative">
+                                <Input
+                                  type={showNewPassword ? "text" : "password"}
+                                  value={formData.newPassword}
+                                  onChange={(e) =>
+                                    setFormData({ ...formData, newPassword: e.target.value })
+                                  }
+                                  placeholder="Enter new password"
+                                  className="text-sm pr-10"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowNewPassword(!showNewPassword)}
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                                >
+                                  {showNewPassword ? (
+                                    <EyeOff className="h-4 w-4" />
+                                  ) : (
+                                    <Eye className="h-4 w-4" />
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handlePasswordReset}
-                      >
-                        Send Reset Email
-                      </Button>
-                    </div>
+                    )}
                   </div>
                 )}
 
                 {!isEditing && (
                   <div className="space-y-2">
                     <Label>Password</Label>
-                    <Input
-                      type="password"
-                      value={formData.password}
-                      onChange={(e) =>
-                        setFormData({ ...formData, password: e.target.value })
-                      }
-                      placeholder="******"
-                    />
+                    <div className="relative">
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        value={formData.password}
+                        onChange={(e) =>
+                          setFormData({ ...formData, password: e.target.value })
+                        }
+                        placeholder="Enter password"
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -288,7 +429,7 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
                       <SelectContent>
                         {colleges.map((college) => (
                           <SelectItem key={college.id} value={college.id}>
-                            {college.name}
+                            {getCollegeDisplayLabel(college)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -319,7 +460,7 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
       )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {admins.map((user, index) => (
+        {filteredAdmins.map((user, index) => (
           <div
             key={user.id}
             className="group relative flex flex-col bg-card border rounded-xl shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 animate-fade-up overflow-hidden"
@@ -405,14 +546,16 @@ const AdminsTab = ({ colleges, onRefresh, isDialogOpen, setDialogOpen }) => {
           </div>
         )}
 
-        {!loading && admins.length === 0 && (
+        {!loading && filteredAdmins.length === 0 && (
           <div className="col-span-full text-center py-12">
-            <Shield className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+            <Search className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
             <h3 className="text-lg font-medium text-muted-foreground mb-2">
-              No admins found
+              {admins.length === 0 ? "No admins found" : "No matching admins found"}
             </h3>
             <p className="text-muted-foreground">
-              Create your first system administrator.
+              {admins.length === 0 
+                ? "Create your first system administrator."
+                : `No results found for "${searchTerm}"`}
             </p>
           </div>
         )}

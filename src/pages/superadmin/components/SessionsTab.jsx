@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Plus,
+  PlayCircle,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -56,12 +57,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import {
   createSession,
   deleteSession,
   updateSession,
   closeSessionWithStats,
 } from "@/services/superadmin/sessionService";
+import { compileSessionStats, getResponses, compileSessionStatsFromResponses } from "@/services/superadmin/responseService";
+import { serverTimestamp, doc, updateDoc } from "firebase/firestore";
+import { db } from "@/services/firebase";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
@@ -202,29 +207,26 @@ const SessionsTab = ({
   // Session Creation Logic
 
   const handleToggleStatus = async (session) => {
+    // Only allow closing active sessions - no reopening allowed
+    if (session.status !== "active") {
+      toast.error("This phase is permanently closed and cannot be reopened. Create a new session instead.");
+      return;
+    }
+
+    const confirmed = confirm(
+      "⚠️  PERMANENT ACTION\n\nClosing this session phase will:\n• Compile all current feedback statistics\n• Lock this phase permanently (cannot be reopened)\n• Allow you to create a new session for the next phase\n\nThis action cannot be undone.\n\nProceed?"
+    );
+
+    if (!confirmed) return;
+
     try {
-      if (session.status === "active") {
-        // Deactivating - compile stats and close
-        toast.loading("Compiling feedback statistics...");
-        await closeSessionWithStats(session.id);
-        toast.dismiss();
-        toast.success("Session closed and statistics compiled");
-      } else {
-        // Reactivating - clear previous responses to accept new ones
-        toast.loading("Clearing previous responses and reactivating...");
-        const { deleteResponsesForSession } =
-          await import("@/services/superadmin/responseService");
-        await deleteResponsesForSession(session.id);
-        await updateSession(session.id, {
-          status: "active",
-          reactivationCount: (session.reactivationCount || 0) + 1,
-        });
-        toast.dismiss();
-        toast.success("Session activated for fresh responses");
-      }
+      toast.loading("Compiling feedback statistics...");
+      await closeSessionWithStats(session.id);
+      toast.dismiss();
+      toast.success("Session phase permanently closed with compiled statistics");
     } catch (error) {
       toast.dismiss();
-      toast.error("Failed to update status");
+      toast.error("Failed to close session");
       console.error(error);
     }
   };
@@ -236,6 +238,50 @@ const SessionsTab = ({
       toast.success("Session deleted");
     } catch (error) {
       toast.error("Failed to delete session");
+    }
+  };
+
+/*
+  const handleRecalculateStats = async (session) => {
+    if (!confirm("Are you sure you want to recalculate stats from raw responses? This will overwrite the existing compiled stats.")) return;
+    const toastId = toast.loading("Recalculating stats...");
+    try {
+      const allResponses = await getResponses(session.id);
+      const newStats = compileSessionStatsFromResponses(allResponses, session.questions || []);
+      await updateDoc(doc(db, "sessions", session.id), {
+        compiledStats: newStats
+      });
+      toast.success("Stats recalculated successfully!", { id: toastId });
+    } catch (error) {
+      toast.error("Failed to recalculate stats", { id: toastId });
+      console.error(error);
+    }
+  };
+*/
+
+  const handleCompileStats = async (session) => {
+    // Only allow manual compilation for active sessions
+    if (session.status !== "active") {
+      toast.error("Cannot compile stats for a closed phase. Stats are permanently archived.");
+      return;
+    }
+
+    try {
+      toast.loading("Compiling live feedback statistics...");
+      const stats = await compileSessionStats(session.id, session.reactivationCount || 0);
+      
+      // Update session document with latest compiled stats without closing it
+      await updateSession(session.id, {
+        compiledStats: stats,
+        lastCompiledAt: serverTimestamp(),
+      });
+      
+      toast.dismiss();
+      toast.success("Statistics updated for all dashboards");
+    } catch (error) {
+      toast.dismiss();
+      toast.error("Failed to compile statistics");
+      console.error(error);
     }
   };
 
@@ -791,9 +837,14 @@ const SessionsTab = ({
                       variant={
                         session.status === "active" ? "default" : "secondary"
                       }
-                      className="capitalize"
+                      className={cn(
+                        "capitalize font-medium block w-fit",
+                        session.status === "active"
+                          ? "bg-green-100 text-green-700 border-green-200"
+                          : "bg-gray-100 text-gray-700 border-gray-200",
+                      )}
                     >
-                      {session.status}
+                      {session.status === "active" ? "Current Phase Open" : "Phase Closed"}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
@@ -806,7 +857,11 @@ const SessionsTab = ({
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Actions</DropdownMenuLabel>
-
+                        {session.status === "active" && (
+                          <DropdownMenuItem onClick={() => handleCompileStats(session)}>
+                            <RotateCcw className="mr-2 h-4 w-4" /> Compile Stats
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           onClick={() => {
                             setSessionToShare(session);
@@ -824,17 +879,33 @@ const SessionsTab = ({
                         >
                           <Pencil className="mr-2 h-4 w-4" /> Update
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleToggleStatus(session)}
-                        >
-                          <Power className="mr-2 h-4 w-4" />
-                          {session.status === "active"
-                            ? "Deactivate"
-                            : "Activate"}
-                        </DropdownMenuItem>
+                        {session.status === "active" && (
+                          <DropdownMenuItem
+                            onClick={() => handleToggleStatus(session)}
+                          >
+                            <Power className="mr-2 h-4 w-4" /> Close Phase
+                          </DropdownMenuItem>
+                        )}
+                        {/* Live Analytics for Active Sessions */}
+                        {session.status === "active" && (
+                          <DropdownMenuItem
+                            onClick={() =>
+                              setSelectedSessionForAnalytics(session)
+                            }
+                          >
+                            <BarChart3 className="mr-2 h-4 w-4" /> Live Analytics
+                          </DropdownMenuItem>
+                        )}
                         {session.status === "inactive" &&
                           session.compiledStats && (
                             <>
+                              {/*
+                              <DropdownMenuItem
+                                onClick={() => handleRecalculateStats(session)}
+                              >
+                                <RotateCcw className="mr-2 h-4 w-4" /> Recalculate Stats
+                              </DropdownMenuItem>
+                              */}
                               <DropdownMenuItem
                                 onClick={() =>
                                   setSelectedSessionForAnalytics(session)
@@ -943,3 +1014,4 @@ const SessionsTab = ({
 };
 
 export default SessionsTab;
+

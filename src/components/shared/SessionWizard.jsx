@@ -109,7 +109,7 @@ const SessionWizard = ({
   // Load Config when College Changes
   useEffect(() => {
     const loadConfig = async () => {
-      if (formData.collegeId) {
+      if (formData.collegeId) { 
         try {
           const config = await getAcademicConfig(formData.collegeId);
           setAcademicOptions(config || {});
@@ -148,7 +148,8 @@ const SessionWizard = ({
   // If searching, ignore domain filter. If not searching, use domain filter.
   useEffect(() => {
     if (step === 2) {
-      let filtered = trainers;
+      // ALWAYS exclude soft-deleted trainers for NEW sessions
+      let filtered = trainers.filter(t => !t.isDeleted);
 
       if (trainerSearch.trim()) {
         const searchLower = trainerSearch.toLowerCase();
@@ -583,9 +584,7 @@ const SessionWizard = ({
             </Popover>
           </div>
         </div>
-
         <div className="border-t my-2" />
-
         <div className="space-y-3">
           <Label className="text-base font-semibold">Session Logistics</Label>
           <div className="grid grid-cols-2 gap-4">

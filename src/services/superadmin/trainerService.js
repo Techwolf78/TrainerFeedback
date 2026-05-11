@@ -5,6 +5,7 @@ import {
   updateDoc,
   doc,
   setDoc,
+  deleteDoc,
   getDocs,
   query,
   where,
@@ -13,6 +14,8 @@ import {
   writeBatch,
   limit,
   startAfter,
+  onSnapshot,
+  orderBy,
 } from "firebase/firestore";
 import { createUserWithoutLoggingIn } from "../authService";
 import { sendTrainerOnboardingEmail } from "../emailJsService";
@@ -21,6 +24,28 @@ const COLLECTION_NAME = "trainers";
 const COUNTER_COLLECTION = "counters";
 const TRAINER_COUNTER_DOC = "trainers";
 const TRAINER_ID_REGEX = /^GA-T\d{3,}$/;
+
+/**
+ * Subscribe to real-time trainer updates
+ * @param {Function} callback - Function called with updated trainers array
+ * @returns {Function} - Unsubscribe function
+ */
+export const subscribeToTrainers = (callback) => {
+  const q = query(collection(db, COLLECTION_NAME), orderBy("name", "asc"));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const trainers = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      callback(trainers);
+    },
+    (error) => {
+      console.error("Error subscribing to trainers:", error);
+    },
+  );
+};
 
 // Get the current trainer ID counter
 export const getTrainerIdCounter = async () => {
@@ -68,11 +93,10 @@ export const addTrainer = async (
       );
     }
 
-    // Check for duplicate trainer_id (only among non-deleted trainers)
+    // Check for duplicate trainer_id
     const q = query(
       collection(db, COLLECTION_NAME),
       where("trainer_id", "==", trainer_id),
-      where("isDeleted", "==", false),
     );
     const querySnapshot = await getDocs(q);
 
@@ -99,7 +123,6 @@ export const addTrainer = async (
       specialisation,
       topics,
       email,
-      isDeleted: false,
       createdAt: serverTimestamp(),
     });
 
@@ -154,27 +177,29 @@ export const deleteTrainer = async (id) => {
     });
     return true;
   } catch (error) {
-    console.error("Error soft-deleting trainer:", error);
+    console.error("Error deleting trainer:", error);
     throw error;
   }
 };
 
 // Get all trainers (with pagination)
-export const getAllTrainers = async (limitCount = 10, lastDoc = null) => {
+export const getAllTrainers = async (limitCount = 10, lastDoc = null, includeDeleted = true) => {
   try {
-    let q = query(
-      collection(db, COLLECTION_NAME),
-      where("isDeleted", "==", false),
-      limit(limitCount),
-    );
+    let q;
+    const baseCol = collection(db, COLLECTION_NAME);
+    
+    if (includeDeleted) {
+      q = query(baseCol, limit(limitCount));
+    } else {
+      q = query(baseCol, where("isDeleted", "!=", true), limit(limitCount));
+    }
 
     if (lastDoc) {
-      q = query(
-        collection(db, COLLECTION_NAME),
-        where("isDeleted", "==", false),
-        startAfter(lastDoc),
-        limit(limitCount),
-      );
+      if (includeDeleted) {
+        q = query(baseCol, startAfter(lastDoc), limit(limitCount));
+      } else {
+        q = query(baseCol, where("isDeleted", "!=", true), startAfter(lastDoc), limit(limitCount));
+      }
     }
 
     const querySnapshot = await getDocs(q);
@@ -222,12 +247,9 @@ export const addTrainersBatch = async (trainers) => {
     skipped: [],
   };
 
-  // 1. Fetch existing trainer IDs from DB for duplicate check (exclude soft-deleted)
+  // 1. Fetch existing trainer IDs from DB for duplicate check
   const existingIds = new Set();
-  const q = query(
-    collection(db, COLLECTION_NAME),
-    where("isDeleted", "==", false),
-  );
+  const q = query(collection(db, COLLECTION_NAME));
   const snapshot = await getDocs(q);
   snapshot.forEach((doc) => {
     const data = doc.data();

@@ -8,10 +8,30 @@ import {
   query,
   where,
   getDoc,
-  serverTimestamp
+  serverTimestamp,
+  orderBy,
+  onSnapshot
 } from 'firebase/firestore';
 
 const COLLECTION_NAME = 'colleges';
+
+/**
+ * Subscribe to real-time college updates
+ * @param {Function} callback - Function called with updated colleges array
+ * @returns {Function} - Unsubscribe function
+ */
+export const subscribeToColleges = (callback) => {
+  const q = query(collection(db, COLLECTION_NAME), orderBy('name', 'asc'));
+  return onSnapshot(q, (snapshot) => {
+    const colleges = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+    callback(colleges);
+  }, (error) => {
+    console.error("Error subscribing to colleges:", error);
+  });
+};
 
 // Add a new college
 export const addCollege = async ({ name, code, logoUrl = '' }) => {

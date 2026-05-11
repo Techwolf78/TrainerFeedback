@@ -7,15 +7,21 @@ import React, {
   useRef,
 } from "react";
 import { auth } from "@/services/firebase";
-import { getAllColleges } from "@/services/superadmin/collegeService";
-import { getAllTrainers } from "@/services/superadmin/trainerService";
+import {
+  getAllColleges,
+  subscribeToColleges,
+} from "@/services/superadmin/collegeService";
+import {
+  getAllTrainers,
+  subscribeToTrainers,
+} from "@/services/superadmin/trainerService";
 import {
   getAllSessions,
   subscribeToSessions,
   getOlderSessions,
 } from "@/services/superadmin/sessionService";
 import { getAllTemplates } from "@/services/superadmin/templateService";
-import { getAllSystemUsers } from "@/services/superadmin/userService";
+import { getAllSystemUsers, subscribeToAdmins } from "@/services/superadmin/userService";
 import {
   getAllProjectCodes,
   addProjectCodes as addProjectCodesService,
@@ -130,7 +136,7 @@ export const SuperAdminDataProvider = ({ children }) => {
 
       setLoading((prev) => ({ ...prev, trainers: true }));
       try {
-        const result = await getAllTrainers(1000); // Get all trainers
+        const result = await getAllTrainers(1000, null, true); // Get ALL including deleted
         const data = result.trainers || [];
         setTrainers(data);
         setLoaded((prev) => ({ ...prev, trainers: true }));
@@ -341,10 +347,10 @@ export const SuperAdminDataProvider = ({ children }) => {
 
     initializeData();
 
-    // Subscribe to real-time session updates only if authenticated
-    let unsubscribe;
+    // Subscribe to real-time updates only if authenticated
+    let unsubSessions, unsubColleges, unsubTrainers, unsubAdmins;
     if (auth.currentUser) {
-      unsubscribe = subscribeToSessions((liveSessions, lastDoc, hasMore) => {
+      unsubSessions = subscribeToSessions((liveSessions, lastDoc, hasMore) => {
         if (!cancelled) {
           // Track live session IDs for deduplication
           const liveIds = new Set(liveSessions.map((s) => s.id));
@@ -360,11 +366,35 @@ export const SuperAdminDataProvider = ({ children }) => {
           setLoaded((prev) => ({ ...prev, sessions: true }));
         }
       });
+
+      unsubColleges = subscribeToColleges((liveColleges) => {
+        if (!cancelled) {
+          setColleges(liveColleges);
+          setLoaded((prev) => ({ ...prev, colleges: true }));
+        }
+      });
+
+      unsubTrainers = subscribeToTrainers((liveTrainers) => {
+        if (!cancelled) {
+          setTrainers(liveTrainers);
+          setLoaded((prev) => ({ ...prev, trainers: true }));
+        }
+      });
+
+      unsubAdmins = subscribeToAdmins((liveAdmins) => {
+        if (!cancelled) {
+          setAdmins(liveAdmins);
+          setLoaded((prev) => ({ ...prev, admins: true }));
+        }
+      });
     }
 
     return () => {
       cancelled = true;
-      unsubscribe && unsubscribe();
+      unsubSessions && unsubSessions();
+      unsubColleges && unsubColleges();
+      unsubTrainers && unsubTrainers();
+      unsubAdmins && unsubAdmins();
     };
   }, []); // Only run once on mount
 
