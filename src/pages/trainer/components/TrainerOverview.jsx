@@ -209,8 +209,12 @@ const TrainerOverview = ({ sessions = [], isLoading: isDashboardLoading = false 
     };
 
     sessionList.forEach((session) => {
-      const cs = session.compiledStats;
-      if (!cs) return;
+      const globalCs = session.compiledStats;
+      if (!globalCs) return;
+
+      // Use per-trainer stats if available (multi-trainer sessions)
+      const myTrainerId = user?.id || user?.uid;
+      const cs = (myTrainerId && globalCs.byTrainer?.[myTrainerId]) || globalCs;
 
       stats.totalResponses += cs.totalResponses || 0;
       stats.totalHours += (Number(session.sessionDuration) || 60) / 60;

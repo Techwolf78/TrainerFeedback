@@ -188,7 +188,7 @@ const SessionAnalytics = ({ session, onBack }) => {
       summarySheet.addRows([
         { field: "Session Topic", value: session.topic },
         { field: "College", value: session.collegeName },
-        { field: "Trainer", value: session.assignedTrainer?.name || "N/A" },
+        { field: "Trainer", value: (session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : [])).map(t => t.name).join(", ") || "N/A" },
         { field: "Total Responses", value: stats.totalResponses },
         { field: "Average Rating", value: stats.avgRating },
       ]);
@@ -399,7 +399,7 @@ const SessionAnalytics = ({ session, onBack }) => {
               <span className="text-muted-foreground/50">•</span>
               <div className="flex items-center gap-1">
                 <User className="h-3 w-3" />
-                <span>{session.assignedTrainer?.name || "Trainer not assigned"}</span>
+                <span>{(session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : [])).map(t => t.name).join(", ") || "Trainer not assigned"}</span>
               </div>
               {session.domain && (
                 <>

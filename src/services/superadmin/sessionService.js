@@ -269,20 +269,36 @@ export const getAllSessions = async (collegeId = null) => {
   }
 };
 
-// Get sessions by Trainer ID
+// Get sessions by Trainer ID (supports both old and new format)
 export const getSessionsByTrainer = async (trainerId) => {
   try {
-    const q = query(
+    // Query 1: New format (trainerIds array)
+    const q1 = query(
+      collection(db, COLLECTION_NAME),
+      where("trainerIds", "array-contains", trainerId),
+      orderBy("createdAt", "desc"),
+    );
+
+    // Query 2: Legacy format (assignedTrainer.id)
+    const q2 = query(
       collection(db, COLLECTION_NAME),
       where("assignedTrainer.id", "==", trainerId),
       orderBy("createdAt", "desc"),
     );
 
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+
+    // Merge and deduplicate by doc ID
+    const seen = new Set();
+    const results = [];
+    [...snap1.docs, ...snap2.docs].forEach((doc) => {
+      if (!seen.has(doc.id)) {
+        seen.add(doc.id);
+        results.push({ id: doc.id, ...doc.data() });
+      }
+    });
+
+    return results;
   } catch (error) {
     console.error("Error getting trainer sessions:", error);
     throw error;
@@ -517,8 +533,7 @@ export const getAnalyticsSessions = async (params) => {
 
     if (collegeId && collegeId !== "all")
       constraints.push(where("collegeId", "==", collegeId));
-    if (trainerId && trainerId !== "all")
-      constraints.push(where("assignedTrainer.id", "==", trainerId));
+    // NOTE: trainer filter is handled separately via dual-query for backward compat (see below)
     if (course && course !== "all")
       constraints.push(where("course", "==", course));
     if (year && year !== "all") constraints.push(where("year", "==", year));
@@ -535,6 +550,46 @@ export const getAnalyticsSessions = async (params) => {
     // orderBy and limit must come AFTER all where clauses
     constraints.push(orderBy("sessionDate", "desc"));
     constraints.push(limit(limitCount));
+
+    // If trainer filter is active, run dual queries for backward compat
+    if (trainerId && trainerId !== "all") {
+      // Build constraints without trainer filter
+      const baseConstraints = constraints.filter(
+        (c) => c !== constraints.find((x) => x._field?.segments?.includes?.("trainerIds"))
+      );
+      // Actually just rebuild without the trainer constraint
+      const sharedConstraints = [];
+      if (!includeActive) sharedConstraints.push(where("status", "==", "inactive"));
+      if (collegeId && collegeId !== "all") sharedConstraints.push(where("collegeId", "==", collegeId));
+      if (course && course !== "all") sharedConstraints.push(where("course", "==", course));
+      if (year && year !== "all") sharedConstraints.push(where("year", "==", year));
+      if (department && department !== "all") sharedConstraints.push(where("branch", "==", department));
+      if (batch && batch !== "all") sharedConstraints.push(where("batch", "==", batch));
+      if (projectCode && projectCode !== "all") sharedConstraints.push(where("projectCode", "==", projectCode));
+      if (startDate) sharedConstraints.push(where("sessionDate", ">=", startDate));
+      if (endDate) sharedConstraints.push(where("sessionDate", "<=", endDate));
+      sharedConstraints.push(orderBy("sessionDate", "desc"));
+      sharedConstraints.push(limit(limitCount));
+
+      const q1 = query(collection(db, COLLECTION_NAME), where("trainerIds", "array-contains", trainerId), ...sharedConstraints);
+      const q2 = query(collection(db, COLLECTION_NAME), where("assignedTrainer.id", "==", trainerId), ...sharedConstraints);
+
+      const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+      const seen = new Set();
+      const sessions = [];
+      [...snap1.docs, ...snap2.docs].forEach((doc) => {
+        if (!seen.has(doc.id)) {
+          seen.add(doc.id);
+          sessions.push({ id: doc.id, ...doc.data() });
+        }
+      });
+
+      // Sort by sessionDate desc and apply limit
+      sessions.sort((a, b) => (b.sessionDate || "").localeCompare(a.sessionDate || ""));
+      const limitedSessions = sessions.slice(0, limitCount);
+
+      return limitedSessions;
+    }
 
     const q = query(collection(db, COLLECTION_NAME), ...constraints);
 

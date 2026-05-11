@@ -1,0 +1,29 @@
+[
+  {
+    "Name": "Indira College Of Commerce & Science",
+    "College Code": "ICCS",
+    "Course": "MSC",
+    "Year": "2nd",
+    "Training Type": "OT",
+    "Passing Year": "2026-2027",
+    "Project Code": "SOIT/MSC/2nd/OT/26-27"
+  },
+  {
+    "Name": "Shri Ramdeobaba College Of Engineering And Management",
+    "College Code": "RCOEM",
+    "Course": "ENGG",
+    "Year": "3rd",
+    "Training Type": "OT",
+    "Passing Year": "2026-2027",
+    "Project Code": "RCOEM/ENGG/3rd/OT/26-27"
+  },
+  {
+    "Name": "Sharad Institute Of Technology",
+    "College Code": "SITCOE",
+    "Course": "ENGG",
+    "Year": "4th",
+    "Training Type": "TP",
+    "Passing Year": "2026-2027",
+    "Project Code": "SIT/ENGG/4th/TP/26-27"
+  }
+]

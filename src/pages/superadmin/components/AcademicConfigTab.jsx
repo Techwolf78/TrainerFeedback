@@ -11,6 +11,7 @@ import {
   Users,
   AlertCircle,
   Edit,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -127,6 +128,9 @@ const AcademicConfigTab = ({ colleges }) => {
   const [loading, setLoading] = useState(false);
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [expandedCourses, setExpandedCourses] = useState({});
+  const [collegeSearchQuery, setCollegeSearchQuery] = useState("");
+  const [collegeDropdownOpen, setCollegeDropdownOpen] = useState(false);
+  const collegeDropdownRef = React.useRef(null);
 
   // Edit modal state - replaces browser prompts with professional modal
   const [editModal, setEditModal] = useState({
@@ -207,6 +211,27 @@ const AcademicConfigTab = ({ colleges }) => {
       setSelectedCollegeId(colleges[0].id);
     }
   }, [colleges]);
+
+  const filteredColleges = colleges.filter((c) => {
+    const search = collegeSearchQuery.toLowerCase();
+    return (
+      c.name.toLowerCase().includes(search) ||
+      (c.code && c.code.toLowerCase().includes(search))
+    );
+  });
+
+  // Close college dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (collegeDropdownRef.current && !collegeDropdownRef.current.contains(e.target)) {
+        setCollegeDropdownOpen(false);
+      }
+    };
+    if (collegeDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [collegeDropdownOpen]);
 
   const loadConfig = async (collegeId) => {
     setLoading(true);
@@ -907,22 +932,71 @@ const AcademicConfigTab = ({ colleges }) => {
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between">
-            <Select
-              value={selectedCollegeId}
-              onValueChange={setSelectedCollegeId}
-            >
-              <SelectTrigger className="max-w-md">
-                <SelectValue placeholder="Select a college..." />
-              </SelectTrigger>
-              <SelectContent>
-                {colleges.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                    {c.code ? ` (${c.code})` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="relative max-w-md" ref={collegeDropdownRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setCollegeDropdownOpen((prev) => !prev);
+                  setCollegeSearchQuery("");
+                }}
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              >
+                <span className={selectedCollegeId ? "text-foreground" : "text-muted-foreground"}>
+                  {selectedCollegeId
+                    ? (() => {
+                        const c = colleges.find((col) => col.id === selectedCollegeId);
+                        return c ? `${c.name}${c.code ? ` (${c.code})` : ""}` : "Select a college...";
+                      })()
+                    : "Select a college..."}
+                </span>
+                <ChevronDown className="h-4 w-4 opacity-50" />
+              </button>
+
+              {collegeDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full rounded-md border bg-white shadow-lg animate-in fade-in-0 zoom-in-95 slide-in-from-top-2">
+                  <div className="p-2 border-b border-slate-100">
+                    <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
+                      <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
+                      <input
+                        type="text"
+                        placeholder="Search colleges..."
+                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700"
+                        value={collegeSearchQuery}
+                        onChange={(e) => setCollegeSearchQuery(e.target.value)}
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-[250px] overflow-y-auto py-1">
+                    {filteredColleges.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-muted-foreground">
+                        No colleges found
+                      </div>
+                    ) : (
+                      filteredColleges.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedCollegeId(c.id);
+                            setCollegeDropdownOpen(false);
+                            setCollegeSearchQuery("");
+                          }}
+                          className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-100 transition-colors ${
+                            selectedCollegeId === c.id ? "bg-primary/5 text-primary font-medium" : "text-foreground"
+                          }`}
+                        >
+                          {c.name}
+                          {c.code ? (
+                            <span className="ml-1 text-muted-foreground">({c.code})</span>
+                          ) : null}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {selectedCollegeId && (
               <Button

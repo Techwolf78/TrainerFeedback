@@ -167,7 +167,7 @@ const CollegeSessionsTab = () => {
           filters.batch === "all" || session.batch === filters.batch;
         const matchTrainer =
           filters.trainer === "all" ||
-          session.assignedTrainer?.id === filters.trainer;
+          (session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : [])).some(t => t.id === filters.trainer);
 
         // Date filter
         let matchDate = true;
@@ -514,14 +514,29 @@ const CollegeSessionsTab = () => {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-xs font-bold text-secondary-foreground">
-                        {session.assignedTrainer?.name?.[0] || "?"}
-                      </div>
-                      <span className="text-sm">
-                        {session.assignedTrainer?.name || "Unassigned"}
-                      </span>
-                    </div>
+                    {(() => {
+                      const trainers = session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : []);
+                      if (trainers.length > 1) {
+                        return (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary cursor-default"
+                            title={trainers.map(t => t.name).join(", ")}
+                          >
+                            {trainers.length} Trainers
+                          </span>
+                        );
+                      }
+                      return (
+                        <div className="flex items-center gap-2">
+                          <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-xs font-bold text-secondary-foreground">
+                            {trainers[0]?.name?.[0] || "?"}
+                          </div>
+                          <span className="text-sm">
+                            {trainers[0]?.name || "Unassigned"}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     <div className="text-sm">

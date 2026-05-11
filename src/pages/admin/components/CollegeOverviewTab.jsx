@@ -286,7 +286,7 @@ const CollegeOverviewTab = () => {
 
       if (
         filters.trainerId !== "all" &&
-        session.assignedTrainer?.id !== filters.trainerId
+        !(session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : [])).some(t => t.id === filters.trainerId)
       )
         return false;
       if (filters.course !== "all" && session.course !== filters.course)
@@ -706,8 +706,9 @@ const CollegeOverviewTab = () => {
         const session = sessionMap[sessionId];
         if (!session) return;
 
-        const trainerId = session.assignedTrainer?.id;
-        const trainerName = session.assignedTrainer?.name || "Unknown";
+        // Use response.selectedTrainerId if available, else fall back to session trainers
+        const trainerId = response.selectedTrainerId || session.assignedTrainer?.id;
+        const trainerName = response.selectedTrainerName || session.assignedTrainer?.name || "Unknown";
         if (!trainerId) return;
 
         if (!trainerStats[trainerId]) {
@@ -783,9 +784,15 @@ const CollegeOverviewTab = () => {
 
     // Default: Use session compiled stats
     filteredSessions.forEach((session) => {
-      const trainerId = session.assignedTrainer?.id;
-      const trainerName = session.assignedTrainer?.name || "Unknown";
+      const cs = session.compiledStats;
+      if (!cs) return;
+
+      const sessionTrainers = session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : []);
+      sessionTrainers.forEach(({ id: trainerId, name: trainerName }) => {
       if (!trainerId) return;
+
+      const tStats = cs.byTrainer?.[trainerId];
+      const useTrainerStats = !!tStats;
 
       if (!trainerStats[trainerId]) {
         trainerStats[trainerId] = {
@@ -808,17 +815,16 @@ const CollegeOverviewTab = () => {
         trainerStats[trainerId].topics.add(session.topic);
       }
 
-      const cs = session.compiledStats;
-      if (cs) {
-        Object.entries(cs.ratingDistribution || {}).forEach(
+        const statsToUse = useTrainerStats ? tStats : cs;
+        Object.entries(statsToUse.ratingDistribution || {}).forEach(
           ([rating, count]) => {
             trainerStats[trainerId].ratingSum += Number(rating) * count;
             trainerStats[trainerId].ratingCount += count;
           },
         );
-        trainerStats[trainerId].responses += cs.totalResponses || 0;
+        trainerStats[trainerId].responses += statsToUse.totalResponses || 0;
         trainerStats[trainerId].sessions += 1;
-        const comments = cs.comments || [];
+        const comments = statsToUse.topComments || cs.comments || [];
         comments.slice(0, 2).forEach((c) => {
           if (trainerStats[trainerId].recentComments.length < 3) {
             trainerStats[trainerId].recentComments.push({
@@ -827,7 +833,7 @@ const CollegeOverviewTab = () => {
             });
           }
         });
-      }
+      }); // end sessionTrainers.forEach
     });
 
     return Object.entries(trainerStats)

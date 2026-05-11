@@ -37,9 +37,14 @@ import {
   CheckCircle, 
   AlertCircle,
   FileJson,
-  Copy // [NEW] Icon
+  Copy,
+  Plus,
+  Pencil,
+  CopyPlus,
+  ArrowRight
 } from 'lucide-react';
 import { parseProjectCode, matchCollege } from '@/services/superadmin/projectCodeService';
+import ProjectCodeFormModal from './ProjectCodeFormModal';
 
 const ProjectCodesTab = () => {
   const { 
@@ -47,6 +52,9 @@ const ProjectCodesTab = () => {
     colleges, 
     addProjectCodes, 
     deleteProjectCode, 
+    createProjectCode,
+    updateProjectCode,
+    createCollege,
     rerunMatching,
     loading 
   } = useSuperAdminData();
@@ -58,6 +66,13 @@ const ProjectCodesTab = () => {
   const [isImporting, setIsImporting] = useState(false);
   const [isRerunning, setIsRerunning] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false); // [NEW] Toggle modal
+  
+  // Manual Form State
+  const [formConfig, setFormConfig] = useState({
+    open: false,
+    mode: 'create',
+    initialData: null
+  });
 
   // Computed Preview for Import
   const importPreview = useMemo(() => {
@@ -112,8 +127,10 @@ const ProjectCodesTab = () => {
     if (!searchQuery) return projectCodes;
     const lower = searchQuery.toLowerCase();
     return projectCodes.filter(pc => 
-      pc.code.toLowerCase().includes(lower) || 
-      pc.collegeName?.toLowerCase().includes(lower)
+      pc.code?.toLowerCase().includes(lower) || 
+      pc.collegeName?.toLowerCase().includes(lower) ||
+      pc.collegeCode?.toLowerCase().includes(lower) ||
+      pc.course?.toLowerCase().includes(lower)
     );
   }, [projectCodes, searchQuery]);
 
@@ -197,6 +214,32 @@ const ProjectCodesTab = () => {
     }
   };
 
+  const handleOpenCreate = () => {
+    setFormConfig({ open: true, mode: 'create', initialData: null });
+  };
+
+  const handleOpenEdit = (pc) => {
+    setFormConfig({ open: true, mode: 'edit', initialData: pc });
+  };
+
+  const handleOpenDuplicate = (pc) => {
+    setFormConfig({ open: true, mode: 'duplicate', initialData: pc });
+  };
+
+  const handleFormSubmit = async (data) => {
+    if (formConfig.mode === 'edit') {
+      await updateProjectCode(formConfig.initialData.id, data);
+    } else {
+      await createProjectCode(data);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm("Are you sure you want to delete this project code?")) {
+        await deleteProjectCode(id);
+    }
+  };
+
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col gap-6">
       
@@ -222,8 +265,11 @@ const ProjectCodesTab = () => {
             {isRerunning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             Rerun Matching
         </Button>
-        <Button onClick={() => setShowImportModal(true)} className="gradient-hero">
+        <Button onClick={() => setShowImportModal(true)} variant="outline">
             <Upload className="mr-2 h-4 w-4" /> Import JSON
+        </Button>
+        <Button onClick={handleOpenCreate} className="gradient-hero">
+            <Plus className="mr-2 h-4 w-4" /> Add Project Code
         </Button>
       </div>
 
@@ -236,7 +282,7 @@ const ProjectCodesTab = () => {
                             <TableHead>College</TableHead>
                             <TableHead>Course</TableHead>
                             <TableHead>Metadata</TableHead>
-                            <TableHead className="w-[50px]"></TableHead>
+                            <TableHead className="w-[120px] text-right">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -277,15 +323,36 @@ const ProjectCodesTab = () => {
                                         <Badge variant="secondary" className="text-[10px]">Type: {pc.type}</Badge>
                                         <Badge variant="secondary" className="text-[10px] ml-1">{pc.academicYear}</Badge>
                                     </TableCell>
-                                    <TableCell>
-                                        <Button 
-                                            variant="ghost" 
-                                            size="icon" 
-                                            onClick={() => deleteProjectCode(pc.id)}
-                                            className="h-8 w-8 text-destructive hover:text-destructive/90"
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
+                                    <TableCell className="text-right">
+                                        <div className="flex items-center justify-end gap-1">
+                                            <Button 
+                                                variant="ghost" 
+                                                size="icon" 
+                                                onClick={() => handleOpenEdit(pc)}
+                                                className="h-8 w-8 text-slate-600 hover:text-primary hover:bg-primary/5"
+                                                title="Edit"
+                                            >
+                                                <Pencil className="h-3.5 w-3.5" />
+                                            </Button>
+                                            <Button 
+                                                variant="ghost" 
+                                                size="icon" 
+                                                onClick={() => handleOpenDuplicate(pc)}
+                                                className="h-8 w-8 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50"
+                                                title="Duplicate"
+                                            >
+                                                <CopyPlus className="h-3.5 w-3.5" />
+                                            </Button>
+                                            <Button 
+                                                variant="ghost" 
+                                                size="icon" 
+                                                onClick={() => handleDelete(pc.id)}
+                                                className="h-8 w-8 text-destructive hover:text-destructive/90 hover:bg-destructive/5"
+                                                title="Delete"
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                            </Button>
+                                        </div>
                                     </TableCell>
                                 </TableRow>
                             ))
@@ -382,6 +449,17 @@ const ProjectCodesTab = () => {
             </Button>
         </ModalFooter>
       </Modal>
+
+      {/* Manual Entry Form */}
+      <ProjectCodeFormModal 
+        open={formConfig.open}
+        onOpenChange={(open) => setFormConfig(prev => ({ ...prev, open }))}
+        mode={formConfig.mode}
+        initialData={formConfig.initialData}
+        onSubmit={handleFormSubmit}
+        colleges={colleges}
+        onCreateCollege={createCollege}
+      />
     </div>
   );
 };

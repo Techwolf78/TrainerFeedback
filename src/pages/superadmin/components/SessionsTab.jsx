@@ -180,7 +180,7 @@ const SessionsTab = ({
           return false;
         if (
           filters.trainerId !== "all" &&
-          session.assignedTrainer?.id !== filters.trainerId
+          !(session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : [])).some(t => t.id === filters.trainerId)
         )
           return false;
         if (
@@ -369,7 +369,7 @@ const SessionsTab = ({
       summarySheet.addRows([
         { field: "Session Topic", value: session.topic },
         { field: "College", value: session.collegeName },
-        { field: "Trainer", value: session.assignedTrainer?.name || "N/A" },
+        { field: "Trainer", value: (session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : [])).map(t => t.name).join(", ") || "N/A" },
         { field: "Domain", value: session.domain },
         { field: "Course", value: session.course },
         { field: "Batch", value: session.batch },
@@ -817,14 +817,27 @@ const SessionsTab = ({
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-xs font-bold">
-                        {session.assignedTrainer?.name?.[0] || "?"}
-                      </div>
-                      <span>
-                        {session.assignedTrainer?.name || "Unassigned"}
-                      </span>
-                    </div>
+                    {(() => {
+                      const trainers = session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : []);
+                      if (trainers.length > 1) {
+                        return (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary cursor-default"
+                            title={trainers.map(t => t.name).join(", ")}
+                          >
+                            {trainers.length} Trainers
+                          </span>
+                        );
+                      }
+                      return (
+                        <div className="flex items-center gap-2">
+                          <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-xs font-bold">
+                            {trainers[0]?.name?.[0] || "?"}
+                          </div>
+                          <span>{trainers[0]?.name || "Unassigned"}</span>
+                        </div>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     <div className="text-sm">{session.sessionDate}</div>

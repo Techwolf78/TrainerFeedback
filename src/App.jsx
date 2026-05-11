@@ -19,8 +19,6 @@ import SessionResponses from "@/pages/admin/SessionResponses";
 import TrainerDashboard from "@/pages/trainer/TrainerDashboard";
 import { AnonymousFeedback } from "@/pages/feedback/AnonymousFeedback";
 import NotFound from "@/pages/NotFound";
-import SeedData from "@/pages/SeedData";
-
 const queryClient = new QueryClient();
 
 const App = () => {
@@ -42,9 +40,6 @@ const App = () => {
                   path="/feedback/anonymous/:sessionId"
                   element={<AnonymousFeedback />}
                 />
-                {import.meta.env.DEV && (
-                  <Route path="/seed-data" element={<SeedData />} />
-                )}
 
                 {/* Super Admin Routes - has its own built-in layout */}
                 <Route
