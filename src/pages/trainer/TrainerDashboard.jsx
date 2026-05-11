@@ -90,7 +90,7 @@ const TrainerDashboard = () => {
     if (!trainerId) return;
 
     const unsubscribe = subscribeToSessions((allSessions) => {
-      const mySessions = allSessions.filter(s => s.assignedTrainer?.id === trainerId);
+      const mySessions = allSessions.filter(s => s.trainerIds?.includes(trainerId) || s.assignedTrainer?.id === trainerId);
       setSessions(mySessions);
     });
 

@@ -15,8 +15,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  ChevronLeft,
   ChevronRight,
+  ChevronLeft,
+  ChevronDown,
   Loader2,
   Plus,
   Search,
@@ -69,6 +70,11 @@ const SessionWizard = ({
   const [trainerSearch, setTrainerSearch] = useState("");
   const [trainerPopoverOpen, setTrainerPopoverOpen] = useState(false);
 
+  // [NEW] Project Code Dropdown State
+  const [projectCodeSearch, setProjectCodeSearch] = useState("");
+  const [projectCodeDropdownOpen, setProjectCodeDropdownOpen] = useState(false);
+  const projectCodeDropdownRef = React.useRef(null);
+
   const [formData, setFormData] = useState({
     collegeId: session?.collegeId || defaultCollegeId || "",
     collegeName: session?.collegeName || "",
@@ -79,11 +85,18 @@ const SessionWizard = ({
     batch: session?.batch || "",
     topic: session?.topic || "",
     domain: session?.domain || defaultDomain || "",
-    assignedTrainer:
-      session?.assignedTrainer ||
+    assignedTrainers:
+      session?.assignedTrainers ||
+      (session?.assignedTrainer ? [session.assignedTrainer] : null) ||
       (defaultTrainerId && trainers.length > 0
-        ? { id: trainers[0].id, name: trainers[0].name }
-        : null),
+        ? [{ id: trainers[0].id, name: trainers[0].name }]
+        : []),
+    trainerIds:
+      session?.trainerIds ||
+      (session?.assignedTrainer ? [session.assignedTrainer.id] : null) ||
+      (defaultTrainerId && trainers.length > 0
+        ? [trainers[0].id]
+        : []),
     sessionDate: session?.sessionDate || "",
     sessionTime: session?.sessionTime || "Morning",
     sessionDuration: session?.sessionDuration || 60,
@@ -143,6 +156,19 @@ const SessionWizard = ({
       }
     }
   }, [colleges, formData.collegeId, formData.collegeName]);
+
+  // Outside click for Project Code dropdown
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (projectCodeDropdownRef.current && !projectCodeDropdownRef.current.contains(e.target)) {
+        setProjectCodeDropdownOpen(false);
+      }
+    };
+    if (projectCodeDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [projectCodeDropdownOpen]);
 
   // Filter Trainers based on Domain (Step 2) OR Search
   // If searching, ignore domain filter. If not searching, use domain filter.
@@ -227,7 +253,7 @@ const SessionWizard = ({
       case 2:
         return (
           formData.topic &&
-          formData.assignedTrainer &&
+          formData.assignedTrainers?.length > 0 &&
           formData.sessionDate &&
           formData.sessionTime
         );
@@ -260,6 +286,10 @@ const SessionWizard = ({
 
       const payload = {
         ...formData,
+        // Multi-trainer: write all three fields for compat
+        assignedTrainers: formData.assignedTrainers,
+        trainerIds: formData.assignedTrainers.map(t => t.id),
+        assignedTrainer: formData.assignedTrainers[0] || null, // legacy compat
         questions: sessionQuestions,
         updatedAt: new Date().toISOString(),
       };
@@ -318,24 +348,76 @@ const SessionWizard = ({
         {/* Project Code Selection (Required) */}
         <div className="space-y-2">
           <Label>Project Code *</Label>
-          <Select
-            value={selectedProjectCode}
-            onValueChange={handleProjectCodeSelect}
-            disabled={!projectCodes.length}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select Project Code" />
-            </SelectTrigger>
-            <SelectContent>
-              {projectCodes
-                .filter((code) => code.collegeId)
-                .map((code) => (
-                  <SelectItem key={code.id} value={code.code}>
-                    {code.code}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
+          <div className="relative" ref={projectCodeDropdownRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setProjectCodeDropdownOpen((prev) => !prev);
+                setProjectCodeSearch("");
+              }}
+              disabled={!projectCodes.length}
+              className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span className={selectedProjectCode ? "text-foreground font-mono" : "text-muted-foreground"}>
+                {selectedProjectCode || "Select Project Code"}
+              </span>
+              <ChevronDown className="h-4 w-4 opacity-50" />
+            </button>
+
+            {projectCodeDropdownOpen && (
+              <div className="absolute z-50 mt-1 w-full rounded-md border bg-white shadow-lg animate-in fade-in-0 zoom-in-95 slide-in-from-top-2">
+                <div className="p-2 border-b border-slate-100">
+                  <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
+                    <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
+                    <input
+                      type="text"
+                      placeholder="Search project codes..."
+                      className="bg-transparent border-none outline-none text-xs w-full text-slate-700 font-mono"
+                      value={projectCodeSearch}
+                      onChange={(e) => setProjectCodeSearch(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+                </div>
+                <div className="max-h-[250px] overflow-y-auto py-1">
+                  {projectCodes
+                    .filter((pc) => pc.collegeId)
+                    .filter((pc) => 
+                      !projectCodeSearch || 
+                      pc.code.toLowerCase().includes(projectCodeSearch.toLowerCase())
+                    )
+                    .length === 0 ? (
+                    <div className="p-4 text-center text-xs text-muted-foreground">
+                      No project codes found
+                    </div>
+                  ) : (
+                    projectCodes
+                      .filter((pc) => pc.collegeId)
+                      .filter((pc) => 
+                        !projectCodeSearch || 
+                        pc.code.toLowerCase().includes(projectCodeSearch.toLowerCase())
+                      )
+                      .map((pc) => (
+                        <button
+                          key={pc.id}
+                          type="button"
+                          onClick={() => {
+                            handleProjectCodeSelect(pc.code);
+                            setProjectCodeDropdownOpen(false);
+                            setProjectCodeSearch("");
+                          }}
+                          className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-100 transition-colors font-mono ${
+                            selectedProjectCode === pc.code ? "bg-primary/5 text-primary font-bold" : "text-foreground"
+                          }`}
+                        >
+                          {pc.code}
+                        </button>
+                      ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">
             Project code is required. It will auto-fill College, Course, Year
             and Academic Year.
@@ -517,7 +599,37 @@ const SessionWizard = ({
           </div>
 
           <div className="space-y-2">
-            <Label>Select Trainer *</Label>
+            <Label>Select Trainer(s) *</Label>
+            {/* Selected trainer chips */}
+            {formData.assignedTrainers?.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {formData.assignedTrainers.map((t) => (
+                  <span
+                    key={t.id}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20"
+                  >
+                    {t.name}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData({
+                          ...formData,
+                          assignedTrainers: formData.assignedTrainers.filter(
+                            (tr) => tr.id !== t.id
+                          ),
+                          trainerIds: formData.trainerIds.filter(
+                            (id) => id !== t.id
+                          ),
+                        });
+                      }}
+                      className="ml-0.5 hover:text-destructive transition-colors"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <Popover
               open={trainerPopoverOpen}
               onOpenChange={setTrainerPopoverOpen}
@@ -529,9 +641,9 @@ const SessionWizard = ({
                   aria-expanded={trainerPopoverOpen}
                   className="w-full justify-between"
                 >
-                  {formData.assignedTrainer
-                    ? formData.assignedTrainer.name
-                    : "Select trainer..."}
+                  {formData.assignedTrainers?.length > 0
+                    ? `${formData.assignedTrainers.length} trainer(s) selected`
+                    : "Select trainers..."}
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </PopoverTrigger>
@@ -554,29 +666,51 @@ const SessionWizard = ({
                     </p>
                   ) : (
                     <div className="space-y-1">
-                      {filteredTrainers.map((t) => (
-                        <div
-                          key={t.id}
-                          className={`flex items-center justify-between p-2 rounded-sm cursor-pointer hover:bg-accent hover:text-accent-foreground ${formData.assignedTrainer?.id === t.id ? "bg-accent" : ""}`}
-                          onClick={() => {
-                            setFormData({
-                              ...formData,
-                              assignedTrainer: { id: t.id, name: t.name },
-                            });
-                            setTrainerPopoverOpen(false);
-                          }}
-                        >
-                          <div className="flex flex-col">
-                            <span className="font-medium">{t.name}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {t.specialisation}
-                            </span>
+                      {filteredTrainers.map((t) => {
+                        const isSelected = formData.assignedTrainers?.some(
+                          (tr) => tr.id === t.id
+                        );
+                        return (
+                          <div
+                            key={t.id}
+                            className={`flex items-center justify-between p-2 rounded-sm cursor-pointer hover:bg-accent hover:text-accent-foreground ${isSelected ? "bg-accent" : ""}`}
+                            onClick={() => {
+                              if (isSelected) {
+                                setFormData({
+                                  ...formData,
+                                  assignedTrainers:
+                                    formData.assignedTrainers.filter(
+                                      (tr) => tr.id !== t.id
+                                    ),
+                                  trainerIds: formData.trainerIds.filter(
+                                    (id) => id !== t.id
+                                  ),
+                                });
+                              } else {
+                                setFormData({
+                                  ...formData,
+                                  assignedTrainers: [
+                                    ...(formData.assignedTrainers || []),
+                                    { id: t.id, name: t.name },
+                                  ],
+                                  trainerIds: [
+                                    ...(formData.trainerIds || []),
+                                    t.id,
+                                  ],
+                                });
+                              }
+                            }}
+                          >
+                            <div className="flex flex-col">
+                              <span className="font-medium">{t.name}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {t.specialisation}
+                              </span>
+                            </div>
+                            {isSelected && <Check className="h-4 w-4" />}
                           </div>
-                          {formData.assignedTrainer?.id === t.id && (
-                            <Check className="h-4 w-4" />
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

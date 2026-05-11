@@ -372,6 +372,67 @@ export const compileSessionStatsFromResponses = (responses, sessionQuestions = [
     categoryAverages[cat] = Math.round((categoryTotals[cat] / categoryCounts[cat]) * 100) / 100;
   });
 
+  // --- Per-Trainer Breakdown (byTrainer) ---
+  // Group responses by selectedTrainerId and compute lean stats per trainer.
+  // Legacy responses without selectedTrainerId only contribute to global stats.
+  const byTrainer = {};
+  const trainerGroups = {};
+  responses.forEach(r => {
+    const tid = r.selectedTrainerId;
+    if (tid) {
+      if (!trainerGroups[tid]) trainerGroups[tid] = [];
+      trainerGroups[tid].push(r);
+    }
+  });
+
+  Object.entries(trainerGroups).forEach(([trainerId, trainerResponses]) => {
+    // Lean per-trainer compilation (same logic, capped arrays to save doc size)
+    const tRatingDist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    let tRatingSum = 0;
+    let tRatingCount = 0;
+    const tCategoryTotals = {};
+    const tCategoryCounts = {};
+    const tComments = [];
+
+    trainerResponses.forEach(resp => {
+      const answers = resp.answers || [];
+      answers.forEach(a => {
+        const type = (a.type || '').toLowerCase();
+        if (type === 'rating' || type === 'overall') {
+          const val = Math.round(Number(a.value) || 0);
+          if (val >= 1 && val <= 5) {
+            tRatingDist[val]++;
+            tRatingSum += val;
+            tRatingCount++;
+          }
+          const category = questionCategoryMap[a.questionId] || 'overall';
+          const numVal = Number(a.value) || 0;
+          if (!tCategoryTotals[category]) { tCategoryTotals[category] = 0; tCategoryCounts[category] = 0; }
+          tCategoryTotals[category] += numVal;
+          tCategoryCounts[category]++;
+        }
+        if ((type === 'text' || type === 'comment' || type === 'feedback') && a.value?.trim() && tComments.length < 5) {
+          tComments.push({ text: a.value.trim() });
+        }
+      });
+    });
+
+    const tCategoryAverages = {};
+    Object.keys(tCategoryTotals).forEach(cat => {
+      tCategoryAverages[cat] = Math.round((tCategoryTotals[cat] / tCategoryCounts[cat]) * 100) / 100;
+    });
+
+    byTrainer[trainerId] = {
+      totalResponses: trainerResponses.length,
+      avgRating: tRatingCount > 0 ? Math.round((tRatingSum / tRatingCount) * 100) / 100 : 0,
+      ratingDistribution: tRatingDist,
+      categoryAverages: tCategoryAverages,
+      topComments: tComments.slice(0, 3),
+      leastRatedComments: [],
+      trainerName: trainerResponses[0]?.selectedTrainerName || '',
+    };
+  });
+
   return {
     totalResponses: responses.length,
     avgRating: Math.round(avgRatingResult * 100) / 100,
@@ -385,6 +446,7 @@ export const compileSessionStatsFromResponses = (responses, sessionQuestions = [
     categoryAverages,
     topicsLearned,
     futureTopics,
+    byTrainer: Object.keys(byTrainer).length > 0 ? byTrainer : undefined,
     compiledAt: new Date().toISOString()
   };
 };
@@ -533,6 +595,31 @@ export const mergeStats = (existing, delta) => {
     }
   });
 
+  // Merge byTrainer maps
+  const byTrainer = { ...(existing.byTrainer || {}) };
+  Object.entries(delta.byTrainer || {}).forEach(([tid, dStats]) => {
+    if (!byTrainer[tid]) {
+      byTrainer[tid] = dStats;
+    } else {
+      const eStats = byTrainer[tid];
+      const mergedDist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+      [1, 2, 3, 4, 5].forEach(s => {
+        mergedDist[s] = (eStats.ratingDistribution?.[s] || 0) + (dStats.ratingDistribution?.[s] || 0);
+      });
+      const eTotalResp = eStats.totalResponses || 0;
+      const dTotalResp = dStats.totalResponses || 0;
+      byTrainer[tid] = {
+        totalResponses: eTotalResp + dTotalResp,
+        avgRating: mergeWeightedAvg(eStats.avgRating || 0, eTotalResp, dStats.avgRating || 0, dTotalResp),
+        ratingDistribution: mergedDist,
+        categoryAverages: { ...(eStats.categoryAverages || {}), ...(dStats.categoryAverages || {}) },
+        topComments: [...(eStats.topComments || []), ...(dStats.topComments || [])].slice(0, 3),
+        leastRatedComments: [...(eStats.leastRatedComments || []), ...(dStats.leastRatedComments || [])].slice(0, 3),
+        trainerName: dStats.trainerName || eStats.trainerName || '',
+      };
+    }
+  });
+
   return {
     totalResponses,
     avgRating,
@@ -546,6 +633,7 @@ export const mergeStats = (existing, delta) => {
     categoryAverages,
     topicsLearned,
     futureTopics: futureTopics.slice(0, 5),
+    byTrainer: Object.keys(byTrainer).length > 0 ? byTrainer : undefined,
     compiledAt: new Date().toISOString()
   };
 };

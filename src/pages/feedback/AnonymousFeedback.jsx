@@ -42,6 +42,13 @@ export const AnonymousFeedback = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
   const [error, setError] = useState("");
+  const [selectedTrainerId, setSelectedTrainerId] = useState(null);
+  const [selectedTrainerName, setSelectedTrainerName] = useState("");
+
+  // Helper: get trainers from session (backward compat)
+  const getTrainers = (s) =>
+    s?.assignedTrainers ||
+    (s?.assignedTrainer ? [s.assignedTrainer] : []);
 
   useEffect(() => {
     loadSession();
@@ -85,6 +92,13 @@ export const AnonymousFeedback = () => {
       }
 
       setSession(sessionData);
+      // Auto-select trainer if only one
+      const trainers = sessionData.assignedTrainers ||
+        (sessionData.assignedTrainer ? [sessionData.assignedTrainer] : []);
+      if (trainers.length === 1) {
+        setSelectedTrainerId(trainers[0].id);
+        setSelectedTrainerName(trainers[0].name);
+      }
       checkPreviousSubmission(sessionData);
     } catch (err) {
       console.error("Error loading session:", err);
@@ -157,6 +171,14 @@ export const AnonymousFeedback = () => {
         }
       }
 
+      // Validate trainer selection if multiple trainers
+      const sessionTrainers = getTrainers(session);
+      if (sessionTrainers.length > 1 && !selectedTrainerId) {
+        setError("Please select the trainer you are providing feedback for");
+        setIsSubmitting(false);
+        return;
+      }
+
       // Format answers array
       const answers = questions
         .map((q, index) => ({
@@ -173,7 +195,9 @@ export const AnonymousFeedback = () => {
         deviceId: getDeviceId(),
         answers,
         version,
-        phaseId
+        phaseId,
+        selectedTrainerId: selectedTrainerId || getTrainers(session)?.[0]?.id || null,
+        selectedTrainerName: selectedTrainerName || getTrainers(session)?.[0]?.name || null,
       });
 
       // Mark as submitted in localStorage (for history/UX, not blocking anymore)
@@ -340,9 +364,16 @@ export const AnonymousFeedback = () => {
         });
 
         const deviceId = `seed_${Date.now()}_${i}`;
+        const sessionTrainers = getTrainers(session);
+        const randomTrainer = sessionTrainers[Math.floor(Math.random() * sessionTrainers.length)];
 
         // Add minimal delay to avoid write contention triggers if any
-        promises.push(addResponse(sessionId, { deviceId, answers }));
+        promises.push(addResponse(sessionId, {
+          deviceId,
+          answers,
+          selectedTrainerId: randomTrainer?.id || null,
+          selectedTrainerName: randomTrainer?.name || null,
+        }));
       }
 
       await Promise.all(promises);
@@ -395,7 +426,15 @@ export const AnonymousFeedback = () => {
 
         const deviceId = `bulk_${Date.now()}_${i}`;
         const version = session.reactivationCount || 0;
-        promises.push(addResponse(sessionId, { deviceId, answers, version }));
+        const sessionTrainers = getTrainers(session);
+        const randomTrainer = sessionTrainers[Math.floor(Math.random() * sessionTrainers.length)];
+        promises.push(addResponse(sessionId, {
+          deviceId,
+          answers,
+          version,
+          selectedTrainerId: randomTrainer?.id || null,
+          selectedTrainerName: randomTrainer?.name || null,
+        }));
       }
 
       await Promise.all(promises);
@@ -454,7 +493,9 @@ export const AnonymousFeedback = () => {
                   Trainer
                 </span>
                 <span className="font-medium">
-                  {session?.assignedTrainer?.name || "Not specified"}
+                  {getTrainers(session).length > 1
+                    ? getTrainers(session).map(t => t.name).join(", ")
+                    : getTrainers(session)?.[0]?.name || "Not specified"}
                   {session?.domain && (
                     <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
                       {session?.domain}
@@ -477,6 +518,40 @@ export const AnonymousFeedback = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Trainer Selector (only if multiple trainers) */}
+        {getTrainers(session).length > 1 && (
+          <Card className="mb-5 shadow-sm border-primary/20">
+            <CardContent className="pt-6">
+              <Label className="text-base font-medium mb-3 block">
+                Which trainer are you providing feedback for? <span className="text-destructive">*</span>
+              </Label>
+              <RadioGroup
+                value={selectedTrainerId || ""}
+                onValueChange={(value) => {
+                  setSelectedTrainerId(value);
+                  const trainer = getTrainers(session).find(t => t.id === value);
+                  setSelectedTrainerName(trainer?.name || "");
+                }}
+                className="space-y-2"
+              >
+                {getTrainers(session).map((trainer) => (
+                  <label
+                    key={trainer.id}
+                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                      selectedTrainerId === trainer.id
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
+                    }`}
+                  >
+                    <RadioGroupItem value={trainer.id} />
+                    <span className="font-medium">{trainer.name}</span>
+                  </label>
+                ))}
+              </RadioGroup>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Required Fields Notice */}
         <p className="text-sm text-muted-foreground mb-6 flex items-center gap-1">

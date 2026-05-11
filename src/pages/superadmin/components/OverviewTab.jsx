@@ -16,6 +16,7 @@ import {
   Sparkles,
   AlertTriangle,
   Search,
+  Frown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -557,10 +558,11 @@ const OverviewTab = ({
   const allCollegesPerformance = useMemo(() => {
     if (!colleges || colleges.length === 0) return [];
 
-    // When date range is filtered, calculate from filteredResponses
-    const shouldUseFilteredResponses = !isDefaultView && filters.dateRange !== "all" && filteredResponses.length > 0;
+    // When date range is filtered, use filteredResponses (even if empty)
+    const shouldUseFilteredResponses = !isDefaultView && filters.dateRange !== "all";
     
     if (shouldUseFilteredResponses) {
+      if (filteredResponses.length === 0) return [];
       // Group responses by college
       const collegeStats = {};
       colleges.forEach((college) => {
@@ -652,10 +654,14 @@ const OverviewTab = ({
   
   useEffect(() => {
     const calculateTrendData = async () => {
-      // When date range is filtered, calculate from filteredResponses
-      const shouldUseFilteredResponses = !isDefaultView && filters.dateRange !== "all" && filteredResponses.length > 0;
+      // When date range is filtered, use filteredResponses (even if empty)
+      const shouldUseFilteredResponses = !isDefaultView && filters.dateRange !== "all";
       
       if (shouldUseFilteredResponses) {
+        if (filteredResponses.length === 0) {
+          setTrendData([]);
+          return;
+        }
         // Calculate trend from filtered responses
         const dateMap = {};
         filteredResponses.forEach((response) => {
@@ -1216,50 +1222,57 @@ const OverviewTab = ({
             </div>
           </CardHeader>
           <CardContent className="h-[280px] p-2 pt-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={allCollegesPerformance} layout="vertical" margin={{ left: 20, right: 20, top: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
-                <XAxis type="number" domain={[0, 5]} hide />
-                <YAxis
-                  dataKey="name"
-                  type="category"
-                  stroke="#64748b"
-                  fontSize={10}
-                  width={60}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <RechartsTooltip
-                  cursor={{ fill: "transparent" }}
-                  content={({ active, payload }) => {
-                    if (active && payload && payload.length) {
-                      const data = payload[0].payload;
-                      return (
-                        <div className="bg-slate-900 text-white p-2 rounded-lg shadow-xl border-0 ring-1 ring-white/10">
-                          <p className="font-bold text-[10px] mb-1 text-slate-300 uppercase tracking-widest">{data.fullName}</p>
-                          <div className="flex items-center justify-between gap-4">
-                            <span className="text-lg font-bold flex items-center gap-1">
-                              {data.avgRating}
-                              <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
-                            </span>
-                            <div className="text-right">
-                              <p className="text-[9px] text-slate-400 leading-none">Responses</p>
-                              <p className="text-xs font-bold">{data.responses}</p>
+            {allCollegesPerformance.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={allCollegesPerformance} layout="vertical" margin={{ left: 20, right: 20, top: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                  <XAxis type="number" domain={[0, 5]} hide />
+                  <YAxis
+                    dataKey="name"
+                    type="category"
+                    stroke="#64748b"
+                    fontSize={10}
+                    width={60}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <RechartsTooltip
+                    cursor={{ fill: "transparent" }}
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="bg-slate-900 text-white p-2 rounded-lg shadow-xl border-0 ring-1 ring-white/10">
+                            <p className="font-bold text-[10px] mb-1 text-slate-300 uppercase tracking-widest">{data.fullName}</p>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-lg font-bold flex items-center gap-1">
+                                {data.avgRating}
+                                <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+                              </span>
+                              <div className="text-right">
+                                <p className="text-[9px] text-slate-400 leading-none">Responses</p>
+                                <p className="text-xs font-bold">{data.responses}</p>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <Bar dataKey="avgRating" radius={[0, 4, 4, 0]} barSize={16}>
-                  {allCollegesPerformance.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} opacity={0.85} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Bar dataKey="avgRating" radius={[0, 4, 4, 0]} barSize={16}>
+                    {allCollegesPerformance.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} opacity={0.85} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full w-full flex flex-col items-center justify-center text-slate-400 gap-2">
+                <Frown className="h-8 w-8 text-slate-300" />
+                <p className="text-xs font-medium">Sorry, no data available</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -1269,22 +1282,29 @@ const OverviewTab = ({
             <CardDescription className="text-[11px]">Performance metrics</CardDescription>
           </CardHeader>
           <CardContent className="h-[280px] p-2 pt-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart cx="50%" cy="50%" outerRadius="70%" data={categoryRadarData}>
-                <PolarGrid stroke="#e2e8f0" />
-                <PolarAngleAxis dataKey="category" tick={{ fontSize: 9, fill: "#64748b", fontWeight: 500 }} />
-                <PolarRadiusAxis angle={30} domain={[0, 5]} tick={false} axisLine={false} />
-                <Radar
-                  name="Score"
-                  dataKey="score"
-                  stroke="#2563eb"
-                  strokeWidth={2}
-                  fill="#2563eb"
-                  fillOpacity={0.15}
-                />
-                <RechartsTooltip />
-              </RadarChart>
-            </ResponsiveContainer>
+            {categoryRadarData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart cx="50%" cy="50%" outerRadius="70%" data={categoryRadarData}>
+                  <PolarGrid stroke="#e2e8f0" />
+                  <PolarAngleAxis dataKey="category" tick={{ fontSize: 9, fill: "#64748b", fontWeight: 500 }} />
+                  <PolarRadiusAxis angle={30} domain={[0, 5]} tick={false} axisLine={false} />
+                  <Radar
+                    name="Score"
+                    dataKey="score"
+                    stroke="#2563eb"
+                    strokeWidth={2}
+                    fill="#2563eb"
+                    fillOpacity={0.15}
+                  />
+                  <RechartsTooltip />
+                </RadarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full w-full flex flex-col items-center justify-center text-slate-400 gap-2">
+                <Frown className="h-8 w-8 text-slate-300" />
+                <p className="text-xs font-medium">Sorry, no data available</p>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -1298,40 +1318,47 @@ const OverviewTab = ({
             </div>
           </CardHeader>
           <CardContent className="h-[220px] p-2 pt-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={trendData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorResponses" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.15}/>
-                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="fullDate" 
-                  fontSize={9} 
-                  stroke="#94a3b8" 
-                  axisLine={false} 
-                  tickLine={false}
-                  tickFormatter={(val) => {
-                    const d = new Date(val);
-                    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                  }} 
-                />
-                <YAxis fontSize={9} stroke="#94a3b8" axisLine={false} tickLine={false} />
-                <RechartsTooltip 
-                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', padding: '8px' }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="responses"
-                  stroke="#2563eb"
-                  strokeWidth={2}
-                  fillOpacity={1}
-                  fill="url(#colorResponses)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            {trendData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trendData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorResponses" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#2563eb" stopOpacity={0.15}/>
+                      <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis 
+                    dataKey="fullDate" 
+                    fontSize={9} 
+                    stroke="#94a3b8" 
+                    axisLine={false} 
+                    tickLine={false}
+                    tickFormatter={(val) => {
+                      const d = new Date(val);
+                      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    }} 
+                  />
+                  <YAxis fontSize={9} stroke="#94a3b8" axisLine={false} tickLine={false} />
+                  <RechartsTooltip 
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', padding: '8px' }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="responses"
+                    stroke="#2563eb"
+                    strokeWidth={2}
+                    fillOpacity={1}
+                    fill="url(#colorResponses)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full w-full flex flex-col items-center justify-center text-slate-400 gap-2">
+                <Frown className="h-8 w-8 text-slate-300" />
+                <p className="text-xs font-medium">Sorry, no data available</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

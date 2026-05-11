@@ -47,11 +47,11 @@ const TrainerFeedbackTab = () => {
     const analytics = [];
     
     // Identify trainers who have ANY sessions at this college (all time)
-    const collegeTrainerIds = new Set(sessions.map(s => s.assignedTrainer?.id).filter(Boolean));
+    const collegeTrainerIds = new Set(sessions.flatMap(s => (s.assignedTrainers || (s.assignedTrainer ? [s.assignedTrainer] : [])).map(t => t.id)).filter(Boolean));
 
     collegeTrainerIds.forEach(trainerId => {
       const trainer = trainers.find(t => t.id === trainerId);
-      const trainerSessions = sessions.filter(s => s.assignedTrainer?.id === trainerId);
+      const trainerSessions = sessions.filter(s => (s.assignedTrainers || (s.assignedTrainer ? [s.assignedTrainer] : [])).some(t => t.id === trainerId));
       
       // Calculate stats
       let totalRatingSum = 0;
@@ -141,7 +141,7 @@ const TrainerFeedbackTab = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="text-sm space-y-1">
-                      <p className="text-muted-foreground">Trainer: <span className="text-foreground font-medium">{session.assignedTrainer?.name}</span></p>
+                      <p className="text-muted-foreground">Trainer: <span className="text-foreground font-medium">{(session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : [])).map(t => t.name).join(", ")}</span></p>
                       <p className="text-muted-foreground">Responses: <span className="text-foreground">{cs?.totalResponses || 0}</span></p>
                       <Button 
                         variant="link" 

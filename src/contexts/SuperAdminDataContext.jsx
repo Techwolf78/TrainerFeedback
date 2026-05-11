@@ -10,6 +10,7 @@ import { auth } from "@/services/firebase";
 import {
   getAllColleges,
   subscribeToColleges,
+  addCollege as addCollegeService,
 } from "@/services/superadmin/collegeService";
 import {
   getAllTrainers,
@@ -27,6 +28,8 @@ import {
   addProjectCodes as addProjectCodesService,
   deleteProjectCode as deleteProjectCodeService,
   rerunCollegeMatching as rerunCollegeMatchingService,
+  createProjectCode as createProjectCodeService,
+  updateProjectCode as updateProjectCodeService,
 } from "@/services/superadmin/projectCodeService";
 import { toast } from "sonner";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
@@ -284,6 +287,61 @@ export const SuperAdminDataProvider = ({ children }) => {
     }
   }, []);
 
+  // Create a single project code
+  const createProjectCode = useCallback(async (data) => {
+    setLoading((prev) => ({ ...prev, projectCodes: true }));
+    try {
+      const result = await createProjectCodeService(data);
+      // Update local state
+      setProjectCodes((prev) => [result, ...prev]);
+      toast.success("Project code created successfully");
+      return result;
+    } catch (error) {
+      console.error("Failed to create project code:", error);
+      toast.error(error.message || "Failed to create project code");
+      throw error;
+    } finally {
+      setLoading((prev) => ({ ...prev, projectCodes: false }));
+    }
+  }, []);
+
+  // Update an existing project code
+  const updateProjectCode = useCallback(async (id, data) => {
+    setLoading((prev) => ({ ...prev, projectCodes: true }));
+    try {
+      const result = await updateProjectCodeService(id, data);
+      // Update local state
+      setProjectCodes((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, ...result } : c)),
+      );
+      toast.success("Project code updated successfully");
+      return result;
+    } catch (error) {
+      console.error("Failed to update project code:", error);
+      toast.error(error.message || "Failed to update project code");
+      throw error;
+    } finally {
+      setLoading((prev) => ({ ...prev, projectCodes: false }));
+    }
+  }, []);
+
+  // Create a new college
+  const createCollege = useCallback(async (collegeData) => {
+    setLoading((prev) => ({ ...prev, colleges: true }));
+    try {
+      const result = await addCollegeService(collegeData);
+      // Local state is handled by real-time subscription (subscribeToColleges)
+      toast.success("College created successfully");
+      return result;
+    } catch (error) {
+      console.error("Failed to create college:", error);
+      toast.error(error.message || "Failed to create college");
+      throw error;
+    } finally {
+      setLoading((prev) => ({ ...prev, colleges: false }));
+    }
+  }, []);
+
   // Load sessions (manual load, subscription handles real-time)
   const loadSessions = useCallback(
     async (force = false) => {
@@ -526,8 +584,13 @@ export const SuperAdminDataProvider = ({ children }) => {
 
     // Project Code Actions
     addProjectCodes,
+    createProjectCode,
+    updateProjectCode,
     deleteProjectCode,
     rerunMatching,
+
+    // College Actions
+    createCollege,
 
     // Update functions (for local state updates)
     updateTrainersList,

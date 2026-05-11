@@ -528,3 +528,87 @@ export const rerunCollegeMatching = async (colleges) => {
   }
 };
 
+/**
+ * Create a single project code.
+ * Stores the document with the same field structure used by the bulk import,
+ * and auto-updates the academic config so the course/year appears in the
+ * configuration tab.
+ */
+export const createProjectCode = async (data) => {
+  try {
+    // Check for duplicate code
+    const q = query(collection(db, COLLECTION_NAME), where('code', '==', data.code));
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
+      throw new Error(`Project code "${data.code}" already exists.`);
+    }
+
+    // Build the document with the canonical field structure
+    const docData = {
+      code: data.code,                     // Main identifier (raw project code string)
+      collegeId: data.collegeId || null,
+      collegeName: data.collegeName || '',
+      collegeCode: data.collegeCode || '',
+      course: data.course || '',
+      year: data.year || '',
+      type: data.type || '',
+      academicYear: data.academicYear || '',
+      parseStatus: 'parsed',               // Manual entry is always valid
+      matchStatus: data.collegeId ? 'matched' : 'unmatched',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+
+    const docRef = await addDoc(collection(db, COLLECTION_NAME), docData);
+
+    // Auto-update academic config so this course/year shows in the config tab
+    if (docData.collegeId && docData.course && docData.year) {
+      const yearNum = docData.year.replace(/\D/g, '') || docData.year;
+      await autoUpdateAcademicConfig(docData.collegeId, {
+        [docData.course]: new Set([yearNum])
+      });
+    }
+
+    return { id: docRef.id, ...docData };
+  } catch (error) {
+    console.error('Error creating project code:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update an existing project code.
+ * Maintains the canonical field structure and auto-updates academic config.
+ */
+export const updateProjectCode = async (id, data) => {
+  try {
+    const docData = {
+      code: data.code,
+      collegeId: data.collegeId || null,
+      collegeName: data.collegeName || '',
+      collegeCode: data.collegeCode || '',
+      course: data.course || '',
+      year: data.year || '',
+      type: data.type || '',
+      academicYear: data.academicYear || '',
+      matchStatus: data.collegeId ? 'matched' : 'unmatched',
+      updatedAt: serverTimestamp()
+    };
+
+    const docRef = doc(db, COLLECTION_NAME, id);
+    await updateDoc(docRef, docData);
+
+    // Auto-update academic config for the new course/year
+    if (docData.collegeId && docData.course && docData.year) {
+      const yearNum = docData.year.replace(/\D/g, '') || docData.year;
+      await autoUpdateAcademicConfig(docData.collegeId, {
+        [docData.course]: new Set([yearNum])
+      });
+    }
+
+    return { id, ...docData };
+  } catch (error) {
+    console.error('Error updating project code:', error);
+    throw error;
+  }
+};
