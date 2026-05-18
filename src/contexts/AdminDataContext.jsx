@@ -78,9 +78,28 @@ export const AdminDataProvider = ({ children }) => {
 
     setLoading(prev => ({ ...prev, sessions: true }));
     
-    // We use the new optimized subscribeToCollegeSessions to filter at query level
-    const unsubscribe = subscribeToCollegeSessions(user.collegeId, (collegeSessions) => {
-      setSessions(collegeSessions);
+    const unsubscribe = subscribeToCollegeSessions(user.collegeId, async (collegeSessions) => {
+      try {
+        const { getSessionStats } = await import("@/services/superadmin/responseService");
+        const resolvedSessions = await Promise.all(
+          collegeSessions.map(async (session) => {
+            if (session.compiledStats && !session.compiledStats.ratingDistribution && session.status !== "active") {
+              try {
+                const fullStats = await getSessionStats(session.id, session);
+                return { ...session, compiledStats: fullStats };
+              } catch (e) {
+                console.error("Failed to fetch stats for college session in subscription:", session.id, e);
+                return session;
+              }
+            }
+            return session;
+          })
+        );
+        setSessions(resolvedSessions);
+      } catch (err) {
+        console.error("Failed to process sessions in subscription:", err);
+        setSessions(collegeSessions);
+      }
       setLoaded(prev => ({ ...prev, sessions: true }));
       setLoading(prev => ({ ...prev, sessions: false }));
     });
@@ -152,9 +171,24 @@ export const AdminDataProvider = ({ children }) => {
       setLoading((prev) => ({ ...prev, sessions: true }));
       try {
         const data = await getAllSessions(user.collegeId);
-        setSessions(data);
+        const { getSessionStats } = await import("@/services/superadmin/responseService");
+        const resolvedSessions = await Promise.all(
+          data.map(async (session) => {
+            if (session.compiledStats && !session.compiledStats.ratingDistribution && session.status !== "active") {
+              try {
+                const fullStats = await getSessionStats(session.id, session);
+                return { ...session, compiledStats: fullStats };
+              } catch (e) {
+                console.error("Failed to fetch stats for college session in loadSessions:", session.id, e);
+                return session;
+              }
+            }
+            return session;
+          })
+        );
+        setSessions(resolvedSessions);
         setLoaded((prev) => ({ ...prev, sessions: true }));
-        return data;
+        return resolvedSessions;
       } catch (error) {
         console.error("Failed to load sessions:", error);
         toast.error("Failed to load sessions");

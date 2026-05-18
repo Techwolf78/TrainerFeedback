@@ -95,8 +95,10 @@ const SessionWizard = ({
     academicYear: session?.academicYear || "2025-26",
     course: session?.course || "",
     branch: session?.branch || "",
+    branches: session?.branches || (session?.branch ? [session.branch] : []),
     year: session?.year || "",
     batch: session?.batch || "",
+    batches: session?.batches || (session?.batch ? [session.batch] : []),
     topic: session?.topic || "",
     domain: session?.domain || defaultDomain || "",
     assignedTrainers:
@@ -267,7 +269,9 @@ const SessionWizard = ({
       academicYear: code.academicYear || prev.academicYear,
       // Reset dependent fields that are NOT in project code
       branch: "",
+      branches: [],
       batch: "",
+      batches: [],
     }));
   };
 
@@ -279,9 +283,9 @@ const SessionWizard = ({
           formData.collegeId &&
           formData.academicYear &&
           formData.course &&
-          formData.branch &&
+          formData.branches?.length > 0 &&
           formData.year &&
-          formData.batch
+          formData.batches?.length > 0
         );
       case 2:
         return (
@@ -300,7 +304,9 @@ const SessionWizard = ({
     try {
       const payload = {
         ...formData,
-        // Multi-trainer: write all three fields for compat
+        // Make sure branches and batches are robustly saved
+        branches: formData.branches || (formData.branch ? [formData.branch] : []),
+        batches: formData.batches || (formData.batch ? [formData.batch] : []),
         assignedTrainers: formData.assignedTrainers,
         trainerIds: formData.assignedTrainers.map(t => t.id),
         assignedTrainer: formData.assignedTrainers[0] || null, // legacy compat
@@ -310,13 +316,20 @@ const SessionWizard = ({
 
       if (session?.id) {
         await updateSession(session.id, payload);
+        // Trigger background self-healing migration for legacy sessions
+        if (session.compiledStats) {
+          try {
+            const { migrateSessionStats } = await import("@/services/superadmin/responseService");
+            await migrateSessionStats(session.id, { ...session, ...payload });
+          } catch (e) {
+            console.error("Self-healing stats migration failed:", e);
+          }
+        }
         toast.success("Session updated successfully");
       } else {
         await createSession(payload);
         toast.success("Session created successfully");
       }
-      // Reset submitting state BEFORE calling onSuccess to ensure clean state
-      // This prevents race conditions when the parent closes the dialog
       setIsSubmitting(false);
       onSuccess?.();
     } catch (error) {
@@ -354,8 +367,18 @@ const SessionWizard = ({
         ? currentYearData.departments[formData.branch]
         : null;
 
-    // Batches are under Department
-    const batches = currentDeptData?.batches || [];
+    // Batches are under Department - compile across all selected branches
+    const allAvailableBatches = [];
+    (formData.branches || []).forEach((deptName) => {
+      const deptData = currentYearData?.departments?.[deptName];
+      if (deptData?.batches) {
+        deptData.batches.forEach((b) => {
+          if (!allAvailableBatches.includes(b)) {
+            allAvailableBatches.push(b);
+          }
+        });
+      }
+    });
 
     return (
       <div className="space-y-4 py-2">
@@ -524,50 +547,86 @@ const SessionWizard = ({
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Branch/Dept *</Label>
-              <Select
-                value={formData.branch}
-                onValueChange={(v) =>
-                  setFormData({
-                    ...formData,
-                    branch: v,
-                    batch: "", // Reset Batch
+            {/* Branch/Dept Selector (Multi-Select Checkboxes) */}
+            <div className="space-y-2 col-span-2 md:col-span-1">
+              <Label>Branches/Departments *</Label>
+              <div className="border rounded-md p-3 max-h-[140px] overflow-y-auto space-y-2 bg-background">
+                {departments.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-2 text-center">Select Year first</p>
+                ) : (
+                  departments.map((d) => {
+                    const isChecked = formData.branches?.includes(d);
+                    return (
+                      <label key={d} className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            let updatedBranches = [...(formData.branches || [])];
+                            if (isChecked) {
+                              updatedBranches = updatedBranches.filter((b) => b !== d);
+                            } else {
+                              updatedBranches.push(d);
+                            }
+                            setFormData((prev) => ({
+                              ...prev,
+                              branches: updatedBranches,
+                              branch: updatedBranches[0] || "",
+                              batches: (prev.batches || []).filter(b => {
+                                return updatedBranches.some(deptName => {
+                                  const deptData = currentYearData?.departments?.[deptName];
+                                  return deptData?.batches?.includes(b);
+                                });
+                              })
+                            }));
+                          }}
+                          className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
+                        />
+                        <span>{d}</span>
+                      </label>
+                    );
                   })
-                }
-                disabled={!formData.year}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Branch" />
-                </SelectTrigger>
-                <SelectContent>
-                  {departments.map((d) => (
-                    <SelectItem key={d} value={d}>
-                      {d}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                )}
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>Batch *</Label>
-              <Select
-                value={formData.batch}
-                onValueChange={(v) => setFormData({ ...formData, batch: v })}
-                disabled={!formData.branch}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Batch" />
-                </SelectTrigger>
-                <SelectContent>
-                  {batches.map((b) => (
-                    <SelectItem key={b} value={b}>
-                      {b}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* Batch Selector (Multi-Select Checkboxes) */}
+            <div className="space-y-2 col-span-2 md:col-span-1">
+              <Label>Batches *</Label>
+              <div className="border rounded-md p-3 max-h-[140px] overflow-y-auto space-y-2 bg-background">
+                {!formData.branches || formData.branches.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-2 text-center">Select Branch/Dept first</p>
+                ) : allAvailableBatches.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-2 text-center">No batches found</p>
+                ) : (
+                  allAvailableBatches.map((b) => {
+                    const isChecked = formData.batches?.includes(b);
+                    return (
+                      <label key={b} className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            let updatedBatches = [...(formData.batches || [])];
+                            if (isChecked) {
+                              updatedBatches = updatedBatches.filter((x) => x !== b);
+                            } else {
+                              updatedBatches.push(b);
+                            }
+                            setFormData((prev) => ({
+                              ...prev,
+                              batches: updatedBatches,
+                              batch: updatedBatches[0] || "",
+                            }));
+                          }}
+                          className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
+                        />
+                        <span>{b}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>
         </div>

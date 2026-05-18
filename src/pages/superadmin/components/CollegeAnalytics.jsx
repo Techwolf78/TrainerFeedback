@@ -141,7 +141,24 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
           getAcademicConfig(collegeId),
         ]);
 
-        setSessions(results[0] || []);
+        const rawSessions = results[0] || [];
+        const { getSessionStats } = await import("@/services/superadmin/responseService");
+        const resolvedSessions = await Promise.all(
+          rawSessions.map(async (session) => {
+            if (session.compiledStats && !session.compiledStats.ratingDistribution && session.status !== "active") {
+              try {
+                const fullStats = await getSessionStats(session.id, session);
+                return { ...session, compiledStats: fullStats };
+              } catch (e) {
+                console.error("Failed to fetch stats for college analytics session:", session.id, e);
+                return session;
+              }
+            }
+            return session;
+          })
+        );
+
+        setSessions(resolvedSessions);
         setTrainers(results[1]?.trainers || []);
         setAcademicOptions(results[2]);
       } catch (error) {
@@ -290,11 +307,22 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
         return false;
       if (filters.course !== "all" && session.course !== filters.course)
         return false;
-      if (filters.department !== "all" && session.branch !== filters.department)
-        return false;
+      
+      // Support multiple departments/branches in session filtering
+      if (filters.department !== "all") {
+        const hasDept = session.branch === filters.department || 
+                        (session.branches && session.branches.includes(filters.department));
+        if (!hasDept) return false;
+      }
+      
       if (filters.year !== "all" && session.year !== filters.year) return false;
-      if (filters.batch !== "all" && session.batch !== filters.batch)
-        return false;
+      
+      // Support multiple batches in session filtering
+      if (filters.batch !== "all") {
+        const hasBatch = session.batch === filters.batch || 
+                         (session.batches && session.batches.includes(filters.batch));
+        if (!hasBatch) return false;
+      }
 
       return true;
     });
@@ -317,7 +345,21 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     }
 
     // If date range filter is active, recalculate from individual responses
-    if (filters.dateRange !== "all" && filteredResponses.length > 0) {
+    if (filters.dateRange !== "all") {
+      if (filteredResponses.length === 0) {
+        return {
+          totalSessions: 0,
+          totalResponses: 0,
+          totalRatingsCount: 0,
+          totalHours: 0,
+          avgRating: "0.00",
+          ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+          categoryAverages: {},
+          qualitative: { high: [], low: [], future: [] },
+          topicsLearned: [],
+        };
+      }
+
       const compiledStats = compileSessionStatsFromResponses(filteredResponses);
       
       // Build question-to-category map from sessions
@@ -382,8 +424,19 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     };
 
     filteredSessions.forEach((session) => {
-      const cs = session.compiledStats;
+      let cs = session.compiledStats;
       if (!cs) return;
+
+      // Extract segment statistics based on active filters
+      if (filters.trainerId && filters.trainerId !== "all" && cs.byTrainer && cs.byTrainer[filters.trainerId]) {
+        cs = cs.byTrainer[filters.trainerId];
+      } else if (filters.batch && filters.batch !== "all" && cs.byBatch && cs.byBatch[filters.batch]) {
+        cs = cs.byBatch[filters.batch];
+      } else if (filters.department && filters.department !== "all" && cs.byBranch && cs.byBranch[filters.department]) {
+        cs = cs.byBranch[filters.department];
+      } else if (filters.course && filters.course !== "all" && cs.byBranch && cs.byBranch[filters.course]) {
+        cs = cs.byBranch[filters.course];
+      }
 
       const sessionCount = cs.totalResponses || 0;
       stats.totalResponses += sessionCount;
@@ -499,6 +552,17 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
           }
         }
 
+        // Filter responses by active segment filters to ensure segment-specific counts
+        if (filters.trainerId && filters.trainerId !== "all") {
+          allResponses = allResponses.filter(r => r.selectedTrainerId === filters.trainerId);
+        }
+        if (filters.batch && filters.batch !== "all") {
+          allResponses = allResponses.filter(r => (r.selectedBatch || r.batch) === filters.batch);
+        }
+        if (filters.department && filters.department !== "all") {
+          allResponses = allResponses.filter(r => (r.selectedBranch || r.branch) === filters.department);
+        }
+
         setFilteredResponses(allResponses);
       } catch (error) {
         console.error("Error loading filtered responses:", error);
@@ -507,7 +571,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     };
 
     loadFilteredResponses();
-  }, [filteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate]);
+  }, [filteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate, filters.trainerId, filters.batch, filters.department]);
 
   // Response trend - group by actual response submission dates
   const [responseTrendData, setResponseTrendData] = React.useState([]);
@@ -607,7 +671,10 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     const domainMap = {};
 
     // Use filtered responses if date range is active
-    if (filters.dateRange !== "all" && filteredResponses.length > 0) {
+    if (filters.dateRange !== "all") {
+      if (filteredResponses.length === 0) {
+        return { chartData: [], totalResponses: 0 };
+      }
       const sessionMap = {};
       filteredSessions.forEach((session) => {
         sessionMap[session.id] = session;
@@ -693,7 +760,10 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     const trainerStats = {};
 
     // Use filtered responses if date range is active
-    if (filters.dateRange !== "all" && filteredResponses.length > 0) {
+    if (filters.dateRange !== "all") {
+      if (filteredResponses.length === 0) {
+        return [];
+      }
       // Build trainer stats from filtered responses
       const sessionMap = {};
       filteredSessions.forEach((session) => {

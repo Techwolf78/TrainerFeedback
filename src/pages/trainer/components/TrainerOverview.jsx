@@ -60,6 +60,35 @@ const TrainerOverview = ({ sessions = [], isLoading: isDashboardLoading = false 
   const [analyticsData, setAnalyticsData] = useState(null);
   const [analyticsCache, setAnalyticsCache] = useState({});
   const [isFetchingAnalytics, setIsFetchingAnalytics] = useState(false);
+  const [resolvedSessions, setResolvedSessions] = useState([]);
+
+  useEffect(() => {
+    const resolveStats = async () => {
+      if (!sessions || sessions.length === 0) {
+        setResolvedSessions([]);
+        return;
+      }
+
+      const { getSessionStats } = await import("@/services/superadmin/responseService");
+      const resolved = await Promise.all(
+        sessions.map(async (session) => {
+          if (session.compiledStats && !session.compiledStats.ratingDistribution && session.status !== "active") {
+            try {
+              const fullStats = await getSessionStats(session.id, session);
+              return { ...session, compiledStats: fullStats };
+            } catch (e) {
+              console.error("Failed to fetch stats for trainer session:", session.id, e);
+              return session;
+            }
+          }
+          return session;
+        })
+      );
+      setResolvedSessions(resolved);
+    };
+
+    resolveStats();
+  }, [sessions]);
 
   // Filter state
   const [filters, setFilters] = useState({
@@ -214,7 +243,16 @@ const TrainerOverview = ({ sessions = [], isLoading: isDashboardLoading = false 
 
       // Use per-trainer stats if available (multi-trainer sessions)
       const myTrainerId = user?.id || user?.uid;
-      const cs = (myTrainerId && globalCs.byTrainer?.[myTrainerId]) || globalCs;
+      let cs = (myTrainerId && globalCs.byTrainer?.[myTrainerId]) || globalCs;
+
+      // Extract batch or department/branch segment stats if filters are active
+      if (filters.batch && filters.batch !== "all" && globalCs.byBatch && globalCs.byBatch[filters.batch]) {
+        cs = globalCs.byBatch[filters.batch];
+      } else if (filters.department && filters.department !== "all" && globalCs.byBranch && globalCs.byBranch[filters.department]) {
+        cs = globalCs.byBranch[filters.department];
+      } else if (filters.course && filters.course !== "all" && globalCs.byBranch && globalCs.byBranch[filters.course]) {
+        cs = globalCs.byBranch[filters.course];
+      }
 
       stats.totalResponses += cs.totalResponses || 0;
       stats.totalHours += (Number(session.sessionDuration) || 60) / 60;
@@ -307,7 +345,24 @@ const TrainerOverview = ({ sessions = [], isLoading: isDashboardLoading = false 
           includeActive: true, // include active sessions too
         });
 
-        const computedStats = aggregateStatsFromSessions(fetchedSessions);
+        // Asynchronously resolve subcollection statistics for any decoupled sessions
+        const { getSessionStats } = await import("@/services/superadmin/responseService");
+        const sessionsWithFullStats = await Promise.all(
+          fetchedSessions.map(async (session) => {
+            if (session.compiledStats && !session.compiledStats.ratingDistribution && session.status !== "active") {
+              try {
+                const fullStats = await getSessionStats(session.id, session);
+                return { ...session, compiledStats: fullStats };
+              } catch (e) {
+                console.error("Failed to fetch stats for filtered trainer session:", session.id, e);
+                return session;
+              }
+            }
+            return session;
+          })
+        );
+
+        const computedStats = aggregateStatsFromSessions(sessionsWithFullStats);
 
         setAnalyticsCache((prev) => ({ ...prev, [cacheKey]: computedStats }));
         setAnalyticsData(computedStats);
@@ -335,8 +390,8 @@ const TrainerOverview = ({ sessions = [], isLoading: isDashboardLoading = false 
       filters.batch === "all" &&
       filters.dateRange === "all";
 
-    if (isDefaultView && sessions.length > 0) {
-      return aggregateStatsFromSessions(sessions);
+    if (isDefaultView && resolvedSessions.length > 0) {
+      return aggregateStatsFromSessions(resolvedSessions);
     }
 
     // 2. Filtered View -> Use Dynamic Data

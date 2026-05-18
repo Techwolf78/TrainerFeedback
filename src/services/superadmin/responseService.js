@@ -3,6 +3,8 @@ import {
   collection, 
   addDoc, 
   getDocs, 
+  getDoc,
+  setDoc,
   query, 
   orderBy,
   serverTimestamp,
@@ -636,4 +638,244 @@ export const mergeStats = (existing, delta) => {
     byTrainer: Object.keys(byTrainer).length > 0 ? byTrainer : undefined,
     compiledAt: new Date().toISOString()
   };
+};
+
+/**
+ * Compiles overall, trainer, batch, and branch segments simultaneously from raw responses
+ */
+export const compileAllSegmentsFromResponses = (responses, sessionQuestions = []) => {
+  const overall = compileSessionStatsFromResponses(responses, sessionQuestions);
+  
+  const questionCategoryMap = {};
+  (sessionQuestions || []).forEach(q => { if (q.id && q.category) questionCategoryMap[q.id] = q.category; });
+
+  const byTrainer = {};
+  const byBatch = {};
+  const byBranch = {};
+
+  const trainerGroups = {};
+  const batchGroups = {};
+  const branchGroups = {};
+
+  responses.forEach(r => {
+    const tid = r.selectedTrainerId;
+    if (tid) {
+      if (!trainerGroups[tid]) trainerGroups[tid] = [];
+      trainerGroups[tid].push(r);
+    }
+    const bid = r.selectedBatch || r.batch;
+    if (bid) {
+      if (!batchGroups[bid]) batchGroups[bid] = [];
+      batchGroups[bid].push(r);
+    }
+    const dept = r.selectedBranch || r.branch;
+    if (dept) {
+      if (!branchGroups[dept]) branchGroups[dept] = [];
+      branchGroups[dept].push(r);
+    }
+  });
+
+  const compileSegment = (segmentResponses, displayName = '') => {
+    const ratingDist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    let ratingSum = 0;
+    let ratingCount = 0;
+    const categoryTotals = {};
+    const categoryCounts = {};
+    const comments = [];
+
+    segmentResponses.forEach(resp => {
+      const answers = resp.answers || [];
+      answers.forEach(a => {
+        const type = (a.type || '').toLowerCase();
+        if (type === 'rating' || type === 'overall') {
+          const val = Math.round(Number(a.value) || 0);
+          if (val >= 1 && val <= 5) {
+            ratingDist[val]++;
+            ratingSum += val;
+            ratingCount++;
+          }
+          const category = questionCategoryMap[a.questionId] || 'overall';
+          const numVal = Number(a.value) || 0;
+          if (!categoryTotals[category]) { categoryTotals[category] = 0; categoryCounts[category] = 0; }
+          categoryTotals[category] += numVal;
+          categoryCounts[category]++;
+        }
+        if ((type === 'text' || type === 'comment' || type === 'feedback') && a.value?.trim() && comments.length < 5) {
+          comments.push({ text: a.value.trim() });
+        }
+      });
+    });
+
+    const categoryAverages = {};
+    Object.keys(categoryTotals).forEach(cat => {
+      categoryAverages[cat] = Math.round((categoryTotals[cat] / categoryCounts[cat]) * 100) / 100;
+    });
+
+    return {
+      totalResponses: segmentResponses.length,
+      avgRating: ratingCount > 0 ? Math.round((ratingSum / ratingCount) * 100) / 100 : 0,
+      ratingDistribution: ratingDist,
+      categoryAverages,
+      topComments: comments.slice(0, 3),
+      leastRatedComments: [],
+      name: displayName,
+    };
+  };
+
+  Object.entries(trainerGroups).forEach(([trainerId, tResps]) => {
+    byTrainer[trainerId] = compileSegment(tResps, tResps[0]?.selectedTrainerName || '');
+    byTrainer[trainerId].trainerName = byTrainer[trainerId].name;
+  });
+
+  Object.entries(batchGroups).forEach(([batchId, bResps]) => {
+    byBatch[batchId] = compileSegment(bResps, batchId);
+  });
+
+  Object.entries(branchGroups).forEach(([branchId, dResps]) => {
+    byBranch[branchId] = compileSegment(dResps, branchId);
+  });
+
+  return {
+    overall,
+    byTrainer,
+    byBatch,
+    byBranch,
+  };
+};
+
+/**
+ * Saves decoupled statistics into individual documents under sessions/{sessionId}/stats subcollection
+ */
+export const saveDecoupledStats = async (sessionId, compiledData) => {
+  const { overall, byTrainer, byBatch, byBranch } = compiledData;
+  const promises = [];
+
+  const prunedOverall = { ...overall };
+  delete prunedOverall.byTrainer;
+  delete prunedOverall.byBatch;
+  delete prunedOverall.byBranch;
+
+  promises.push(setDoc(doc(db, 'sessions', sessionId, 'stats', 'overall'), prunedOverall));
+
+  Object.entries(byTrainer || {}).forEach(([trainerId, data]) => {
+    promises.push(setDoc(doc(db, 'sessions', sessionId, 'stats', `trainer_${trainerId}`), {
+      ...data,
+      type: 'trainer',
+      trainerId
+    }));
+  });
+
+  Object.entries(byBatch || {}).forEach(([batchId, data]) => {
+    promises.push(setDoc(doc(db, 'sessions', sessionId, 'stats', `batch_${batchId}`), {
+      ...data,
+      type: 'batch',
+      batchId
+    }));
+  });
+
+  Object.entries(byBranch || {}).forEach(([branchId, data]) => {
+    promises.push(setDoc(doc(db, 'sessions', sessionId, 'stats', `branch_${branchId}`), {
+      ...data,
+      type: 'branch',
+      branchId
+    }));
+  });
+
+  await Promise.all(promises);
+};
+
+/**
+ * Unified statistics bridge: Loads stats from subcollections, falling back to parent doc if not present
+ */
+export const getSessionStats = async (sessionId, parentSessionData = null) => {
+  try {
+    const overallDocRef = doc(db, 'sessions', sessionId, 'stats', 'overall');
+    const overallDoc = await getDoc(overallDocRef);
+
+    if (overallDoc.exists()) {
+      const overallData = overallDoc.data();
+      const statsColRef = collection(db, 'sessions', sessionId, 'stats');
+      const statsSnapshot = await getDocs(statsColRef);
+
+      const byTrainer = {};
+      const byBatch = {};
+      const byBranch = {};
+
+      statsSnapshot.docs.forEach(docSnap => {
+        const id = docSnap.id;
+        const data = docSnap.data();
+
+        if (id.startsWith('trainer_')) {
+          const tid = data.trainerId || id.replace('trainer_', '');
+          byTrainer[tid] = data;
+        } else if (id.startsWith('batch_')) {
+          const bid = data.batchId || id.replace('batch_', '');
+          byBatch[bid] = data;
+        } else if (id.startsWith('branch_')) {
+          const brid = data.branchId || id.replace('branch_', '');
+          byBranch[brid] = data;
+        }
+      });
+
+      return {
+        ...overallData,
+        byTrainer: Object.keys(byTrainer).length > 0 ? byTrainer : undefined,
+        byBatch: Object.keys(byBatch).length > 0 ? byBatch : undefined,
+        byBranch: Object.keys(byBranch).length > 0 ? byBranch : undefined,
+      };
+    }
+
+    if (parentSessionData && parentSessionData.compiledStats) {
+      return parentSessionData.compiledStats;
+    }
+
+    const parentSessionDoc = await getDoc(doc(db, 'sessions', sessionId));
+    if (parentSessionDoc.exists()) {
+      return parentSessionDoc.data().compiledStats || null;
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`Error loading getSessionStats for ${sessionId}:`, error);
+    if (parentSessionData) return parentSessionData.compiledStats || null;
+    return null;
+  }
+};
+
+/**
+ * Self-healing migrator for legacy sessions
+ */
+export const migrateSessionStats = async (sessionId, sessionData = null) => {
+  try {
+    let data = sessionData;
+    if (!data) {
+      const parentSessionDoc = await getDoc(doc(db, 'sessions', sessionId));
+      data = parentSessionDoc.exists() ? { id: parentSessionDoc.id, ...parentSessionDoc.data() } : null;
+    }
+
+    if (!data || !data.compiledStats) return false;
+
+    const stats = data.compiledStats;
+    const byTrainer = stats.byTrainer || {};
+    const byBatch = stats.byBatch || {};
+    const byBranch = stats.byBranch || {};
+
+    await saveDecoupledStats(sessionId, {
+      overall: stats,
+      byTrainer,
+      byBatch,
+      byBranch
+    });
+
+    const { updateDoc } = await import('firebase/firestore');
+    await updateDoc(doc(db, 'sessions', sessionId), {
+      compiledStats: null
+    });
+
+    console.log(`[Migration] Legacy session ${sessionId} successfully migrated to decoupled subcollections.`);
+    return true;
+  } catch (err) {
+    console.error(`[Migration] Failed to migrate session ${sessionId}:`, err);
+    return false;
+  }
 };

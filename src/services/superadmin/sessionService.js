@@ -406,7 +406,7 @@ export const closeSessionWithStats = async (id) => {
     // 1. Compile statistics directly from ALL responses (outside transaction)
     // We completely bypass delta stats and merging logic to prevent double-counting.
     // This simply recalculates the true state from the raw response documents.
-    const { getResponses, compileSessionStatsFromResponses } = await import("./responseService");
+    const { getResponses, compileAllSegmentsFromResponses, saveDecoupledStats } = await import("./responseService");
     const { runTransaction } = await import("firebase/firestore");
 
     const sessionSnap = await getDoc(doc(db, COLLECTION_NAME, id));
@@ -414,7 +414,17 @@ export const closeSessionWithStats = async (id) => {
     const sessionDataToCompile = sessionSnap.data();
 
     const allResponses = await getResponses(id);
-    const finalMergedStats = compileSessionStatsFromResponses(allResponses, sessionDataToCompile.questions || []);
+    const compiledSegments = compileAllSegmentsFromResponses(allResponses, sessionDataToCompile.questions || []);
+
+    // Save detailed stats in stats subcollection documents
+    await saveDecoupledStats(id, compiledSegments);
+
+    // Save lightweight stats on parent session document for fast listings
+    const finalMergedStats = {
+      totalResponses: compiledSegments.overall.totalResponses || 0,
+      avgRating: compiledSegments.overall.avgRating || 0,
+      compiledAt: compiledSegments.overall.compiledAt || new Date().toISOString()
+    };
 
     let sessionDataForCache = null;
 
@@ -525,76 +535,82 @@ export const getAnalyticsSessions = async (params) => {
     } = params;
 
     const constraints = [];
-    
-    // Only filter by status if we explicitly want only inactive sessions
-    if (!includeActive) {
-      constraints.push(where("status", "==", "inactive"));
-    }
 
     if (collegeId && collegeId !== "all")
       constraints.push(where("collegeId", "==", collegeId));
-    // NOTE: trainer filter is handled separately via dual-query for backward compat (see below)
-    if (course && course !== "all")
-      constraints.push(where("course", "==", course));
-    if (year && year !== "all") constraints.push(where("year", "==", year));
-    if (department && department !== "all")
-      constraints.push(where("branch", "==", department));
-    if (batch && batch !== "all") constraints.push(where("batch", "==", batch));
-    if (projectCode && projectCode !== "all")
-      constraints.push(where("projectCode", "==", projectCode));
 
     // Date filtering — must come before orderBy on the same field
     if (startDate) constraints.push(where("sessionDate", ">=", startDate));
     if (endDate) constraints.push(where("sessionDate", "<=", endDate));
 
-    // orderBy and limit must come AFTER all where clauses
+    // orderBy must come AFTER all where clauses, fetch a large pool to support client-side filters
     constraints.push(orderBy("sessionDate", "desc"));
-    constraints.push(limit(limitCount));
+    constraints.push(limit(500));
+
+    let rawSessions = [];
 
     // If trainer filter is active, run dual queries for backward compat
     if (trainerId && trainerId !== "all") {
-      // Build constraints without trainer filter
-      const baseConstraints = constraints.filter(
-        (c) => c !== constraints.find((x) => x._field?.segments?.includes?.("trainerIds"))
-      );
-      // Actually just rebuild without the trainer constraint
-      const sharedConstraints = [];
-      if (!includeActive) sharedConstraints.push(where("status", "==", "inactive"));
-      if (collegeId && collegeId !== "all") sharedConstraints.push(where("collegeId", "==", collegeId));
-      if (course && course !== "all") sharedConstraints.push(where("course", "==", course));
-      if (year && year !== "all") sharedConstraints.push(where("year", "==", year));
-      if (department && department !== "all") sharedConstraints.push(where("branch", "==", department));
-      if (batch && batch !== "all") sharedConstraints.push(where("batch", "==", batch));
-      if (projectCode && projectCode !== "all") sharedConstraints.push(where("projectCode", "==", projectCode));
-      if (startDate) sharedConstraints.push(where("sessionDate", ">=", startDate));
-      if (endDate) sharedConstraints.push(where("sessionDate", "<=", endDate));
-      sharedConstraints.push(orderBy("sessionDate", "desc"));
-      sharedConstraints.push(limit(limitCount));
-
-      const q1 = query(collection(db, COLLECTION_NAME), where("trainerIds", "array-contains", trainerId), ...sharedConstraints);
-      const q2 = query(collection(db, COLLECTION_NAME), where("assignedTrainer.id", "==", trainerId), ...sharedConstraints);
+      const q1 = query(collection(db, COLLECTION_NAME), where("trainerIds", "array-contains", trainerId), ...constraints);
+      const q2 = query(collection(db, COLLECTION_NAME), where("assignedTrainer.id", "==", trainerId), ...constraints);
 
       const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
       const seen = new Set();
-      const sessions = [];
       [...snap1.docs, ...snap2.docs].forEach((doc) => {
         if (!seen.has(doc.id)) {
           seen.add(doc.id);
-          sessions.push({ id: doc.id, ...doc.data() });
+          rawSessions.push({ id: doc.id, ...doc.data() });
         }
       });
-
-      // Sort by sessionDate desc and apply limit
-      sessions.sort((a, b) => (b.sessionDate || "").localeCompare(a.sessionDate || ""));
-      const limitedSessions = sessions.slice(0, limitCount);
-
-      return limitedSessions;
+    } else {
+      const q = query(collection(db, COLLECTION_NAME), ...constraints);
+      const snapshot = await getDocs(q);
+      rawSessions = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     }
 
-    const q = query(collection(db, COLLECTION_NAME), ...constraints);
+    // Filter dynamically on the Javascript side to avoid composite index limits
+    let filtered = rawSessions;
 
-    const snapshot = await getDocs(q);
-    const sessions = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    // Filter by status if not includeActive
+    if (!includeActive) {
+      filtered = filtered.filter((s) => s.status === "inactive");
+    }
+
+    // Filter by course
+    if (course && course !== "all") {
+      filtered = filtered.filter((s) => s.course === course);
+    }
+
+    // Filter by year
+    if (year && year !== "all") {
+      filtered = filtered.filter((s) => s.year === year);
+    }
+
+    // Filter by projectCode
+    if (projectCode && projectCode !== "all") {
+      filtered = filtered.filter((s) => s.projectCode === projectCode);
+    }
+
+    // Filter by branch/department and batch in Javascript to support array lists cleanly
+    if (department && department !== "all") {
+      filtered = filtered.filter((s) => 
+        s.branch === department || 
+        (s.branches && s.branches.includes(department))
+      );
+    }
+
+    if (batch && batch !== "all") {
+      filtered = filtered.filter((s) => 
+        s.batch === batch || 
+        (s.batches && s.batches.includes(batch))
+      );
+    }
+
+    // Sort by sessionDate desc
+    filtered.sort((a, b) => (b.sessionDate || "").localeCompare(a.sessionDate || ""));
+
+    // Slice to desired limitCount
+    const sessions = filtered.slice(0, limitCount);
 
     // For active sessions (live), ensure we can still show stats even if they have not been closed/compiled yet.
     const activeWithoutStats = sessions.filter(

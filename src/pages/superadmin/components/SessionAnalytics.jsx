@@ -73,41 +73,40 @@ const SessionAnalytics = ({ session, onBack }) => {
 
   const fetchLiveStats = async (showToast = false) => {
     try {
-      if (showToast) toast.loading("Fetching live data...");
+      if (showToast) toast.loading("Fetching data...");
       setLoading(true);
 
-      const { getResponses, compileSessionStatsFromResponses } =
+      const { getResponses, compileSessionStatsFromResponses, getSessionStats } =
         await import("@/services/superadmin/responseService");
 
-      const responses = await getResponses(session.id);
+      if (session.status === "active") {
+        const responses = await getResponses(session.id);
 
-      // Filter by session version if it exists
-      const currentVersionResponses = responses.filter(
-        (r) => (r.version ?? 0) === (session.version ?? 0),
-      );
+        // Filter by session version if it exists
+        const currentVersionResponses = responses.filter(
+          (r) => (r.version ?? 0) === (session.version ?? 0),
+        );
 
-      const compiled = compileSessionStatsFromResponses(
-        currentVersionResponses,
-        session.questions || [],
-      );
+        const compiled = compileSessionStatsFromResponses(
+          currentVersionResponses,
+          session.questions || [],
+        );
 
-      setStats(compiled);
-      console.group(`--- Live Analytics: ${session.topic} ---`);
-      console.log("Total Responses:", compiled.totalResponses);
-      console.log("Top Rated Comments:", compiled.topComments);
-      console.log("Average Rated Comments:", compiled.avgComments);
-      console.log("Improvement Areas:", compiled.leastRatedComments);
-      console.log("Full Compiled Stats:", compiled);
-      console.groupEnd();
+        setStats(compiled);
+      } else {
+        const compiled = await getSessionStats(session.id, session);
+        setStats(compiled);
+      }
+
       if (showToast) {
         toast.dismiss();
-        toast.success("Live data updated");
+        toast.success("Analytics data loaded");
       }
     } catch (error) {
-      console.error("Failed to fetch live stats:", error);
+      console.error("Failed to fetch stats:", error);
       if (showToast) {
         toast.dismiss();
-        toast.error("Failed to update live data");
+        toast.error("Failed to load analytics data");
       }
     } finally {
       setLoading(false);
@@ -115,9 +114,7 @@ const SessionAnalytics = ({ session, onBack }) => {
   };
 
   useEffect(() => {
-    if (!session?.compiledStats || session?.status === "active") {
-      fetchLiveStats();
-    }
+    fetchLiveStats();
   }, [session?.id]);
 
   const handleExport = async () => {

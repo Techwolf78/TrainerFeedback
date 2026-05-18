@@ -58,6 +58,8 @@ export const AnonymousFeedback = () => {
   const [error, setError] = useState("");
   const [selectedTrainerId, setSelectedTrainerId] = useState(null);
   const [selectedTrainerName, setSelectedTrainerName] = useState("");
+  const [selectedBranch, setSelectedBranch] = useState(null);
+  const [selectedBatch, setSelectedBatch] = useState(null);
 
   // Helper: get trainers from session (backward compat)
   const getTrainers = (s) =>
@@ -118,6 +120,21 @@ export const AnonymousFeedback = () => {
         setSelectedTrainerId(trainers[0].id);
         setSelectedTrainerName(trainers[0].name);
       }
+
+      // Auto-select branch if only one
+      if (sessionData.branches && sessionData.branches.length === 1) {
+        setSelectedBranch(sessionData.branches[0]);
+      } else if (sessionData.branch) {
+        setSelectedBranch(sessionData.branch);
+      }
+
+      // Auto-select batch if only one
+      if (sessionData.batches && sessionData.batches.length === 1) {
+        setSelectedBatch(sessionData.batches[0]);
+      } else if (sessionData.batch) {
+        setSelectedBatch(sessionData.batch);
+      }
+
       checkPreviousSubmission(sessionData);
     } catch (err) {
       console.error("Error loading session:", err);
@@ -198,6 +215,20 @@ export const AnonymousFeedback = () => {
         return;
       }
 
+      // Validate branch selection if multiple branches
+      if (session.branches && session.branches.length > 1 && !selectedBranch) {
+        setError("Please select your Department/Branch");
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Validate batch selection if multiple batches
+      if (session.batches && session.batches.length > 1 && !selectedBatch) {
+        setError("Please select your Batch");
+        setIsSubmitting(false);
+        return;
+      }
+
       // Format answers array
       const answers = questions
         .map((q, index) => ({
@@ -217,6 +248,8 @@ export const AnonymousFeedback = () => {
         phaseId,
         selectedTrainerId: selectedTrainerId || getTrainers(session)?.[0]?.id || null,
         selectedTrainerName: selectedTrainerName || getTrainers(session)?.[0]?.name || null,
+        selectedBranch: selectedBranch || session.branch || (session.branches && session.branches[0]) || null,
+        selectedBatch: selectedBatch || session.batch || (session.batches && session.batches[0]) || null,
       });
 
       // Mark as submitted in localStorage (for history/UX, not blocking anymore)
@@ -502,16 +535,16 @@ export const AnonymousFeedback = () => {
           <CardContent className="pt-0">
             <div className="space-y-1.5 text-sm">
               <div className="flex">
-                <span className="text-muted-foreground w-20 flex-shrink-0">
+                <span className="text-muted-foreground w-25 flex-shrink-0 text-slate-500">
                   College
                 </span>
-                <span className="font-medium">{session?.collegeName}</span>
+                <span className="font-medium text-slate-800">{session?.collegeName}</span>
               </div>
               <div className="flex">
-                <span className="text-muted-foreground w-20 flex-shrink-0">
+                <span className="text-muted-foreground w-25 flex-shrink-0 text-slate-500">
                   Trainer
                 </span>
-                <span className="font-medium">
+                <span className="font-medium text-slate-800">
                   {getTrainers(session).length > 1
                     ? getTrainers(session).map(t => t.name).join(", ")
                     : getTrainers(session)?.[0]?.name || "Not specified"}
@@ -523,20 +556,94 @@ export const AnonymousFeedback = () => {
                 </span>
               </div>
               <div className="flex">
-                <span className="text-muted-foreground w-20 flex-shrink-0">
-                  Batch
+                <span className="text-muted-foreground w-25 flex-shrink-0 text-slate-500">
+                  Department
                 </span>
-                <span className="font-medium">{session?.batch}</span>
+                <span className="font-medium text-slate-800">
+                  {session?.branches && session.branches.length > 1
+                    ? session.branches.map(b => b.toUpperCase()).join(", ")
+                    : (session?.branch || (session?.branches && session.branches[0]) || "").toUpperCase()}
+                </span>
               </div>
               <div className="flex">
-                <span className="text-muted-foreground w-20 flex-shrink-0">
+                <span className="text-muted-foreground w-25 flex-shrink-0 text-slate-500">
+                  Batch(es)
+                </span>
+                <span className="font-medium text-slate-800">
+                  {session?.batches && session.batches.length > 1
+                    ? session.batches.map(b => b.toUpperCase()).join(", ")
+                    : (session?.batch || (session?.batches && session.batches[0]) || "").toUpperCase()}
+                </span>
+              </div>
+              <div className="flex">
+                <span className="text-muted-foreground w-25 flex-shrink-0 text-slate-500">
                   Course
                 </span>
-                <span className="font-medium">{session?.course}</span>
+                <span className="font-medium text-slate-800">{session?.course}</span>
               </div>
             </div>
           </CardContent>
         </Card>
+
+        {/* Branch/Dept Selector (only if multiple branches/depts) */}
+        {session?.branches && session.branches.length > 1 && (
+          <Card className="mb-5 shadow-sm border-primary/20 hover:shadow-md transition-shadow">
+            <CardContent className="pt-6">
+              <Label className="text-base font-semibold text-slate-800 mb-3 block">
+                Select your Department/Branch <span className="text-destructive">*</span>
+              </Label>
+              <RadioGroup
+                value={selectedBranch || ""}
+                onValueChange={(value) => setSelectedBranch(value)}
+                className="grid grid-cols-2 gap-3"
+              >
+                {session.branches.map((branch) => (
+                  <label
+                    key={branch}
+                    className={`flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                      selectedBranch === branch
+                        ? "border-primary bg-primary/5 shadow-sm scale-[1.01] ring-1 ring-primary"
+                        : "border-slate-200 hover:border-primary/50 hover:bg-slate-50/50"
+                    }`}
+                  >
+                    <RadioGroupItem value={branch} className="text-primary border-slate-300" />
+                    <span className="font-semibold text-sm text-slate-700">{branch.toUpperCase()}</span>
+                  </label>
+                ))}
+              </RadioGroup>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Batch Selector (only if multiple batches) */}
+        {session?.batches && session.batches.length > 1 && (
+          <Card className="mb-5 shadow-sm border-primary/20 hover:shadow-md transition-shadow">
+            <CardContent className="pt-6">
+              <Label className="text-base font-semibold text-slate-800 mb-3 block">
+                Select your Batch <span className="text-destructive">*</span>
+              </Label>
+              <RadioGroup
+                value={selectedBatch || ""}
+                onValueChange={(value) => setSelectedBatch(value)}
+                className="grid grid-cols-2 gap-3"
+              >
+                {session.batches.map((batch) => (
+                  <label
+                    key={batch}
+                    className={`flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                      selectedBatch === batch
+                        ? "border-primary bg-primary/5 shadow-sm scale-[1.01] ring-1 ring-primary"
+                        : "border-slate-200 hover:border-primary/50 hover:bg-slate-50/50"
+                    }`}
+                  >
+                    <RadioGroupItem value={batch} className="text-primary border-slate-300" />
+                    <span className="font-semibold text-sm text-slate-700">{batch.toUpperCase()}</span>
+                  </label>
+                ))}
+              </RadioGroup>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Trainer Selector (only if multiple trainers) */}
         {getTrainers(session).length > 1 && (

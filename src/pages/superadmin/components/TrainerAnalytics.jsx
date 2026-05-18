@@ -77,7 +77,23 @@ const TrainerAnalytics = ({ trainerId, trainerName, onBack }) => {
       setIsLoading(true);
       try {
         const results = await getSessionsByTrainer(trainerId);
-        setSessions(results || []);
+        const rawSessions = results || [];
+        const { getSessionStats } = await import("@/services/superadmin/responseService");
+        const resolvedSessions = await Promise.all(
+          rawSessions.map(async (session) => {
+            if (session.compiledStats && !session.compiledStats.ratingDistribution && session.status !== "active") {
+              try {
+                const fullStats = await getSessionStats(session.id, session);
+                return { ...session, compiledStats: fullStats };
+              } catch (e) {
+                console.error("Failed to fetch stats for trainer analytics session:", session.id, e);
+                return session;
+              }
+            }
+            return session;
+          })
+        );
+        setSessions(resolvedSessions);
       } catch (error) {
         console.error("Failed to load trainer analytics:", error);
       } finally {

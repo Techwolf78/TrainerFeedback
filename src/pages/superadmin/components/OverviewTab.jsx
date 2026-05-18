@@ -143,11 +143,22 @@ const OverviewTab = ({
     };
 
     sessionList.forEach((s) => {
-      const stats = s.compiledStats;
+      let stats = s.compiledStats;
 
       // Always count session duration even if we don't have compiled stats yet
       agg.totalHours += s.sessionDuration ? (Number(s.sessionDuration) / 60) : 1;
       if (!stats) return;
+
+      // Segment stats extraction based on active dashboard filters
+      if (filters.trainerId && filters.trainerId !== "all" && stats.byTrainer && stats.byTrainer[filters.trainerId]) {
+        stats = stats.byTrainer[filters.trainerId];
+      } else if (filters.batch && filters.batch !== "all" && stats.byBatch && stats.byBatch[filters.batch]) {
+        stats = stats.byBatch[filters.batch];
+      } else if (filters.course && filters.course !== "all" && stats.byBranch && stats.byBranch[filters.course]) {
+        stats = stats.byBranch[filters.course];
+      } else if (filters.branch && filters.branch !== "all" && stats.byBranch && stats.byBranch[filters.branch]) {
+        stats = stats.byBranch[filters.branch];
+      }
 
       agg.totalResponses += stats.totalResponses || 0;
 
@@ -384,12 +395,25 @@ const OverviewTab = ({
         });
 
         console.log("📊 Sessions fetched for analytics:", fetchedSessions.length, "shouldFilterByResponseDate:", shouldFilterByResponseDate);
-        const computedStats = aggregateStatsFromSessions(fetchedSessions);
-        const cacheEntry = { stats: computedStats, sessions: fetchedSessions };
+        
+        // Asynchronously resolve subcollection statistics for any decoupled sessions
+        const { getSessionStats } = await import("@/services/superadmin/responseService");
+        const sessionsWithFullStats = await Promise.all(
+          fetchedSessions.map(async (session) => {
+            if (session.compiledStats && !session.compiledStats.ratingDistribution && session.status !== "active") {
+              const fullStats = await getSessionStats(session.id, session);
+              return { ...session, compiledStats: fullStats };
+            }
+            return session;
+          })
+        );
+
+        const computedStats = aggregateStatsFromSessions(sessionsWithFullStats);
+        const cacheEntry = { stats: computedStats, sessions: sessionsWithFullStats };
 
         setAnalyticsCache((prev) => ({ ...prev, [cacheKey]: cacheEntry }));
         setAnalyticsData(computedStats);
-        setFetchedFilteredSessions(fetchedSessions);
+        setFetchedFilteredSessions(sessionsWithFullStats);
       } catch (err) {
         console.error("Failed to fetch analytics:", err);
         setAnalyticsData(null);
@@ -424,6 +448,14 @@ const OverviewTab = ({
 
         let allResponses = allResponsesToLoad.flat();
 
+        // Filter responses by active segment filters to ensure segment-specific counts
+        if (filters.trainerId && filters.trainerId !== "all") {
+          allResponses = allResponses.filter(r => r.selectedTrainerId === filters.trainerId);
+        }
+        if (filters.batch && filters.batch !== "all") {
+          allResponses = allResponses.filter(r => (r.selectedBatch || r.batch) === filters.batch);
+        }
+
         // Filter by response submission date
         const { startDate, endDate } = getDateRange(
           filters.dateRange,
@@ -455,7 +487,7 @@ const OverviewTab = ({
     };
 
     loadFilteredResponses();
-  }, [fetchedFilteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate]);
+  }, [fetchedFilteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate, filters.trainerId, filters.batch]);
 
   // Calculate aggregated stats from sessions
   const aggregatedStats = useMemo(() => {
