@@ -296,18 +296,24 @@ const SessionsTab = ({
     if (!session) return;
 
     try {
-      const stats = session.compiledStats;
-      if (!stats) {
-        toast.error("No compiled stats available");
-        return;
-      }
-
       toast.loading("Fetching responses and generating Excel report...");
 
-      // [NEW] Fetch detailed responses
+      // Fetch detailed responses
       const { getResponses } =
         await import("@/services/superadmin/responseService");
       const responses = await getResponses(session.id);
+
+      // Compile stats on the fly for active/open sessions or if missing to guarantee freshness
+      let stats = session.compiledStats;
+      if (!stats || session.status === "active") {
+        stats = compileSessionStatsFromResponses(responses, session.questions || []);
+      }
+
+      if (!stats || stats.totalResponses === 0) {
+        toast.dismiss();
+        toast.error("No responses available to export");
+        return;
+      }
 
       const workbook = new ExcelJS.Workbook();
       workbook.creator = "Gryphon Academy";
@@ -322,6 +328,7 @@ const SessionsTab = ({
         { header: "Response ID", key: "id", width: 20 },
         { header: "Submitted At", key: "submittedAt", width: 20 },
         { header: "Device ID", key: "deviceId", width: 20 },
+        { header: "Trainer Name", key: "selectedTrainerName", width: 25 },
         ...questions.map((q, i) => ({
           header: `Q${i + 1}: ${q.text || q.question}`,
           key: `q_${q.id}`,
@@ -338,6 +345,7 @@ const SessionsTab = ({
             ? resp.submittedAt.toDate().toLocaleString()
             : new Date(resp.submittedAt).toLocaleString(),
           deviceId: resp.deviceId,
+          selectedTrainerName: resp.selectedTrainerName || "N/A",
         };
         // Map answers to columns
         if (resp.answers) {
@@ -899,15 +907,22 @@ const SessionsTab = ({
                             <Power className="mr-2 h-4 w-4" /> Close Phase
                           </DropdownMenuItem>
                         )}
-                        {/* Live Analytics for Active Sessions */}
+                        {/* Live Analytics & Excel Export for Active Sessions */}
                         {session.status === "active" && (
-                          <DropdownMenuItem
-                            onClick={() =>
-                              setSelectedSessionForAnalytics(session)
-                            }
-                          >
-                            <BarChart3 className="mr-2 h-4 w-4" /> Live Analytics
-                          </DropdownMenuItem>
+                          <>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                setSelectedSessionForAnalytics(session)
+                              }
+                            >
+                              <BarChart3 className="mr-2 h-4 w-4" /> Live Analytics
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleExportResponses(session)}
+                            >
+                              <Download className="mr-2 h-4 w-4" /> Export to Excel
+                            </DropdownMenuItem>
+                          </>
                         )}
                         {session.status === "inactive" &&
                           session.compiledStats && (
@@ -996,11 +1011,13 @@ const SessionsTab = ({
               <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 p-3 rounded-lg mt-2">
                 <AlertTriangle className="h-4 w-4 flex-shrink-0" />
                 <p className="text-sm">
-                  This report contains{" "}
-                  <strong>
-                    {sessionToExport?.compiledStats?.totalResponses || 0}
-                  </strong>{" "}
-                  responses.
+                  {sessionToExport?.status === "active" ? (
+                    <span>This is an active session. The export will pull and compile all live responses in real-time.</span>
+                  ) : (
+                    <span>
+                      This report contains <strong>{sessionToExport?.compiledStats?.totalResponses || 0}</strong> responses.
+                    </span>
+                  )}
                 </p>
               </div>
             </ModalDescription>

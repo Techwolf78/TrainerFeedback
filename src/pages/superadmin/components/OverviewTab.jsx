@@ -143,11 +143,15 @@ const OverviewTab = ({
     };
 
     sessionList.forEach((s) => {
-      const stats = s.compiledStats;
+      const cs = s.compiledStats;
 
       // Always count session duration even if we don't have compiled stats yet
       agg.totalHours += s.sessionDuration ? (Number(s.sessionDuration) / 60) : 1;
-      if (!stats) return;
+      if (!cs) return;
+
+      const isTrainerFilterApplied = filters.trainerId !== "all";
+      const trainerStats = isTrainerFilterApplied ? cs.byTrainer?.[filters.trainerId] : null;
+      const stats = trainerStats || cs;
 
       agg.totalResponses += stats.totalResponses || 0;
 
@@ -402,10 +406,11 @@ const OverviewTab = ({
     return () => clearTimeout(timer);
   }, [filters, isDefaultView]);
 
-  // Load and filter responses by submission date when date range is active
+  // Load and filter responses by submission date when date range is active or trainer filter is active
   useEffect(() => {
     const loadFilteredResponses = async () => {
-      if (filters.dateRange === "all" || fetchedFilteredSessions.length === 0) {
+      const shouldLoad = (filters.dateRange !== "all" || filters.trainerId !== "all") && fetchedFilteredSessions.length > 0;
+      if (!shouldLoad) {
         setFilteredResponses([]);
         return;
       }
@@ -447,6 +452,11 @@ const OverviewTab = ({
           });
         }
 
+        // Filter by trainerId if trainer filter is active
+        if (filters.trainerId !== "all") {
+          allResponses = allResponses.filter((response) => response.selectedTrainerId === filters.trainerId);
+        }
+
         setFilteredResponses(allResponses);
       } catch (error) {
         console.error("Error loading filtered responses:", error);
@@ -455,14 +465,15 @@ const OverviewTab = ({
     };
 
     loadFilteredResponses();
-  }, [fetchedFilteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate]);
+  }, [fetchedFilteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate, filters.trainerId]);
 
   // Calculate aggregated stats from sessions
   const aggregatedStats = useMemo(() => {
     let result = null;
 
-    // If date range filter is active and we have filtered responses, recalculate from responses
-    if (!isDefaultView && filters.dateRange !== "all" && filteredResponses.length > 0) {
+    // If date range filter or trainer filter is active and we have filtered responses, recalculate from responses
+    const shouldRecalculateFromResponses = !isDefaultView && (filters.dateRange !== "all" || filters.trainerId !== "all") && filteredResponses.length > 0;
+    if (shouldRecalculateFromResponses) {
       const compiledStats = compileSessionStatsFromResponses(filteredResponses);
 
       // Build question-to-category map from sessions
@@ -520,7 +531,7 @@ const OverviewTab = ({
         },
         topicsLearned: compiledStats.topicsLearned || [],
       };
-    } else if (!isDefaultView && filters.dateRange !== "all" && analyticsData) {
+    } else if (!isDefaultView && (filters.dateRange !== "all" || filters.trainerId !== "all") && analyticsData) {
       // When date range is filtered but we don't have filtered responses yet, return empty structure
       result = {
         totalSessions: 0,
@@ -558,8 +569,8 @@ const OverviewTab = ({
   const allCollegesPerformance = useMemo(() => {
     if (!colleges || colleges.length === 0) return [];
 
-    // When date range is filtered, use filteredResponses (even if empty)
-    const shouldUseFilteredResponses = !isDefaultView && filters.dateRange !== "all";
+    // When date range or trainer filter is active, use filteredResponses (even if empty)
+    const shouldUseFilteredResponses = !isDefaultView && (filters.dateRange !== "all" || filters.trainerId !== "all");
     
     if (shouldUseFilteredResponses) {
       if (filteredResponses.length === 0) return [];
@@ -647,15 +658,15 @@ const OverviewTab = ({
         .filter((d) => d.responses > 0)
         .slice(0, 30);
     }
-  }, [sessions, fetchedFilteredSessions, isDefaultView, colleges, filters.dateRange, filteredResponses]);
+  }, [sessions, fetchedFilteredSessions, isDefaultView, colleges, filters.dateRange, filters.trainerId, filteredResponses]);
 
   // Combined trend data for charts - group by response submission dates
   const [trendData, setTrendData] = React.useState([]);
   
   useEffect(() => {
     const calculateTrendData = async () => {
-      // When date range is filtered, use filteredResponses (even if empty)
-      const shouldUseFilteredResponses = !isDefaultView && filters.dateRange !== "all";
+      // When date range or trainer filter is active, use filteredResponses (even if empty)
+      const shouldUseFilteredResponses = !isDefaultView && (filters.dateRange !== "all" || filters.trainerId !== "all");
       
       if (shouldUseFilteredResponses) {
         if (filteredResponses.length === 0) {
@@ -726,7 +737,7 @@ const OverviewTab = ({
     };
 
     calculateTrendData();
-  }, [sessions, fetchedFilteredSessions, isDefaultView, filters.dateRange, filteredResponses]);
+  }, [sessions, fetchedFilteredSessions, isDefaultView, filters.dateRange, filters.trainerId, filteredResponses]);
 
   const ratingDistributionData = useMemo(() => {
     const distribution = aggregatedStats.ratingDistribution || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };

@@ -316,8 +316,9 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
       };
     }
 
-    // If date range filter is active, recalculate from individual responses
-    if (filters.dateRange !== "all" && filteredResponses.length > 0) {
+    // If date range filter is active or trainer filter is active, recalculate from individual responses
+    const shouldRecalculateFromResponses = (filters.dateRange !== "all" || filters.trainerId !== "all") && filteredResponses.length > 0;
+    if (shouldRecalculateFromResponses) {
       const compiledStats = compileSessionStatsFromResponses(filteredResponses);
       
       // Build question-to-category map from sessions
@@ -385,27 +386,31 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
       const cs = session.compiledStats;
       if (!cs) return;
 
-      const sessionCount = cs.totalResponses || 0;
+      const isTrainerFilterApplied = filters.trainerId !== "all";
+      const trainerStats = isTrainerFilterApplied ? cs.byTrainer?.[filters.trainerId] : null;
+      const statsToUse = trainerStats || cs;
+
+      const sessionCount = statsToUse.totalResponses || 0;
       stats.totalResponses += sessionCount;
       stats.totalHours += (Number(session.sessionDuration) || 60) / 60;
 
       // Use rating distribution if present
-      if (cs.ratingDistribution) {
-        Object.entries(cs.ratingDistribution).forEach(([rating, count]) => {
+      if (statsToUse.ratingDistribution) {
+        Object.entries(statsToUse.ratingDistribution).forEach(([rating, count]) => {
           stats.ratingDistribution[rating] =
             (stats.ratingDistribution[rating] || 0) + count;
           stats.ratingSum += Number(rating) * count;
           stats.totalRatingsCount += count;
         });
-      } else if (cs.avgRating) {
+      } else if (statsToUse.avgRating) {
         // Fallback for live stats that might not have full distribution yet
-        stats.ratingSum += (cs.avgRating || 0) * sessionCount;
+        stats.ratingSum += (statsToUse.avgRating || 0) * sessionCount;
         stats.totalRatingsCount += sessionCount;
       }
 
       // Aggregate Category Averages
-      if (cs.categoryAverages) {
-        Object.entries(cs.categoryAverages).forEach(([cat, avg]) => {
+      if (statsToUse.categoryAverages) {
+        Object.entries(statsToUse.categoryAverages).forEach(([cat, avg]) => {
           stats.categoryTotals[cat] =
             (stats.categoryTotals[cat] || 0) + avg * sessionCount;
           stats.categoryCounts[cat] =
@@ -414,8 +419,8 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
       }
 
       // Aggregate topics
-      if (cs.topicsLearned) {
-        cs.topicsLearned.forEach((topic) => {
+      if (statsToUse.topicsLearned) {
+        statsToUse.topicsLearned.forEach((topic) => {
           const name = topic.name.toLowerCase();
           stats.allTopics[name] = (stats.allTopics[name] || 0) + topic.count;
         });
@@ -483,7 +488,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
             filters.customEndDate
           );
           
-          if (startDate && endDate) {
+        if (startDate && endDate) {
             allResponses = allResponses.filter((response) => {
               let responseDate;
               if (response.submittedAt?.toDate) {
@@ -499,6 +504,11 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
           }
         }
 
+        // Filter by trainerId if trainer filter is active
+        if (filters.trainerId !== "all") {
+          allResponses = allResponses.filter((response) => response.selectedTrainerId === filters.trainerId);
+        }
+
         setFilteredResponses(allResponses);
       } catch (error) {
         console.error("Error loading filtered responses:", error);
@@ -507,7 +517,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     };
 
     loadFilteredResponses();
-  }, [filteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate]);
+  }, [filteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate, filters.trainerId]);
 
   // Response trend - group by actual response submission dates
   const [responseTrendData, setResponseTrendData] = React.useState([]);
@@ -522,8 +532,8 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
       try {
         let responsesToProcess = filteredResponses;
 
-        // If no date range filter, fetch all responses from all sessions
-        if (filters.dateRange === "all" && responsesToProcess.length === 0) {
+        // If no date range filter and no trainer filter, fetch all responses from all sessions
+        if (filters.dateRange === "all" && filters.trainerId === "all" && responsesToProcess.length === 0) {
           const sessionIds = filteredSessions.map((s) => s.id).filter(Boolean);
           if (sessionIds.length === 0) {
             setResponseTrendData([]);
@@ -578,7 +588,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     };
 
     calculateResponseTrend();
-  }, [filteredSessions, filteredResponses, filters.dateRange]);
+  }, [filteredSessions, filteredResponses, filters.dateRange, filters.trainerId]);
 
   const responseTrend = responseTrendData;
 
@@ -647,8 +657,12 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
 
         const cs = session.compiledStats;
         if (cs) {
-          domainMap[domain].responses += cs.totalResponses || 0;
-          Object.entries(cs.ratingDistribution || {}).forEach(
+          const isTrainerFilterApplied = filters.trainerId !== "all";
+          const trainerStats = isTrainerFilterApplied ? cs.byTrainer?.[filters.trainerId] : null;
+          const statsToUse = trainerStats || cs;
+
+          domainMap[domain].responses += statsToUse.totalResponses || 0;
+          Object.entries(statsToUse.ratingDistribution || {}).forEach(
             ([rating, count]) => {
               domainMap[domain].ratingSum += Number(rating) * count;
               domainMap[domain].ratingsCount += count;
