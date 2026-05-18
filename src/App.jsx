@@ -119,6 +119,14 @@ const App = () => {
                   }
                 />
                 <Route
+                  path="/super-admin/database"
+                  element={
+                    <ProtectedRoute allowedRoles={["superAdmin"]}>
+                      <SuperAdminDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
                   path="/super-admin/tickets"
                   element={
                     <ProtectedRoute allowedRoles={["superAdmin"]}>

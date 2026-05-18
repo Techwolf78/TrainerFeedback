@@ -33,6 +33,7 @@ import {
   Download,
   ChevronDown,
   Pencil,
+  Database,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +47,7 @@ import TrainersTab from "./components/TrainersTab";
 import TemplatesTab from "./components/TemplatesTab";
 import ProjectCodesTab from "./components/ProjectCodesTab";
 import TicketsTab from "./components/TicketsTab";
+import DatabaseMonitorTab from "./components/DatabaseMonitorTab";
 import SessionResponses from "../admin/SessionResponses";
 import ProfilePage from "@/components/shared/ProfilePage";
 import Loader from "@/components/ui/Loader";
@@ -157,6 +159,8 @@ const SuperAdminDashboardInner = () => {
         return "project-codes";
       case "tickets":
         return "tickets";
+      case "database":
+        return "database";
       case "academic-config":
         return "config";
       case "analytics":
@@ -269,6 +273,8 @@ const SuperAdminDashboardInner = () => {
         return "Project Codes";
       case "tickets":
         return "Support Tickets";
+      case "database":
+        return "Database Monitor";
       case "profile":
         return "My Profile";
       default:
@@ -330,6 +336,7 @@ const SuperAdminDashboardInner = () => {
           <div className="pt-6 space-y-1">
             {!isSidebarCollapsed && <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest px-3 mb-2">Operations</p>}
             <NavItem id="config" label="Configuration" icon={RefreshCw} path="/super-admin/academic-config" />
+            <NavItem id="database" label="Database Monitor" icon={Database} path="/super-admin/database" />
             <NavItem id="tickets" label="Support" icon={Ticket} path="/super-admin/tickets" />
 
           </div>
@@ -484,6 +491,8 @@ const SuperAdminDashboardInner = () => {
             {activeTab === "project-codes" && <ProjectCodesTab />}
 
             {activeTab === "tickets" && <TicketsTab />}
+
+            {activeTab === "database" && <DatabaseMonitorTab />}
 
             {activeTab === "profile" && <ProfilePage />}
           </div>
