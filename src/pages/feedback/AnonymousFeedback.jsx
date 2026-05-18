@@ -28,6 +28,20 @@ const getDeviceId = () => {
   return deviceId;
 };
 
+const deduplicateQuestions = (questions) => {
+  if (!questions || !Array.isArray(questions)) return [];
+  const seenTexts = new Set();
+  return questions.filter((q) => {
+    const text = (q.text || q.question || "").trim().toLowerCase();
+    if (!text) return true;
+    if (seenTexts.has(text)) {
+      return false;
+    }
+    seenTexts.add(text);
+    return true;
+  });
+};
+
 export const AnonymousFeedback = () => {
   const { sessionId } = useParams();
   const location = useLocation();
@@ -91,7 +105,12 @@ export const AnonymousFeedback = () => {
         return;
       }
 
-      setSession(sessionData);
+      // Deduplicate questions to handle any previously corrupted/duplicated session records
+      const cleanSessionData = {
+        ...sessionData,
+        questions: deduplicateQuestions(sessionData.questions || []),
+      };
+      setSession(cleanSessionData);
       // Auto-select trainer if only one
       const trainers = sessionData.assignedTrainers ||
         (sessionData.assignedTrainer ? [sessionData.assignedTrainer] : []);

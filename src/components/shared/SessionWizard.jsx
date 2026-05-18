@@ -41,6 +41,20 @@ const DOMAIN_OPTIONS = [
   "Other",
 ];
 
+const deduplicateQuestions = (questions) => {
+  if (!questions || !Array.isArray(questions)) return [];
+  const seenTexts = new Set();
+  return questions.filter((q) => {
+    const text = (q.text || q.question || "").trim().toLowerCase();
+    if (!text) return true;
+    if (seenTexts.has(text)) {
+      return false;
+    }
+    seenTexts.add(text);
+    return true;
+  });
+};
+
 const SessionWizard = ({
   session = null,
   colleges = [],
@@ -100,7 +114,7 @@ const SessionWizard = ({
     sessionDate: session?.sessionDate || "",
     sessionTime: session?.sessionTime || "Morning",
     sessionDuration: session?.sessionDuration || 60,
-    questions: session?.questions || [],
+    questions: session?.questions ? deduplicateQuestions(session.questions) : [],
     templateId: session?.templateId || "",
     ttl: session?.ttl || "720",
     projectCode: session?.projectCode || "", // [NEW] Verify storage
@@ -112,12 +126,31 @@ const SessionWizard = ({
       try {
         const t = await getTemplates();
         setTemplates(t || []);
+
+        // Fallback: If editing a session that has a templateId but no questions,
+        // populate the questions from the template
+        if (session && session.templateId && (!session.questions || session.questions.length === 0)) {
+          const selectedTemplate = t.find((tmpl) => tmpl.id === session.templateId);
+          if (selectedTemplate && selectedTemplate.sections) {
+            const templateQuestions = selectedTemplate.sections.flatMap(
+              (section) =>
+                (section.questions || []).map((q) => ({
+                  ...q,
+                  id: q.id || `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                })),
+            );
+            setFormData((prev) => ({
+              ...prev,
+              questions: templateQuestions,
+            }));
+          }
+        }
       } catch (error) {
         console.error("Failed to load templates", error);
       }
     };
     loadTemplates();
-  }, []);
+  }, [session]);
 
   // Load Config when College Changes
   useEffect(() => {
@@ -265,32 +298,13 @@ const SessionWizard = ({
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
-      let sessionQuestions = [...(formData.questions || [])];
-
-      // Template Logic
-      if (formData.templateId) {
-        const selectedTemplate = templates.find(
-          (t) => t.id === formData.templateId,
-        );
-        if (selectedTemplate && selectedTemplate.sections) {
-          const templateQuestions = selectedTemplate.sections.flatMap(
-            (section) =>
-              (section.questions || []).map((q) => ({
-                ...q,
-                id: `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${q.id || "new"}`,
-              })),
-          );
-          sessionQuestions = [...sessionQuestions, ...templateQuestions];
-        }
-      }
-
       const payload = {
         ...formData,
         // Multi-trainer: write all three fields for compat
         assignedTrainers: formData.assignedTrainers,
         trainerIds: formData.assignedTrainers.map(t => t.id),
         assignedTrainer: formData.assignedTrainers[0] || null, // legacy compat
-        questions: sessionQuestions,
+        questions: formData.questions || [],
         updatedAt: new Date().toISOString(),
       };
 
@@ -797,7 +811,21 @@ const SessionWizard = ({
             <Label>Select Template</Label>
             <Select
               value={formData.templateId}
-              onValueChange={(v) => setFormData({ ...formData, templateId: v })}
+              onValueChange={(v) => {
+                const selectedTemplate = templates.find((t) => t.id === v);
+                const templateQuestions = selectedTemplate?.sections?.flatMap(
+                  (section) =>
+                    (section.questions || []).map((q) => ({
+                      ...q,
+                      id: q.id || `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    })),
+                ) || [];
+                setFormData((prev) => ({
+                  ...prev,
+                  templateId: v,
+                  questions: templateQuestions,
+                }));
+              }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select a feedback template" />
