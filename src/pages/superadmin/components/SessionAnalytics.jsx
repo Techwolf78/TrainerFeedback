@@ -70,6 +70,7 @@ const SessionAnalytics = ({ session, onBack }) => {
   const [isLive, setIsLive] = useState(session?.status === "active");
   const [learnedLimit, setLearnedLimit] = useState(25);
   const [futureLimit, setFutureLimit] = useState(25);
+  const [liveResponses, setLiveResponses] = useState([]);
 
   const fetchLiveStats = async (showToast = false) => {
     try {
@@ -92,6 +93,7 @@ const SessionAnalytics = ({ session, onBack }) => {
       );
 
       setStats(compiled);
+      setLiveResponses(currentVersionResponses);
       console.group(`--- Live Analytics: ${session.topic} ---`);
       console.log("Total Responses:", compiled.totalResponses);
       console.log("Top Rated Comments:", compiled.topComments);
@@ -115,9 +117,7 @@ const SessionAnalytics = ({ session, onBack }) => {
   };
 
   useEffect(() => {
-    if (!session?.compiledStats || session?.status === "active") {
-      fetchLiveStats();
-    }
+    fetchLiveStats();
   }, [session?.id]);
 
   const handleExport = async () => {
@@ -188,7 +188,7 @@ const SessionAnalytics = ({ session, onBack }) => {
       summarySheet.addRows([
         { field: "Session Topic", value: session.topic },
         { field: "College", value: session.collegeName },
-        { field: "Trainer", value: (session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : [])).map(t => t.name).join(", ") || "N/A" },
+        { field: "Trainer", value: activeTrainers.length > 0 ? activeTrainers.join(", ") : (session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : [])).map(t => t.name).join(", ") || "N/A" },
         { field: "Total Responses", value: stats.totalResponses },
         { field: "Average Rating", value: stats.avgRating },
       ]);
@@ -366,6 +366,31 @@ const SessionAnalytics = ({ session, onBack }) => {
     }),
   );
 
+  // Get active trainers who actually received responses
+  const activeTrainers = React.useMemo(() => {
+    const trainersSet = new Set();
+
+    // 1. Try to extract from live responses first (most fresh)
+    if (liveResponses.length > 0) {
+      liveResponses.forEach((r) => {
+        if (r.selectedTrainerName && r.selectedTrainerName.trim()) {
+          trainersSet.add(r.selectedTrainerName.trim());
+        }
+      });
+    }
+
+    // 2. Fallback to byTrainer compiled stats
+    if (trainersSet.size === 0 && stats?.byTrainer) {
+      Object.values(stats.byTrainer).forEach((t) => {
+        if (t.trainerName && t.trainerName.trim()) {
+          trainersSet.add(t.trainerName.trim());
+        }
+      });
+    }
+
+    return Array.from(trainersSet).sort((a, b) => a.localeCompare(b));
+  }, [liveResponses, stats]);
+
   return (
     <div className="space-y-4 p-2 bg-background" ref={analyticsRef}>
       {/* Top Header Section */}
@@ -399,7 +424,11 @@ const SessionAnalytics = ({ session, onBack }) => {
               <span className="text-muted-foreground/50">•</span>
               <div className="flex items-center gap-1">
                 <User className="h-3 w-3" />
-                <span>{(session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : [])).map(t => t.name).join(", ") || "Trainer not assigned"}</span>
+                <span className="font-semibold text-primary">
+                  {activeTrainers.length > 0
+                    ? activeTrainers.join(", ")
+                    : (session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : [])).map(t => t.name).join(", ") || "Trainer not assigned"}
+                </span>
               </div>
               {session.domain && (
                 <>
@@ -972,9 +1001,10 @@ const SessionAnalytics = ({ session, onBack }) => {
           </CardHeader>
           <CardContent className="pt-0 pb-2">
             <Tabs defaultValue="learned" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 h-7 p-0.5 bg-muted rounded-md mb-2">
+              <TabsList className="grid w-full grid-cols-3 h-7 p-0.5 bg-muted rounded-md mb-2">
                 <TabsTrigger value="learned" className="text-[11px] font-medium py-1">Learned</TabsTrigger>
                 <TabsTrigger value="future" className="text-[11px] font-medium py-1">Future</TabsTrigger>
+                <TabsTrigger value="trainers" className="text-[11px] font-medium py-1">Trainers ({activeTrainers.length})</TabsTrigger>
               </TabsList>
 
               <TabsContent value="learned" className="mt-0">
@@ -1084,6 +1114,30 @@ const SessionAnalytics = ({ session, onBack }) => {
                   ) : (
                     <div className="text-center py-4 text-muted-foreground text-xs italic">
                       No future topics suggested yet.
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="trainers" className="mt-0">
+                <div className="max-h-[160px] overflow-y-auto pr-1">
+                  {activeTrainers.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5 p-1">
+                      {activeTrainers.map((trainerName, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20 text-xs font-semibold shadow-sm hover:shadow-md transition-all cursor-default"
+                        >
+                          <div className="h-4 w-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[9px] font-bold animate-pulse">
+                            {trainerName[0]?.toUpperCase() || "?"}
+                          </div>
+                          <span>{trainerName}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground text-xs italic">
+                      No trainers have received feedback responses yet.
                     </div>
                   )}
                 </div>
