@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState } from "react";
 import { useSuperAdminData } from "@/contexts/SuperAdminDataContext";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { updateSession } from "@/services/superadmin/sessionService";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -12,260 +13,317 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { toast } from "sonner";
 import {
   Database,
   AlertTriangle,
   CheckCircle2,
   Search,
+  Filter,
   RefreshCw,
-  Loader2,
+  Cpu,
+  Layers,
+  Sparkles,
   HardDrive,
-  Zap,
+  Info,
 } from "lucide-react";
-import { toast } from "sonner";
-import { migrateSessionStats } from "@/services/superadmin/responseService";
-import { updateSession } from "@/services/superadmin/sessionService";
 
-const estimateDocSize = (obj) => {
-  try {
-    return new Blob([JSON.stringify(obj)]).size;
-  } catch {
+// Firestore Billing Rules-based Document Size Estimator
+const calculateFirestoreDocSize = (docId, data) => {
+  let size = 32; // Document overhead
+  size += `sessions/${docId}`.length; // Size of document path
+
+  const calculateValSize = (val) => {
+    if (val === null || val === undefined) return 1;
+    if (typeof val === "string") return val.length + 1;
+    if (typeof val === "number") return 8;
+    if (typeof val === "boolean") return 1;
+    if (val instanceof Date) return 8;
+    // Handle Firestore Timestamp
+    if (val && typeof val === "object" && (val.seconds !== undefined || val.toDate)) return 8;
+
+    if (Array.isArray(val)) {
+      let arrSize = 1;
+      val.forEach((item) => {
+        arrSize += calculateValSize(item);
+      });
+      return arrSize;
+    }
+
+    if (typeof val === "object") {
+      let mapSize = 1;
+      Object.entries(val).forEach(([k, v]) => {
+        mapSize += k.length + 1;
+        mapSize += calculateValSize(v);
+      });
+      return mapSize;
+    }
     return 0;
+  };
+
+  if (data && typeof data === "object") {
+    Object.entries(data).forEach(([key, value]) => {
+      size += key.length + 1;
+      size += calculateValSize(value);
+    });
   }
+
+  return size;
 };
 
-const formatBytes = (bytes) => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-};
-
-const getSizeBadge = (bytes) => {
-  if (bytes > 50000) return { label: "High", color: "bg-red-100 text-red-700 border-red-200" };
-  if (bytes > 20000) return { label: "Medium", color: "bg-amber-100 text-amber-700 border-amber-200" };
-  return { label: "Low", color: "bg-emerald-100 text-emerald-700 border-emerald-200" };
+// Deduplication Helper for Session Optimization
+const deduplicateQuestions = (questions) => {
+  if (!questions || !Array.isArray(questions)) return [];
+  const seenTexts = new Set();
+  return questions.filter((q) => {
+    const text = (q.text || q.question || "").trim().toLowerCase();
+    if (!text) return true;
+    if (seenTexts.has(text)) {
+      return false;
+    }
+    seenTexts.add(text);
+    return true;
+  });
 };
 
 const DatabaseMonitorTab = () => {
-  const { sessions = [] } = useSuperAdminData();
+  const { sessions, isInitialLoading, refreshAll } = useSuperAdminData();
   const [searchQuery, setSearchQuery] = useState("");
-  const [sizeFilter, setSizeFilter] = useState("all");
-  const [healthFilter, setHealthFilter] = useState("all");
-  const [migratingIds, setMigratingIds] = useState(new Set());
-  const [optimizingIds, setOptimizingIds] = useState(new Set());
+  const [filterBadge, setFilterBadge] = useState("all");
+  const [filterAttentionOnly, setFilterAttentionOnly] = useState("all"); // 'all' or 'attention'
+  const [optimizingId, setOptimizingId] = useState(null);
 
-  const sessionAnalysis = useMemo(() => {
-    return sessions.map((session) => {
-      const estimatedSize = estimateDocSize(session);
-      const sizeBadge = getSizeBadge(estimatedSize);
+  // Estimate size and analyze each session document
+  const analyzedSessions = (sessions || []).map((session) => {
+    const sizeBytes = calculateFirestoreDocSize(session.id, session);
+    const sizeKB = sizeBytes / 1024;
 
-      // Check for duplicate questions
-      const questionIds = (session.questions || []).map((q) => q.id);
-      const uniqueIds = new Set(questionIds);
-      const hasDuplicates = uniqueIds.size < questionIds.length;
-      const duplicateCount = questionIds.length - uniqueIds.size;
+    const totalQuestions = session.questions?.length || 0;
+    const uniqueQuestions = deduplicateQuestions(session.questions || []).length;
+    const hasDuplicates = totalQuestions > uniqueQuestions;
 
-      // Check if using legacy stats (compiledStats on parent)
-      const hasLegacyStats = !!session.compiledStats && session.compiledStats.totalResponses !== undefined && session.compiledStats.ratingDistribution !== undefined;
+    // Badges definitions
+    // Low: < 20 KB (Totally Safe)
+    // Medium: 20 KB - 50 KB (Moderate)
+    // High: > 50 KB (Needs Attention)
+    let badge = "low";
+    if (sizeKB > 50) badge = "high";
+    else if (sizeKB > 20) badge = "medium";
 
-      const needsAttention = hasDuplicates || estimatedSize > 50000 || hasLegacyStats;
+    // Attention condition
+    const needsAttention = badge === "high" || hasDuplicates;
 
-      return {
-        ...session,
-        estimatedSize,
-        sizeBadge,
-        hasDuplicates,
-        duplicateCount,
-        hasLegacyStats,
-        needsAttention,
-      };
-    });
-  }, [sessions]);
+    return {
+      ...session,
+      sizeBytes,
+      sizeKB,
+      badge,
+      needsAttention,
+      totalQuestions,
+      uniqueQuestions,
+      hasDuplicates,
+      duplicateCount: totalQuestions - uniqueQuestions,
+    };
+  });
 
-  const filteredSessions = useMemo(() => {
-    let result = sessionAnalysis;
-
+  // Filtering
+  const filteredSessions = analyzedSessions.filter((s) => {
+    // Search query filter
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (s) =>
-          s.topic?.toLowerCase().includes(q) ||
-          s.collegeName?.toLowerCase().includes(q) ||
-          s.id?.toLowerCase().includes(q)
-      );
+      const matchId = s.id?.toLowerCase().includes(q);
+      const matchTopic = s.topic?.toLowerCase().includes(q);
+      const matchCollege = s.collegeName?.toLowerCase().includes(q);
+      if (!matchId && !matchTopic && !matchCollege) return false;
     }
 
-    if (sizeFilter !== "all") {
-      result = result.filter((s) => s.sizeBadge.label.toLowerCase() === sizeFilter);
-    }
+    // Badge filter
+    if (filterBadge !== "all" && s.badge !== filterBadge) return false;
 
-    if (healthFilter === "attention") {
-      result = result.filter((s) => s.needsAttention);
-    } else if (healthFilter === "healthy") {
-      result = result.filter((s) => !s.needsAttention);
-    } else if (healthFilter === "legacy") {
-      result = result.filter((s) => s.hasLegacyStats);
-    }
+    // Attention only filter
+    if (filterAttentionOnly === "attention" && !s.needsAttention) return false;
 
-    return result;
-  }, [sessionAnalysis, searchQuery, sizeFilter, healthFilter]);
+    return true;
+  });
 
-  const stats = useMemo(() => {
-    const total = sessionAnalysis.length;
-    const attention = sessionAnalysis.filter((s) => s.needsAttention).length;
-    const legacy = sessionAnalysis.filter((s) => s.hasLegacyStats).length;
-    const totalSize = sessionAnalysis.reduce((sum, s) => sum + s.estimatedSize, 0);
-    return { total, attention, legacy, totalSize };
-  }, [sessionAnalysis]);
+  // Stats calculation
+  const totalMonitored = analyzedSessions.length;
+  const avgSizeKB = totalMonitored > 0
+    ? (analyzedSessions.reduce((sum, s) => sum + s.sizeKB, 0) / totalMonitored)
+    : 0;
+  const totalAttention = analyzedSessions.filter((s) => s.needsAttention).length;
+  const totalDuplicatesDetected = analyzedSessions.reduce((sum, s) => sum + (s.hasDuplicates ? 1 : 0), 0);
 
-  const handleMigrate = async (session) => {
-    setMigratingIds((prev) => new Set([...prev, session.id]));
-    const toastId = toast.loading(`Migrating ${session.topic}...`);
+  // Optimize handler
+  const handleOptimize = async (session) => {
+    setOptimizingId(session.id);
+    const toastId = toast.loading(`Optimizing session ${session.id}...`);
+
     try {
-      const success = await migrateSessionStats(session.id, session);
-      if (success) {
-        toast.success("Legacy stats migrated to subcollections!", { id: toastId });
-      } else {
-        toast.error("No legacy stats found to migrate", { id: toastId });
-      }
-    } catch (err) {
-      toast.error("Migration failed", { id: toastId });
-      console.error(err);
-    } finally {
-      setMigratingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(session.id);
-        return next;
+      const deduplicated = deduplicateQuestions(session.questions || []);
+      
+      // Update in Firestore
+      await updateSession(session.id, {
+        questions: deduplicated,
       });
+
+      // Local recalculation preview
+      const oldSize = session.sizeKB;
+      const cleanSessionData = {
+        ...session,
+        questions: deduplicated,
+      };
+      const newSizeBytes = calculateFirestoreDocSize(session.id, cleanSessionData);
+      const newSizeKB = newSizeBytes / 1024;
+      const savedKB = oldSize - newSizeKB;
+      const savedPct = Math.round((savedKB / oldSize) * 100);
+
+      toast.success(
+        `Optimization Complete! Reduced size from ${oldSize.toFixed(2)} KB to ${newSizeKB.toFixed(2)} KB (Saved ${savedPct}% space).`,
+        { id: toastId }
+      );
+
+      // Refresh super admin data context
+      await refreshAll();
+    } catch (error) {
+      console.error("Optimization failed:", error);
+      toast.error("Failed to optimize session. Please try again.", { id: toastId });
+    } finally {
+      setOptimizingId(null);
     }
   };
 
-  const handleDeduplicateQuestions = async (session) => {
-    setOptimizingIds((prev) => new Set([...prev, session.id]));
-    const toastId = toast.loading("Deduplicating questions...");
-    try {
-      const questions = session.questions || [];
-      const seen = new Set();
-      const deduped = questions.filter((q) => {
-        if (seen.has(q.id)) return false;
-        seen.add(q.id);
-        return true;
-      });
-
-      if (deduped.length === questions.length) {
-        toast.info("No duplicates found", { id: toastId });
-        return;
-      }
-
-      await updateSession(session.id, { questions: deduped });
-      toast.success(`Removed ${questions.length - deduped.length} duplicate question(s)`, { id: toastId });
-    } catch (err) {
-      toast.error("Deduplication failed", { id: toastId });
-      console.error(err);
-    } finally {
-      setOptimizingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(session.id);
-        return next;
-      });
+  const getBadgeStyle = (badge) => {
+    switch (badge) {
+      case "high":
+        return "bg-rose-500/10 text-rose-600 border-rose-500/20";
+      case "medium":
+        return "bg-amber-500/10 text-amber-600 border-amber-500/20";
+      case "low":
+      default:
+        return "bg-emerald-500/10 text-emerald-600 border-emerald-500/20";
     }
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      {/* Header Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-4 pb-4 flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+    <div className="space-y-6 animate-in fade-in-50 duration-500">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="border-slate-200 bg-white shadow-sm hover:shadow-md transition-all">
+          <CardContent className="p-5 flex items-center gap-4">
+            <div className="h-10 w-10 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
               <Database className="h-5 w-5 text-blue-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{stats.total}</p>
-              <p className="text-xs text-muted-foreground">Total Documents</p>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Sessions</p>
+              <h3 className="text-xl font-bold text-slate-800">{totalMonitored}</h3>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4 flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center">
-              <AlertTriangle className="h-5 w-5 text-amber-600" />
+
+        <Card className="border-slate-200 bg-white shadow-sm hover:shadow-md transition-all">
+          <CardContent className="p-5 flex items-center gap-4">
+            <div className="h-10 w-10 rounded-lg bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20">
+              <HardDrive className="h-5 w-5 text-indigo-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{stats.attention}</p>
-              <p className="text-xs text-muted-foreground">Needs Attention</p>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Avg Doc Size</p>
+              <h3 className="text-xl font-bold text-slate-800">{avgSizeKB.toFixed(2)} KB</h3>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4 flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-purple-100 flex items-center justify-center">
-              <Zap className="h-5 w-5 text-purple-600" />
+
+        <Card className="border-slate-200 bg-white shadow-sm hover:shadow-md transition-all">
+          <CardContent className="p-5 flex items-center gap-4">
+            <div className="h-10 w-10 rounded-lg bg-rose-500/10 flex items-center justify-center border border-rose-500/20">
+              <AlertTriangle className="h-5 w-5 text-rose-600 animate-pulse" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{stats.legacy}</p>
-              <p className="text-xs text-muted-foreground">Legacy (Unmigrated)</p>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Needs Attention</p>
+              <h3 className="text-xl font-bold text-rose-600">{totalAttention}</h3>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4 flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center">
-              <HardDrive className="h-5 w-5 text-slate-600" />
+
+        <Card className="border-slate-200 bg-white shadow-sm hover:shadow-md transition-all">
+          <CardContent className="p-5 flex items-center gap-4">
+            <div className="h-10 w-10 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
+              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{formatBytes(stats.totalSize)}</p>
-              <p className="text-xs text-muted-foreground">Est. Total Size</p>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Duplicate Records</p>
+              <h3 className="text-xl font-bold text-slate-800">{totalDuplicatesDetected} Detected</h3>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="pt-4 pb-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex-1 min-w-[200px]">
-              <Label className="text-xs">Search</Label>
+      {/* Description Info Alert */}
+      <Card className="border-blue-100 bg-blue-50/50 shadow-none">
+        <CardContent className="p-4 flex gap-3">
+          <Info className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="text-xs font-bold text-blue-900 uppercase tracking-wider">Storage & Limits Guidance</p>
+            <p className="text-sm text-blue-800 leading-relaxed">
+              Google Cloud Firestore enforces a strict **1 MB document limit** (1,024 KB). 
+              Our optimized database stores individual student feedback safely inside a subcollection (allowing billions of entries), but session dashboards read from the session document itself. 
+              **Low (&lt; 20 KB)** and **Medium (20 - 50 KB)** levels are extremely healthy. 
+              If any session document exceeds **50 KB** or contains **duplicate questions** from prior updates, it will trigger a "Needs Attention" alert, allowing you to instantly consolidate it using the "Optimize" tool.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Filter and Search Bar */}
+      <Card className="border-slate-200 bg-white shadow-sm">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Filter className="h-5 w-5 text-blue-600" />
+            <CardTitle className="text-base font-bold text-slate-800">Filters & Sorting</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Search Input */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-slate-500">Search</Label>
               <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
-                  placeholder="Search by topic, college, or ID..."
+                  placeholder="Search by ID, Topic, College..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9"
+                  className="pl-9 text-sm"
                 />
               </div>
             </div>
-            <div className="w-[130px]">
-              <Label className="text-xs">Size</Label>
-              <Select value={sizeFilter} onValueChange={setSizeFilter}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+
+            {/* Badge Status Filter */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-slate-500">Document Size Badge</Label>
+              <Select value={filterBadge} onValueChange={setFilterBadge}>
+                <SelectTrigger className="text-sm">
+                  <SelectValue placeholder="All sizes" />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Sizes</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="low">Low (&lt; 20 KB)</SelectItem>
+                  <SelectItem value="medium">Medium (20 - 50 KB)</SelectItem>
+                  <SelectItem value="high">High (&gt; 50 KB)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="w-[150px]">
-              <Label className="text-xs">Health</Label>
-              <Select value={healthFilter} onValueChange={setHealthFilter}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+
+            {/* Attention Status Filter */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-slate-500">Health Category</Label>
+              <Select value={filterAttentionOnly} onValueChange={setFilterAttentionOnly}>
+                <SelectTrigger className="text-sm">
+                  <SelectValue placeholder="All Sessions" />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="attention">Needs Attention</SelectItem>
-                  <SelectItem value="healthy">Healthy</SelectItem>
-                  <SelectItem value="legacy">Legacy Stats</SelectItem>
+                  <SelectItem value="all">All Sessions</SelectItem>
+                  <SelectItem value="attention">Needs Attention Only</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -273,129 +331,131 @@ const DatabaseMonitorTab = () => {
         </CardContent>
       </Card>
 
-      {/* Sessions Table */}
-      <div className="border rounded-lg overflow-hidden bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Session</TableHead>
-              <TableHead>College</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Est. Size</TableHead>
-              <TableHead>Health</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredSessions.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  No sessions match your filters
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredSessions.slice(0, 50).map((session) => (
-                <TableRow key={session.id}>
-                  <TableCell>
-                    <div>
-                      <p className="font-medium text-sm truncate max-w-[200px]">{session.topic}</p>
-                      <p className="text-xs text-muted-foreground">{session.sessionDate}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm">{session.collegeName || "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant={session.status === "active" ? "default" : "secondary"} className="text-xs">
-                      {session.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="space-y-1">
-                      <Badge variant="outline" className={`text-xs ${session.sizeBadge.color}`}>
-                        {formatBytes(session.estimatedSize)}
-                      </Badge>
-                      <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${
-                            session.estimatedSize > 500000 ? "bg-red-500" :
-                            session.estimatedSize > 50000 ? "bg-amber-500" : "bg-emerald-500"
-                          }`}
-                          style={{ width: `${Math.min(100, (session.estimatedSize / 1048576) * 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col gap-1">
-                      {session.needsAttention ? (
-                        <>
-                          {session.hasDuplicates && (
-                            <span className="text-xs text-amber-600 flex items-center gap-1">
-                              <AlertTriangle className="h-3 w-3" /> {session.duplicateCount} dupes
-                            </span>
-                          )}
-                          {session.hasLegacyStats && (
-                            <span className="text-xs text-purple-600 flex items-center gap-1">
-                              <Database className="h-3 w-3" /> Legacy stats
-                            </span>
-                          )}
-                          {session.estimatedSize > 50000 && (
-                            <span className="text-xs text-red-600 flex items-center gap-1">
-                              <HardDrive className="h-3 w-3" /> Large doc
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        <span className="text-xs text-emerald-600 flex items-center gap-1">
-                          <CheckCircle2 className="h-3 w-3" /> Healthy
-                        </span>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center gap-1.5 justify-end">
-                      {session.hasDuplicates && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs"
-                          disabled={optimizingIds.has(session.id)}
-                          onClick={() => handleDeduplicateQuestions(session)}
-                        >
-                          {optimizingIds.has(session.id) ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            "Optimize"
-                          )}
-                        </Button>
-                      )}
-                      {session.hasLegacyStats && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs text-purple-700 border-purple-200 hover:bg-purple-50"
-                          disabled={migratingIds.has(session.id)}
-                          onClick={() => handleMigrate(session)}
-                        >
-                          {migratingIds.has(session.id) ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            "Migrate"
-                          )}
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-        {filteredSessions.length > 50 && (
-          <div className="p-3 text-center text-xs text-muted-foreground border-t">
-            Showing 50 of {filteredSessions.length} sessions
-          </div>
-        )}
+      {/* Sessions Grid / Table */}
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold text-slate-500">
+          Showing {filteredSessions.length} of {totalMonitored} sessions
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={refreshAll}
+          className="gap-2 text-xs border-slate-200 bg-white hover:bg-slate-50 hover:text-slate-900 transition-all font-semibold"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          Force Refresh
+        </Button>
       </div>
+
+      {filteredSessions.length === 0 ? (
+        <div className="text-center py-16 bg-white rounded-xl border border-slate-200 shadow-sm">
+          <Database className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+          <h3 className="text-lg font-bold text-slate-700 mb-1">No Sessions Found</h3>
+          <p className="text-sm text-slate-400">
+            {searchQuery || filterBadge !== "all" || filterAttentionOnly !== "all"
+              ? "No sessions match your search or filter configuration."
+              : "No session records found in Firestore."}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4">
+          {filteredSessions.map((session) => {
+            const progressPercent = Math.min((session.sizeKB / 1024) * 100, 100);
+
+            return (
+              <div
+                key={session.id}
+                className={`p-5 rounded-xl border bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all hover:shadow-md hover:border-blue-300/50 ${
+                  session.needsAttention ? "border-rose-100 bg-rose-50/10" : "border-slate-200"
+                }`}
+              >
+                {/* Session Identification & Details */}
+                <div className="space-y-2 flex-1 min-w-0">
+                  <div className="flex items-center flex-wrap gap-2">
+                    <span className="font-bold text-slate-800 text-sm tracking-tight font-mono truncate">
+                      {session.id}
+                    </span>
+                    <Badge variant="outline" className={`text-[10px] px-2 py-0.5 uppercase font-bold border ${getBadgeStyle(session.badge)}`}>
+                      {session.badge} Size
+                    </Badge>
+                    {session.needsAttention && (
+                      <Badge className="text-[10px] px-2 py-0.5 font-bold bg-rose-500 hover:bg-rose-600 text-white gap-1 flex items-center shadow-sm">
+                        <AlertTriangle className="h-3 w-3" /> Needs Attention
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-xs font-semibold text-slate-500 leading-normal">
+                    <p className="text-slate-800 text-sm font-bold leading-none mb-1.5 truncate">{session.collegeName}</p>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-1">
+                      <span className="flex items-center gap-1">
+                        <Cpu className="h-3.5 w-3.5 text-slate-400" />
+                        Topic: <strong className="text-slate-700">{session.topic}</strong>
+                      </span>
+                      <span>•</span>
+                      <span className="flex items-center gap-1">
+                        <Layers className="h-3.5 w-3.5 text-slate-400" />
+                        Questions: <strong className={session.hasDuplicates ? "text-rose-600 font-bold" : "text-slate-700"}>{session.totalQuestions}</strong>
+                        {session.hasDuplicates && (
+                          <span className="text-[10px] text-rose-500 font-bold">
+                            ({session.duplicateCount} duplicates)
+                          </span>
+                        )}
+                      </span>
+                      <span>•</span>
+                      <span>
+                        Trainers: <strong className="text-slate-700">{session.trainerIds?.length || 1}</strong>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Size gauge, percentage, and limit */}
+                <div className="w-full md:w-60 space-y-1.5 flex-shrink-0">
+                  <div className="flex items-center justify-between text-xs font-bold">
+                    <span className="text-slate-400">Document Size</span>
+                    <span className="text-slate-800 font-mono">{session.sizeKB.toFixed(2)} KB / 1,024 KB</span>
+                  </div>
+                  {/* Gauge Progress Bar */}
+                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        session.badge === "high"
+                          ? "bg-rose-500 shadow-sm shadow-rose-500/20"
+                          : session.badge === "medium"
+                          ? "bg-amber-500 shadow-sm shadow-amber-500/20"
+                          : "bg-emerald-500"
+                      }`}
+                      style={{ width: `${progressPercent || 1}%` }}
+                    />
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-400 text-right uppercase tracking-wider leading-none">
+                    {progressPercent.toFixed(3)}% of Firestore Limit
+                  </div>
+                </div>
+
+                {/* Quick Action Button */}
+                <div className="flex items-center justify-end flex-shrink-0 md:pl-2">
+                  {session.hasDuplicates ? (
+                    <Button
+                      onClick={() => handleOptimize(session)}
+                      disabled={optimizingId === session.id}
+                      className="gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-4 rounded-lg shadow-sm border border-blue-700/20 transition-all"
+                    >
+                      <Sparkles className={`h-3.5 w-3.5 ${optimizingId === session.id ? "animate-spin" : ""}`} />
+                      {optimizingId === session.id ? "Optimizing..." : "Optimize Now"}
+                    </Button>
+                  ) : (
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 py-1.5 px-3 rounded-lg border border-emerald-100">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Optimized
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

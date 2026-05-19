@@ -159,6 +159,8 @@ const SuperAdminDashboardInner = () => {
         return "project-codes";
       case "tickets":
         return "tickets";
+      case "database":
+        return "database";
       case "academic-config":
         return "config";
       case "db-monitor":
@@ -273,7 +275,7 @@ const SuperAdminDashboardInner = () => {
         return "Project Codes";
       case "tickets":
         return "Support Tickets";
-      case "db-monitor":
+      case "database":
         return "Database Monitor";
       case "profile":
         return "My Profile";
@@ -336,6 +338,7 @@ const SuperAdminDashboardInner = () => {
           <div className="pt-6 space-y-1">
             {!isSidebarCollapsed && <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest px-3 mb-2">Operations</p>}
             <NavItem id="config" label="Configuration" icon={RefreshCw} path="/super-admin/academic-config" />
+            <NavItem id="database" label="Database Monitor" icon={Database} path="/super-admin/database" />
             <NavItem id="tickets" label="Support" icon={Ticket} path="/super-admin/tickets" />
             <NavItem id="db-monitor" label="DB Monitor" icon={Database} path="/super-admin/db-monitor" />
 
@@ -492,7 +495,7 @@ const SuperAdminDashboardInner = () => {
 
             {activeTab === "tickets" && <TicketsTab />}
 
-            {activeTab === "db-monitor" && <DatabaseMonitorTab />}
+            {activeTab === "database" && <DatabaseMonitorTab />}
 
             {activeTab === "profile" && <ProfilePage />}
           </div>
