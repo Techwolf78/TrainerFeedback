@@ -80,6 +80,18 @@ const COLORS = [
   "#db2777", // Pink 600
 ];
 
+const blankSegmentStats = {
+  totalResponses: 0,
+  avgRating: 0,
+  ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+  categoryAverages: {},
+  topComments: [],
+  leastRatedComments: [],
+  avgComments: [],
+  topicsLearned: [],
+  futureTopics: [],
+};
+
 const OverviewTab = ({
   colleges,
   admins,
@@ -150,16 +162,15 @@ const OverviewTab = ({
       if (!cs) return;
 
       const isTrainerFilterApplied = filters.trainerId !== "all";
-      const trainerStats = isTrainerFilterApplied ? cs.byTrainer?.[filters.trainerId] : null;
       
       // Priority: trainer filter -> batch filter -> department filter -> overall
       let stats = cs;
-      if (trainerStats) {
-        stats = trainerStats;
-      } else if (filters.batch !== "all" && cs.byBatch?.[filters.batch]) {
-        stats = cs.byBatch[filters.batch];
-      } else if (filters.department && filters.department !== "all" && cs.byBranch?.[filters.department]) {
-        stats = cs.byBranch[filters.department];
+      if (isTrainerFilterApplied) {
+        stats = cs.byTrainer?.[filters.trainerId] || blankSegmentStats;
+      } else if (filters.batch !== "all") {
+        stats = cs.byBatch?.[filters.batch] || blankSegmentStats;
+      } else if (filters.department && filters.department !== "all") {
+        stats = cs.byBranch?.[filters.department] || blankSegmentStats;
       }
 
       agg.totalResponses += stats.totalResponses || 0;
@@ -483,6 +494,15 @@ const OverviewTab = ({
           allResponses = allResponses.filter((response) => response.selectedTrainerId === filters.trainerId);
         }
 
+        // Filter by batch if batch filter is active
+        if (filters.batch !== "all") {
+          allResponses = allResponses.filter(
+            (response) =>
+              response.selectedBatch === filters.batch ||
+              response.batch === filters.batch
+          );
+        }
+
         setFilteredResponses(allResponses);
       } catch (error) {
         console.error("Error loading filtered responses:", error);
@@ -491,7 +511,7 @@ const OverviewTab = ({
     };
 
     loadFilteredResponses();
-  }, [fetchedFilteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate, filters.trainerId]);
+  }, [fetchedFilteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate, filters.trainerId, filters.batch]);
 
   // Calculate aggregated stats from sessions
   const aggregatedStats = useMemo(() => {
@@ -665,11 +685,24 @@ const OverviewTab = ({
 
         const cs = session.compiledStats;
         if (cs) {
-          Object.entries(cs.ratingDistribution || {}).forEach(([rating, count]) => {
-            stats.ratingSum += Number(rating) * count;
-            stats.ratingCount += count;
-          });
-          stats.responses += cs.totalResponses || 0;
+          const isTrainerFilterApplied = filters.trainerId !== "all";
+          
+          let statsToUse = cs;
+          if (isTrainerFilterApplied) {
+            statsToUse = cs.byTrainer?.[filters.trainerId] || blankSegmentStats;
+          } else if (filters.batch !== "all") {
+            statsToUse = cs.byBatch?.[filters.batch] || blankSegmentStats;
+          } else if (filters.department && filters.department !== "all") {
+            statsToUse = cs.byBranch?.[filters.department] || blankSegmentStats;
+          }
+
+          if (statsToUse.ratingDistribution) {
+            Object.entries(statsToUse.ratingDistribution).forEach(([rating, count]) => {
+              stats.ratingSum += Number(rating) * count;
+              stats.ratingCount += count;
+            });
+          }
+          stats.responses += statsToUse.totalResponses || 0;
         }
       });
 

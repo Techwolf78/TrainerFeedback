@@ -53,6 +53,18 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getAnalyticsSessions } from "@/services/superadmin/sessionService"; 
 import { toast } from "sonner";
 
+const blankSegmentStats = {
+  totalResponses: 0,
+  avgRating: 0,
+  ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+  categoryAverages: {},
+  topComments: [],
+  leastRatedComments: [],
+  avgComments: [],
+  topicsLearned: [],
+  futureTopics: [],
+};
+
 const TrainerOverview = ({ sessions = [], isLoading: isDashboardLoading = false }) => {
   const { user } = useAuth();
 
@@ -224,10 +236,10 @@ const TrainerOverview = ({ sessions = [], isLoading: isDashboardLoading = false 
       let cs = (myTrainerId && globalCs.byTrainer?.[myTrainerId]) || globalCs;
 
       // Extract batch or department/branch segment stats if filters are active
-      if (filters.batch !== "all" && globalCs.byBatch && globalCs.byBatch[filters.batch]) {
-        cs = globalCs.byBatch[filters.batch];
-      } else if (filters.department !== "all" && globalCs.byBranch && globalCs.byBranch[filters.department]) {
-        cs = globalCs.byBranch[filters.department];
+      if (filters.batch !== "all") {
+        cs = globalCs.byBatch?.[filters.batch] || blankSegmentStats;
+      } else if (filters.department !== "all") {
+        cs = globalCs.byBranch?.[filters.department] || blankSegmentStats;
       }
 
       stats.totalResponses += cs.totalResponses || 0;

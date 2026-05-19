@@ -94,6 +94,18 @@ const DOMAIN_COLORS = [
   "hsl(190, 85%, 50%)", // Cyan
 ];
 
+const blankSegmentStats = {
+  totalResponses: 0,
+  avgRating: 0,
+  ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+  categoryAverages: {},
+  topComments: [],
+  leastRatedComments: [],
+  avgComments: [],
+  topicsLearned: [],
+  futureTopics: [],
+};
+
 const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
   const [loading, setLoading] = useState(true);
 
@@ -414,16 +426,15 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
       if (!cs) return;
 
       const isTrainerFilterApplied = filters.trainerId !== "all";
-      const trainerStats = isTrainerFilterApplied ? cs.byTrainer?.[filters.trainerId] : null;
       
       // Priority: trainer filter -> batch filter -> department filter -> overall
       let statsToUse = cs;
-      if (trainerStats) {
-        statsToUse = trainerStats;
-      } else if (filters.batch !== "all" && cs.byBatch?.[filters.batch]) {
-        statsToUse = cs.byBatch[filters.batch];
-      } else if (filters.department !== "all" && cs.byBranch?.[filters.department]) {
-        statsToUse = cs.byBranch[filters.department];
+      if (isTrainerFilterApplied) {
+        statsToUse = cs.byTrainer?.[filters.trainerId] || blankSegmentStats;
+      } else if (filters.batch !== "all") {
+        statsToUse = cs.byBatch?.[filters.batch] || blankSegmentStats;
+      } else if (filters.department !== "all") {
+        statsToUse = cs.byBranch?.[filters.department] || blankSegmentStats;
       }
 
       const sessionCount = statsToUse.totalResponses || 0;
@@ -545,6 +556,25 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
           allResponses = allResponses.filter((response) => response.selectedTrainerId === filters.trainerId);
         }
 
+        // Filter by batch if batch filter is active
+        if (filters.batch !== "all") {
+          allResponses = allResponses.filter(
+            (response) =>
+              response.selectedBatch === filters.batch ||
+              response.batch === filters.batch
+          );
+        }
+
+        // Filter by department if active
+        if (filters.department !== "all") {
+          allResponses = allResponses.filter(
+            (response) =>
+              response.selectedBranch === filters.department ||
+              response.branch === filters.department ||
+              response.department === filters.department
+          );
+        }
+
         setFilteredResponses(allResponses);
       } catch (error) {
         console.error("Error loading filtered responses:", error);
@@ -553,7 +583,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     };
 
     loadFilteredResponses();
-  }, [filteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate, filters.trainerId]);
+  }, [filteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate, filters.trainerId, filters.batch, filters.department]);
 
   // Response trend - group by actual response submission dates
   const [responseTrendData, setResponseTrendData] = React.useState([]);

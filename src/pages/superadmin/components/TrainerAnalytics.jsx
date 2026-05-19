@@ -54,6 +54,18 @@ import { getResponseTrendData } from "@/services/superadmin/responseService";
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
 
+const blankSegmentStats = {
+  totalResponses: 0,
+  avgRating: 0,
+  ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+  categoryAverages: {},
+  topComments: [],
+  leastRatedComments: [],
+  avgComments: [],
+  topicsLearned: [],
+  futureTopics: [],
+};
+
 const TrainerAnalytics = ({ trainerId, trainerName, onBack }) => {
   // Data state
   const [sessions, setSessions] = useState([]);
@@ -207,9 +219,19 @@ const TrainerAnalytics = ({ trainerId, trainerName, onBack }) => {
 
       if (filters.collegeId !== "all" && session.collegeId !== filters.collegeId) return false;
       if (filters.course !== "all" && session.course !== filters.course) return false;
-      if (filters.department !== "all" && (session.branch || session.department) !== filters.department) return false;
+      if (
+        filters.department !== "all" &&
+        (session.branch || session.department) !== filters.department &&
+        !(session.branches && session.branches.includes(filters.department))
+      )
+        return false;
       if (filters.year !== "all" && session.year !== filters.year) return false;
-      if (filters.batch !== "all" && session.batch !== filters.batch) return false;
+      if (
+        filters.batch !== "all" &&
+        session.batch !== filters.batch &&
+        !(session.batches && session.batches.includes(filters.batch))
+      )
+        return false;
 
       if (filters.dateRange !== "all") {
         const { startDate, endDate } = getDateRange(filters.dateRange);
@@ -253,28 +275,57 @@ const TrainerAnalytics = ({ trainerId, trainerName, onBack }) => {
       const cs = session.compiledStats;
       if (!cs) return;
 
-      stats.totalResponses += cs.totalResponses || 0;
+      // Priority: trainer filter -> batch filter -> department filter -> overall
+      let statsToUse = cs;
+      const trainerStats = cs.byTrainer?.[trainerId];
+      if (trainerStats) {
+        statsToUse = trainerStats;
+      }
+
+      if (filters.batch !== "all") {
+        statsToUse = cs.byBatch?.[filters.batch] || blankSegmentStats;
+      } else if (filters.department !== "all") {
+        statsToUse = cs.byBranch?.[filters.department] || blankSegmentStats;
+      }
+
+      stats.totalResponses += statsToUse.totalResponses || 0;
       stats.totalHours += (Number(session.sessionDuration) || 60) / 60;
 
       // Qualitative Feedback
-      if (cs.comments) {
-        cs.comments.forEach((c) => {
+      if (statsToUse.comments) {
+        statsToUse.comments.forEach((c) => {
           if (c.rating >= 4) stats.qualitative.high.push(c);
           else if (c.rating <= 2) stats.qualitative.low.push(c);
           if (c.text?.toLowerCase().includes("need") || c.text?.toLowerCase().includes("future")) {
             stats.qualitative.future.push(c);
           }
         });
+      } else {
+        if (statsToUse.topComments) {
+          statsToUse.topComments.forEach((c) =>
+            stats.qualitative.high.push({ text: c.text, rating: c.avgRating || c.rating })
+          );
+        }
+        if (statsToUse.leastRatedComments) {
+          statsToUse.leastRatedComments.forEach((c) =>
+            stats.qualitative.low.push({ text: c.text, rating: c.avgRating || c.rating })
+          );
+        }
+        if (statsToUse.futureTopics) {
+          statsToUse.futureTopics.forEach((c) =>
+            stats.qualitative.future.push({ text: c.name || c.text, rating: c.avgRating || c.rating })
+          );
+        }
       }
 
-      Object.entries(cs.ratingDistribution || {}).forEach(([rating, count]) => {
+      Object.entries(statsToUse.ratingDistribution || {}).forEach(([rating, count]) => {
         stats.ratingDistribution[rating] = (stats.ratingDistribution[rating] || 0) + count;
         stats.ratingSum += Number(rating) * count;
         stats.totalRatingsCount += count;
       });
 
       // Categories
-      const catData = cs.categoryAverages || cs.categoryData || {};
+      const catData = statsToUse.categoryAverages || statsToUse.categoryData || {};
       Object.entries(catData).forEach(([cat, val]) => {
         // If it's categoryData object {sum, count}
         if (typeof val === 'object') {
@@ -282,7 +333,7 @@ const TrainerAnalytics = ({ trainerId, trainerName, onBack }) => {
            stats.categoryCounts[cat] = (stats.categoryCounts[cat] || 0) + (val.count || 0);
         } else {
            // If it's already an average
-           const weight = cs.totalResponses || 1;
+           const weight = statsToUse.totalResponses || 1;
            stats.categoryTotals[cat] = (stats.categoryTotals[cat] || 0) + val * weight;
            stats.categoryCounts[cat] = (stats.categoryCounts[cat] || 0) + weight;
         }

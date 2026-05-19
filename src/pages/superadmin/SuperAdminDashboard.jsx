@@ -340,7 +340,6 @@ const SuperAdminDashboardInner = () => {
             <NavItem id="config" label="Configuration" icon={RefreshCw} path="/super-admin/academic-config" />
             <NavItem id="database" label="Database Monitor" icon={Database} path="/super-admin/database" />
             <NavItem id="tickets" label="Support" icon={Ticket} path="/super-admin/tickets" />
-            <NavItem id="db-monitor" label="DB Monitor" icon={Database} path="/super-admin/db-monitor" />
 
           </div>
         </nav>

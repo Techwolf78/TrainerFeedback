@@ -93,6 +93,18 @@ const DOMAIN_COLORS = [
   "hsl(190, 85%, 50%)", // Cyan
 ];
 
+const blankSegmentStats = {
+  totalResponses: 0,
+  avgRating: 0,
+  ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+  categoryAverages: {},
+  topComments: [],
+  leastRatedComments: [],
+  avgComments: [],
+  topicsLearned: [],
+  futureTopics: [],
+};
+
 const CollegeOverviewTab = () => {
   const {
     sessions: contextSessions,
@@ -317,8 +329,9 @@ const CollegeOverviewTab = () => {
       };
     }
 
-    // If date range filter is active, recalculate from individual responses
-    if (filters.dateRange !== "all" && filteredResponses.length > 0) {
+    // If date range filter or trainer filter is active, recalculate from individual responses
+    const shouldRecalculateFromResponses = (filters.dateRange !== "all" || filters.trainerId !== "all") && filteredResponses.length > 0;
+    if (shouldRecalculateFromResponses) {
       const compiledStats = compileSessionStatsFromResponses(filteredResponses);
       
       // Build question-to-category map from sessions
@@ -386,27 +399,38 @@ const CollegeOverviewTab = () => {
       const cs = session.compiledStats;
       if (!cs) return;
 
-      const sessionCount = cs.totalResponses || 0;
+      const isTrainerFilterApplied = filters.trainerId !== "all";
+      
+      let statsToUse = cs;
+      if (isTrainerFilterApplied) {
+        statsToUse = cs.byTrainer?.[filters.trainerId] || blankSegmentStats;
+      } else if (filters.batch !== "all") {
+        statsToUse = cs.byBatch?.[filters.batch] || blankSegmentStats;
+      } else if (filters.department !== "all") {
+        statsToUse = cs.byBranch?.[filters.department] || blankSegmentStats;
+      }
+
+      const sessionCount = statsToUse.totalResponses || 0;
       stats.totalResponses += sessionCount;
       stats.totalHours += (Number(session.sessionDuration) || 60) / 60;
 
       // Use rating distribution if present
-      if (cs.ratingDistribution) {
-        Object.entries(cs.ratingDistribution).forEach(([rating, count]) => {
+      if (statsToUse.ratingDistribution) {
+        Object.entries(statsToUse.ratingDistribution).forEach(([rating, count]) => {
           stats.ratingDistribution[rating] =
             (stats.ratingDistribution[rating] || 0) + count;
           stats.ratingSum += Number(rating) * count;
           stats.totalRatingsCount += count;
         });
-      } else if (cs.avgRating) {
+      } else if (statsToUse.avgRating) {
         // Fallback for live stats that might not have full distribution yet
-        stats.ratingSum += (cs.avgRating || 0) * sessionCount;
+        stats.ratingSum += (statsToUse.avgRating || 0) * sessionCount;
         stats.totalRatingsCount += sessionCount;
       }
 
       // Aggregate Category Averages
-      if (cs.categoryAverages) {
-        Object.entries(cs.categoryAverages).forEach(([cat, avg]) => {
+      if (statsToUse.categoryAverages) {
+        Object.entries(statsToUse.categoryAverages).forEach(([cat, avg]) => {
           stats.categoryTotals[cat] =
             (stats.categoryTotals[cat] || 0) + avg * sessionCount;
           stats.categoryCounts[cat] =
@@ -452,7 +476,7 @@ const CollegeOverviewTab = () => {
       qualitative: { high: [], low: [], future: [] },
       topicsLearned,
     };
-  }, [filteredSessions, filteredResponses, filters.dateRange]);
+  }, [filteredSessions, filteredResponses, filters.dateRange, filters.trainerId, filters.batch, filters.department]);
 
   // Load and filter responses by submission date
   useEffect(() => {
@@ -500,6 +524,30 @@ const CollegeOverviewTab = () => {
           }
         }
 
+        // Filter by trainerId if trainer filter is active
+        if (filters.trainerId !== "all") {
+          allResponses = allResponses.filter((response) => response.selectedTrainerId === filters.trainerId);
+        }
+
+        // Filter by batch if batch filter is active
+        if (filters.batch !== "all") {
+          allResponses = allResponses.filter(
+            (response) =>
+              response.selectedBatch === filters.batch ||
+              response.batch === filters.batch
+          );
+        }
+
+        // Filter by department if active
+        if (filters.department !== "all") {
+          allResponses = allResponses.filter(
+            (response) =>
+              response.selectedBranch === filters.department ||
+              response.branch === filters.department ||
+              response.department === filters.department
+          );
+        }
+
         setFilteredResponses(allResponses);
       } catch (error) {
         console.error("Error loading filtered responses:", error);
@@ -508,7 +556,7 @@ const CollegeOverviewTab = () => {
     };
 
     loadFilteredResponses();
-  }, [filteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate]);
+  }, [filteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate, filters.trainerId, filters.batch, filters.department]);
 
   // Response trend - group by actual response submission dates
   const [responseTrendData, setResponseTrendData] = React.useState([]);
