@@ -62,6 +62,8 @@ import {
   createSession,
   updateSession,
   closeSessionWithStats,
+  deleteSession,
+  restoreSession,
 } from "@/services/superadmin/sessionService";
 import { compileSessionStats, getResponses, compileSessionStatsFromResponses, migrateSessionStats } from "@/services/superadmin/responseService";
 import { serverTimestamp, doc, updateDoc } from "firebase/firestore";
@@ -122,10 +124,11 @@ const SessionsTab = ({
 
   // Session stats for cards
   const sessionStats = useMemo(() => {
-    const total = sessions.length;
-    const active = sessions.filter((s) => s.status === "active").length;
-    const inactive = sessions.filter((s) => s.status === "inactive").length;
-    return { total, active, inactive };
+    const total = sessions.filter((s) => s.archived !== true).length;
+    const active = sessions.filter((s) => s.status === "active" && s.archived !== true).length;
+    const inactive = sessions.filter((s) => s.status === "inactive" && s.archived !== true).length;
+    const archived = sessions.filter((s) => s.archived === true).length;
+    return { total, active, inactive, archived };
   }, [sessions]);
 
   // Dialog & Wizard State - Use props if provided, otherwise local state
@@ -163,10 +166,15 @@ const SessionsTab = ({
     return sessions
       .filter((session) => {
         // Tab filter
-        if (sessionTab === "active" && session.status !== "active")
-          return false;
-        if (sessionTab === "inactive" && session.status !== "inactive")
-          return false;
+        if (sessionTab === "archived") {
+          if (session.archived !== true) return false;
+        } else {
+          if (session.archived === true) return false;
+          if (sessionTab === "active" && session.status !== "active")
+            return false;
+          if (sessionTab === "inactive" && session.status !== "inactive")
+            return false;
+        }
 
         // Existing filters
         if (
@@ -271,6 +279,36 @@ const SessionsTab = ({
     } catch (error) {
       toast.dismiss();
       toast.error("Failed to compile statistics");
+      console.error(error);
+    }
+  };
+
+  const handleArchiveSession = async (id) => {
+    if (confirm("Are you sure you want to archive this session?")) {
+      try {
+        toast.loading("Archiving session...");
+        await deleteSession(id);
+        toast.dismiss();
+        toast.success("Session archived successfully");
+        onRefresh && onRefresh();
+      } catch (error) {
+        toast.dismiss();
+        toast.error("Failed to archive session");
+        console.error(error);
+      }
+    }
+  };
+
+  const handleRestoreSession = async (id) => {
+    try {
+      toast.loading("Restoring session...");
+      await restoreSession(id);
+      toast.dismiss();
+      toast.success("Session restored successfully");
+      onRefresh && onRefresh();
+    } catch (error) {
+      toast.dismiss();
+      toast.error("Failed to restore session");
       console.error(error);
     }
   };
@@ -578,7 +616,7 @@ const SessionsTab = ({
       </Modal>
 
       {/* Stats Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="flex items-center gap-4 p-4 bg-card border rounded-xl">
           <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
             <Calendar className="h-6 w-6 text-primary" />
@@ -612,6 +650,17 @@ const SessionsTab = ({
             <p className="text-sm text-muted-foreground">Completed Sessions</p>
           </div>
         </div>
+        <div className="flex items-center gap-4 p-4 bg-card border rounded-xl">
+          <div className="h-12 w-12 rounded-full bg-amber-500/10 flex items-center justify-center">
+            <AlertTriangle className="h-6 w-6 text-amber-500" />
+          </div>
+          <div>
+            <p className="text-3xl font-bold text-foreground">
+              {sessionStats.archived}
+            </p>
+            <p className="text-sm text-muted-foreground">Archived Sessions</p>
+          </div>
+        </div>
       </div>
 
       <ShareSessionModal
@@ -621,8 +670,8 @@ const SessionsTab = ({
       />
 
       {/* Session Tabs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full mb-6">
-        <div className="flex p-1 bg-muted/30 rounded-xl border border-border/50 md:col-span-3">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 w-full mb-6">
+        <div className="flex p-1 bg-muted/30 rounded-xl border border-border/50 md:col-span-4">
           <button
             onClick={() => setSessionTab("all")}
             className={`flex-1 px-4 py-2.5 text-sm font-medium transition-all duration-200 rounded-lg ${
@@ -652,6 +701,16 @@ const SessionsTab = ({
             }`}
           >
             Inactive Sessions
+          </button>
+          <button
+            onClick={() => setSessionTab("archived")}
+            className={`flex-1 px-4 py-2.5 text-sm font-medium transition-all duration-200 rounded-lg ${
+              sessionTab === "archived"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            }`}
+          >
+            Archived Sessions
           </button>
         </div>
       </div>
@@ -912,85 +971,107 @@ const SessionsTab = ({
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        {session.status === "active" && (
-                          <DropdownMenuItem onClick={() => handleCompileStats(session)}>
-                            <RotateCcw className="mr-2 h-4 w-4" /> Compile Stats
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem
-                          onClick={() => {
-                            setSessionToShare(session);
-                            setShareDialogOpen(true);
-                          }}
-                        >
-                          <Share2 className="mr-2 h-4 w-4" /> Share Link
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => {
-                            setEditingSessionId(session.id);
-                            setSessionDialogOpen(true);
-                          }}
-                        >
-                          <Pencil className="mr-2 h-4 w-4" /> Update
-                        </DropdownMenuItem>
-                        {session.status === "active" && (
-                          <DropdownMenuItem
-                            onClick={() => handleToggleStatus(session)}
-                          >
-                            <Power className="mr-2 h-4 w-4" /> Close Phase
-                          </DropdownMenuItem>
-                        )}
-                        {/* Live Analytics & Excel Export for Active Sessions */}
-                        {session.status === "active" && (
+                        {session.archived === true ? (
                           <>
+                            {session.compiledStats && (
+                              <>
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    setSelectedSessionForAnalytics(session)
+                                  }
+                                >
+                                  <BarChart3 className="mr-2 h-4 w-4" /> View Analytics
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleExportResponses(session)}
+                                >
+                                  <Download className="mr-2 h-4 w-4" /> Export to Excel
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            <DropdownMenuSeparator />
                             <DropdownMenuItem
-                              onClick={() =>
-                                setSelectedSessionForAnalytics(session)
-                              }
+                              onClick={() => handleRestoreSession(session.id)}
                             >
-                              <BarChart3 className="mr-2 h-4 w-4" /> Live Analytics
+                              <RotateCcw className="mr-2 h-4 w-4 text-emerald-600 animate-spin-hover" /> Restore Session
                             </DropdownMenuItem>
+                          </>
+                        ) : (
+                          <>
+                            {session.status === "active" && (
+                              <DropdownMenuItem onClick={() => handleCompileStats(session)}>
+                                <RotateCcw className="mr-2 h-4 w-4" /> Compile Stats
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
-                              onClick={() => handleExportResponses(session)}
+                              onClick={() => {
+                                setSessionToShare(session);
+                                setShareDialogOpen(true);
+                              }}
                             >
-                              <Download className="mr-2 h-4 w-4" /> Export to Excel
+                              <Share2 className="mr-2 h-4 w-4" /> Share Link
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setEditingSessionId(session.id);
+                                setSessionDialogOpen(true);
+                              }}
+                            >
+                              <Pencil className="mr-2 h-4 w-4" /> Update
+                            </DropdownMenuItem>
+                            {session.status === "active" && (
+                              <DropdownMenuItem
+                                onClick={() => handleToggleStatus(session)}
+                              >
+                                <Power className="mr-2 h-4 w-4" /> Close Phase
+                              </DropdownMenuItem>
+                            )}
+                            {/* Live Analytics & Excel Export for Active Sessions */}
+                            {session.status === "active" && (
+                              <>
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    setSelectedSessionForAnalytics(session)
+                                  }
+                                >
+                                  <BarChart3 className="mr-2 h-4 w-4" /> Live Analytics
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleExportResponses(session)}
+                                >
+                                  <Download className="mr-2 h-4 w-4" /> Export to Excel
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            {session.status === "inactive" &&
+                              session.compiledStats && (
+                                <>
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      setSelectedSessionForAnalytics(session)
+                                    }
+                                  >
+                                    <BarChart3 className="mr-2 h-4 w-4" /> View
+                                    Analytics
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => handleExportResponses(session)}
+                                  >
+                                    <Download className="mr-2 h-4 w-4" /> Export to
+                                    Excel
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => handleArchiveSession(session.id)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" /> Archive
                             </DropdownMenuItem>
                           </>
                         )}
-                        {session.status === "inactive" &&
-                          session.compiledStats && (
-                            <>
-                              {/*
-                              <DropdownMenuItem
-                                onClick={() => handleRecalculateStats(session)}
-                              >
-                                <RotateCcw className="mr-2 h-4 w-4" /> Recalculate Stats
-                              </DropdownMenuItem>
-                              */}
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  setSelectedSessionForAnalytics(session)
-                                }
-                              >
-                                <BarChart3 className="mr-2 h-4 w-4" /> View
-                                Analytics
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleExportResponses(session)}
-                              >
-                                <Download className="mr-2 h-4 w-4" /> Export to
-                                Excel
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => handleDelete(session.id)}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" /> Delete
-                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -1003,7 +1084,7 @@ const SessionsTab = ({
 
       <div className="flex flex-col items-center gap-2 py-4">
         <span className="text-xs text-muted-foreground">
-          Showing {filteredSessions.length} of {sessions.length} loaded sessions
+          Showing {filteredSessions.length} of {sessions.filter(s => sessionTab === "archived" ? s.archived === true : s.archived !== true).length} loaded sessions
         </span>
         {hasMoreSessions && (
           <Button

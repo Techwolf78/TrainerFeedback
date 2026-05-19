@@ -52,6 +52,7 @@ const ProjectCodesTab = () => {
     colleges, 
     addProjectCodes, 
     deleteProjectCode, 
+    restoreProjectCode,
     createProjectCode,
     updateProjectCode,
     createCollege,
@@ -59,6 +60,7 @@ const ProjectCodesTab = () => {
     loading 
   } = useSuperAdminData();
 
+  const [viewMode, setViewMode] = useState("active"); // "active" or "archived"
   const [importedCodes, setImportedCodes] = useState([]); // [NEW] Stores parsed JSON array
   const [fileName, setFileName] = useState(''); // [NEW] Stores filename
   const [error, setError] = useState(''); // [NEW] Stores validation error
@@ -123,16 +125,23 @@ const ProjectCodesTab = () => {
   const newCount = importPreview.filter(p => !p.isDuplicate).length;
 
   // Filtered List
+  const displayedCodes = useMemo(() => {
+    return projectCodes.filter(pc => {
+      const isArchived = pc.archived === true;
+      return viewMode === 'active' ? !isArchived : isArchived;
+    });
+  }, [projectCodes, viewMode]);
+
   const filteredCodes = useMemo(() => {
-    if (!searchQuery) return projectCodes;
+    if (!searchQuery) return displayedCodes;
     const lower = searchQuery.toLowerCase();
-    return projectCodes.filter(pc => 
+    return displayedCodes.filter(pc => 
       pc.code?.toLowerCase().includes(lower) || 
       pc.collegeName?.toLowerCase().includes(lower) ||
       pc.collegeCode?.toLowerCase().includes(lower) ||
       pc.course?.toLowerCase().includes(lower)
     );
-  }, [projectCodes, searchQuery]);
+  }, [displayedCodes, searchQuery]);
 
   // Handlers
   const handleFileChange = (e) => {
@@ -234,10 +243,14 @@ const ProjectCodesTab = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm("Are you sure you want to delete this project code?")) {
+  const handleArchive = async (id) => {
+    if (window.confirm("Are you sure you want to archive this project code?")) {
         await deleteProjectCode(id);
     }
+  };
+
+  const handleRestore = async (id) => {
+    await restoreProjectCode(id);
   };
 
   return (
@@ -254,8 +267,30 @@ const ProjectCodesTab = () => {
                 className="pl-8"
             />
         </div>
+        <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+          <button
+            onClick={() => setViewMode("active")}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+              viewMode === "active"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-900"
+            }`}
+          >
+            Active
+          </button>
+          <button
+            onClick={() => setViewMode("archived")}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+              viewMode === "archived"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-900"
+            }`}
+          >
+            Archived
+          </button>
+        </div>
         <div className="text-sm text-muted-foreground whitespace-nowrap">
-            {filteredCodes.length} Codes
+            {filteredCodes.length} of {projectCodes.filter(pc => viewMode === "active" ? pc.archived !== true : pc.archived === true).length} Codes
         </div>
         <Button 
             variant="outline" 
@@ -325,33 +360,47 @@ const ProjectCodesTab = () => {
                                     </TableCell>
                                     <TableCell className="text-right">
                                         <div className="flex items-center justify-end gap-1">
-                                            <Button 
-                                                variant="ghost" 
-                                                size="icon" 
-                                                onClick={() => handleOpenEdit(pc)}
-                                                className="h-8 w-8 text-slate-600 hover:text-primary hover:bg-primary/5"
-                                                title="Edit"
-                                            >
-                                                <Pencil className="h-3.5 w-3.5" />
-                                            </Button>
-                                            <Button 
-                                                variant="ghost" 
-                                                size="icon" 
-                                                onClick={() => handleOpenDuplicate(pc)}
-                                                className="h-8 w-8 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50"
-                                                title="Duplicate"
-                                            >
-                                                <CopyPlus className="h-3.5 w-3.5" />
-                                            </Button>
-                                            <Button 
-                                                variant="ghost" 
-                                                size="icon" 
-                                                onClick={() => handleDelete(pc.id)}
-                                                className="h-8 w-8 text-destructive hover:text-destructive/90 hover:bg-destructive/5"
-                                                title="Delete"
-                                            >
-                                                <Trash2 className="h-3.5 w-3.5" />
-                                            </Button>
+                                            {viewMode === "active" ? (
+                                                <>
+                                                    <Button 
+                                                        variant="ghost" 
+                                                        size="icon" 
+                                                        onClick={() => handleOpenEdit(pc)}
+                                                        className="h-8 w-8 text-slate-600 hover:text-primary hover:bg-primary/5"
+                                                        title="Edit"
+                                                    >
+                                                        <Pencil className="h-3.5 w-3.5" />
+                                                    </Button>
+                                                    <Button 
+                                                        variant="ghost" 
+                                                        size="icon" 
+                                                        onClick={() => handleOpenDuplicate(pc)}
+                                                        className="h-8 w-8 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50"
+                                                        title="Duplicate"
+                                                    >
+                                                        <CopyPlus className="h-3.5 w-3.5" />
+                                                    </Button>
+                                                    <Button 
+                                                        variant="ghost" 
+                                                        size="icon" 
+                                                        onClick={() => handleArchive(pc.id)}
+                                                        className="h-8 w-8 text-destructive hover:text-destructive/90 hover:bg-destructive/5"
+                                                        title="Archive"
+                                                    >
+                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                    </Button>
+                                                </>
+                                            ) : (
+                                                <Button 
+                                                    variant="ghost" 
+                                                    size="icon" 
+                                                    onClick={() => handleRestore(pc.id)}
+                                                    className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                                    title="Restore"
+                                                >
+                                                    <RefreshCw className="h-3.5 w-3.5" />
+                                                </Button>
+                                            )}
                                         </div>
                                     </TableCell>
                                 </TableRow>
