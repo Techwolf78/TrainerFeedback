@@ -154,10 +154,13 @@ const TrainerOverview = ({ sessions = [], isLoading: isDashboardLoading = false 
     if (filters.year !== "all")
       filtered = filtered.filter((s) => s.year === filters.year);
 
-    const depts = [
-      ...new Set(filtered.map((s) => s.branch || s.department)),
-    ].filter(Boolean);
-    return depts.sort();
+    const depts = new Set();
+    filtered.forEach((s) => {
+      if (s.branch) depts.add(s.branch);
+      if (s.department) depts.add(s.department);
+      if (s.branches) s.branches.forEach((b) => depts.add(b));
+    });
+    return [...depts].filter(Boolean).sort();
   }, [sessions, filters.collegeId, filters.course, filters.year]);
 
   // Unique Batches (Dependent on Course AND Year AND Dept)
@@ -174,8 +177,12 @@ const TrainerOverview = ({ sessions = [], isLoading: isDashboardLoading = false 
         (s) => (s.branch || s.department) === filters.department,
       );
 
-    const batches = [...new Set(filtered.map((s) => s.batch))].filter(Boolean);
-    return batches.sort();
+    const batches = new Set();
+    filtered.forEach((s) => {
+      if (s.batch) batches.add(s.batch);
+      if (s.batches) s.batches.forEach((b) => batches.add(b));
+    });
+    return [...batches].filter(Boolean).sort();
   }, [
     sessions,
     filters.collegeId,
@@ -214,7 +221,14 @@ const TrainerOverview = ({ sessions = [], isLoading: isDashboardLoading = false 
 
       // Use per-trainer stats if available (multi-trainer sessions)
       const myTrainerId = user?.id || user?.uid;
-      const cs = (myTrainerId && globalCs.byTrainer?.[myTrainerId]) || globalCs;
+      let cs = (myTrainerId && globalCs.byTrainer?.[myTrainerId]) || globalCs;
+
+      // Extract batch or department/branch segment stats if filters are active
+      if (filters.batch !== "all" && globalCs.byBatch && globalCs.byBatch[filters.batch]) {
+        cs = globalCs.byBatch[filters.batch];
+      } else if (filters.department !== "all" && globalCs.byBranch && globalCs.byBranch[filters.department]) {
+        cs = globalCs.byBranch[filters.department];
+      }
 
       stats.totalResponses += cs.totalResponses || 0;
       stats.totalHours += (Number(session.sessionDuration) || 60) / 60;

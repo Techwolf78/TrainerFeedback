@@ -60,11 +60,10 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   createSession,
-  deleteSession,
   updateSession,
   closeSessionWithStats,
 } from "@/services/superadmin/sessionService";
-import { compileSessionStats, getResponses, compileSessionStatsFromResponses } from "@/services/superadmin/responseService";
+import { compileSessionStats, getResponses, compileSessionStatsFromResponses, migrateSessionStats } from "@/services/superadmin/responseService";
 import { serverTimestamp, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
@@ -95,6 +94,7 @@ const SessionsTab = ({
     loadingMoreSessions,
   } = useSuperAdminData();
   const [loading, setLoading] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
 
   // Session Tab State (All, Active, Past)
   const [sessionTab, setSessionTab] = useState("all");
@@ -231,16 +231,6 @@ const SessionsTab = ({
     }
   };
 
-  const handleDelete = async (sessionId) => {
-    if (!confirm("Are you sure you want to delete this session?")) return;
-    try {
-      await deleteSession(sessionId);
-      toast.success("Session deleted");
-    } catch (error) {
-      toast.error("Failed to delete session");
-    }
-  };
-
 /*
   const handleRecalculateStats = async (session) => {
     if (!confirm("Are you sure you want to recalculate stats from raw responses? This will overwrite the existing compiled stats.")) return;
@@ -283,6 +273,35 @@ const SessionsTab = ({
       toast.error("Failed to compile statistics");
       console.error(error);
     }
+  };
+
+  const handleMigrateLegacyStats = async () => {
+    const legacySessions = sessions.filter(
+      (s) => s.compiledStats && s.compiledStats.ratingDistribution && s.status === "inactive"
+    );
+    if (legacySessions.length === 0) {
+      toast.info("No legacy sessions found to migrate");
+      return;
+    }
+    if (!confirm(`This will migrate ${legacySessions.length} session(s) from legacy stats to subcollections. Continue?`)) return;
+    
+    setIsMigrating(true);
+    const toastId = toast.loading(`Migrating ${legacySessions.length} sessions...`);
+    let success = 0;
+    let failed = 0;
+    
+    for (const session of legacySessions) {
+      try {
+        const result = await migrateSessionStats(session.id, session);
+        if (result) success++;
+        else failed++;
+      } catch {
+        failed++;
+      }
+    }
+    
+    toast.success(`Migration complete: ${success} migrated, ${failed} failed`, { id: toastId });
+    setIsMigrating(false);
   };
 
   const handleExportResponses = (session) => {
@@ -777,6 +796,21 @@ const SessionsTab = ({
       </Card>
 
       {/* Sessions Table */}
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm text-muted-foreground">
+          Showing {filteredSessions.length} session(s)
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleMigrateLegacyStats}
+          disabled={isMigrating}
+          className="gap-2 text-xs h-8"
+        >
+          {isMigrating ? <Loader2 className="h-3 w-3 animate-spin" /> : <BarChart3 className="h-3 w-3" />}
+          Migrate Legacy Stats
+        </Button>
+      </div>
       <div className="border rounded-lg overflow-hidden bg-card">
         <Table>
           <TableHeader>
@@ -821,7 +855,7 @@ const SessionsTab = ({
                   <TableCell>
                     <div className="text-sm">{session.collegeName}</div>
                     <div className="text-xs text-muted-foreground">
-                      {session.batch} ({session.branch})
+                      {(session.batches || (session.batch ? [session.batch] : [])).join(", ")} ({(session.branches || (session.branch ? [session.branch] : [])).join(", ")})
                     </div>
                   </TableCell>
                   <TableCell>

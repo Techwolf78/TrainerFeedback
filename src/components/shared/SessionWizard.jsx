@@ -83,6 +83,8 @@ const SessionWizard = ({
     branch: session?.branch || "",
     year: session?.year || "",
     batch: session?.batch || "",
+    branches: session?.branches || (session?.branch ? [session.branch] : []),
+    batches: session?.batches || (session?.batch ? [session.batch] : []),
     topic: session?.topic || "",
     domain: session?.domain || defaultDomain || "",
     assignedTrainers:
@@ -103,7 +105,7 @@ const SessionWizard = ({
     questions: session?.questions || [],
     templateId: session?.templateId || "",
     ttl: session?.ttl || "720",
-    projectCode: session?.projectCode || "", // [NEW] Verify storage
+    projectCode: session?.projectCode || "",
   });
 
   // Load Templates on Mount
@@ -235,6 +237,8 @@ const SessionWizard = ({
       // Reset dependent fields that are NOT in project code
       branch: "",
       batch: "",
+      branches: [],
+      batches: [],
     }));
   };
 
@@ -246,16 +250,17 @@ const SessionWizard = ({
           formData.collegeId &&
           formData.academicYear &&
           formData.course &&
-          formData.branch &&
+          formData.branches?.length > 0 &&
           formData.year &&
-          formData.batch
+          formData.batches?.length > 0
         );
       case 2:
         return (
           formData.topic &&
           formData.assignedTrainers?.length > 0 &&
           formData.sessionDate &&
-          formData.sessionTime
+          formData.sessionTime &&
+          formData.templateId
         );
       default:
         return false;
@@ -290,6 +295,11 @@ const SessionWizard = ({
         assignedTrainers: formData.assignedTrainers,
         trainerIds: formData.assignedTrainers.map(t => t.id),
         assignedTrainer: formData.assignedTrainers[0] || null, // legacy compat
+        // Multi-branch/batch: write arrays + legacy single fields for backward compat
+        branches: formData.branches || [],
+        batches: formData.batches || [],
+        branch: formData.branches?.[0] || formData.branch || "", // legacy compat
+        batch: formData.batches?.[0] || formData.batch || "", // legacy compat
         questions: sessionQuestions,
         updatedAt: new Date().toISOString(),
       };
@@ -335,13 +345,97 @@ const SessionWizard = ({
     const departments = currentYearData?.departments
       ? Object.keys(currentYearData.departments)
       : [];
-    const currentDeptData =
-      formData.branch && currentYearData?.departments
-        ? currentYearData.departments[formData.branch]
-        : null;
 
-    // Batches are under Department
-    const batches = currentDeptData?.batches || [];
+    // Batches aggregated from ALL selected branches
+    const selectedBranches = formData.branches || [];
+    const allAvailableBatches = [];
+    if (currentYearData?.departments) {
+      selectedBranches.forEach((br) => {
+        const deptData = currentYearData.departments[br];
+        if (deptData?.batches) {
+          deptData.batches.forEach((b) => {
+            if (!allAvailableBatches.includes(b)) allAvailableBatches.push(b);
+          });
+        }
+      });
+    }
+    allAvailableBatches.sort();
+
+    // Toggle helpers for multi-select
+    const toggleBranch = (dept) => {
+      const current = formData.branches || [];
+      let updated;
+      if (current.includes(dept)) {
+        updated = current.filter((d) => d !== dept);
+      } else {
+        updated = [...current, dept];
+      }
+      // Prune batches that no longer belong to any selected branch
+      const validBatches = new Set();
+      if (currentYearData?.departments) {
+        updated.forEach((br) => {
+          const deptData = currentYearData.departments[br];
+          if (deptData?.batches) deptData.batches.forEach((b) => validBatches.add(b));
+        });
+      }
+      const prunedBatches = (formData.batches || []).filter((b) => validBatches.has(b));
+      setFormData({
+        ...formData,
+        branches: updated,
+        branch: updated[0] || "", // legacy compat
+        batches: prunedBatches,
+        batch: prunedBatches[0] || "", // legacy compat
+      });
+    };
+
+    const toggleBatch = (batch) => {
+      const current = formData.batches || [];
+      let updated;
+      if (current.includes(batch)) {
+        updated = current.filter((b) => b !== batch);
+      } else {
+        updated = [...current, batch];
+      }
+      setFormData({
+        ...formData,
+        batches: updated,
+        batch: updated[0] || "", // legacy compat
+      });
+    };
+
+    const selectAllBranches = () => {
+      if ((formData.branches || []).length === departments.length) {
+        setFormData({ ...formData, branches: [], branch: "", batches: [], batch: "" });
+      } else {
+        // Gather all batches from all departments
+        const allBatches = new Set();
+        if (currentYearData?.departments) {
+          departments.forEach((br) => {
+            const deptData = currentYearData.departments[br];
+            if (deptData?.batches) deptData.batches.forEach((b) => allBatches.add(b));
+          });
+        }
+        setFormData({
+          ...formData,
+          branches: [...departments],
+          branch: departments[0] || "",
+          batches: (formData.batches || []).filter((b) => allBatches.has(b)),
+          batch: formData.batches?.[0] || "",
+        });
+      }
+    };
+
+    const selectAllBatches = () => {
+      if ((formData.batches || []).length === allAvailableBatches.length) {
+        setFormData({ ...formData, batches: [], batch: "" });
+      } else {
+        setFormData({
+          ...formData,
+          batches: [...allAvailableBatches],
+          batch: allAvailableBatches[0] || "",
+        });
+      }
+    };
 
     return (
       <div className="space-y-4 py-2">
@@ -448,7 +542,7 @@ const SessionWizard = ({
                 setFormData({ ...formData, academicYear: e.target.value })
               }
               placeholder="2025-26"
-              disabled={true} // Always disabled - set via project code
+              disabled={true}
             />
           </div>
 
@@ -461,12 +555,14 @@ const SessionWizard = ({
                   setFormData({
                     ...formData,
                     course: v,
-                    year: "", // Reset Year
-                    branch: "", // Reset Branch
-                    batch: "", // Reset Batch
+                    year: "",
+                    branch: "",
+                    batch: "",
+                    branches: [],
+                    batches: [],
                   })
                 }
-                disabled={true} // Always disabled - set via project code
+                disabled={true}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Course" />
@@ -489,11 +585,13 @@ const SessionWizard = ({
                   setFormData({
                     ...formData,
                     year: v,
-                    branch: "", // Reset Branch
-                    batch: "", // Reset Batch
+                    branch: "",
+                    batch: "",
+                    branches: [],
+                    batches: [],
                   })
                 }
-                disabled={true} // Always disabled - set via project code
+                disabled={true}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Year" />
@@ -509,52 +607,88 @@ const SessionWizard = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Branch/Dept *</Label>
-              <Select
-                value={formData.branch}
-                onValueChange={(v) =>
-                  setFormData({
-                    ...formData,
-                    branch: v,
-                    batch: "", // Reset Batch
-                  })
-                }
-                disabled={!formData.year}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Branch" />
-                </SelectTrigger>
-                <SelectContent>
-                  {departments.map((d) => (
-                    <SelectItem key={d} value={d}>
-                      {d}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Multi-Select Branches/Departments */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Branch/Dept * <span className="text-xs text-muted-foreground font-normal">({selectedBranches.length} selected)</span></Label>
+              {departments.length > 0 && (
+                <button type="button" onClick={selectAllBranches} className="text-xs text-primary hover:underline">
+                  {selectedBranches.length === departments.length ? "Deselect All" : "Select All"}
+                </button>
+              )}
             </div>
+            {!formData.year ? (
+              <p className="text-xs text-muted-foreground py-2">Select a year first</p>
+            ) : departments.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-2">No departments configured</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5 max-h-[140px] overflow-y-auto border rounded-md p-2">
+                {departments.map((dept) => {
+                  const isSelected = selectedBranches.includes(dept);
+                  return (
+                    <button
+                      key={dept}
+                      type="button"
+                      onClick={() => toggleBranch(dept)}
+                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-all text-left ${
+                        isSelected
+                          ? "bg-primary/10 text-primary border border-primary/30 font-medium"
+                          : "bg-muted/50 text-muted-foreground border border-transparent hover:border-primary/20 hover:bg-muted"
+                      }`}
+                    >
+                      <div className={`h-3.5 w-3.5 rounded-sm border flex items-center justify-center flex-shrink-0 ${
+                        isSelected ? "border-primary bg-primary text-white" : "border-muted-foreground/40"
+                      }`}>
+                        {isSelected && <Check className="h-2.5 w-2.5" />}
+                      </div>
+                      <span className="truncate">{dept}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
-            <div className="space-y-2">
-              <Label>Batch *</Label>
-              <Select
-                value={formData.batch}
-                onValueChange={(v) => setFormData({ ...formData, batch: v })}
-                disabled={!formData.branch}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Batch" />
-                </SelectTrigger>
-                <SelectContent>
-                  {batches.map((b) => (
-                    <SelectItem key={b} value={b}>
-                      {b}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Multi-Select Batches */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Batch * <span className="text-xs text-muted-foreground font-normal">({(formData.batches || []).length} selected)</span></Label>
+              {allAvailableBatches.length > 0 && (
+                <button type="button" onClick={selectAllBatches} className="text-xs text-primary hover:underline">
+                  {(formData.batches || []).length === allAvailableBatches.length ? "Deselect All" : "Select All"}
+                </button>
+              )}
             </div>
+            {selectedBranches.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-2">Select branch(es) first</p>
+            ) : allAvailableBatches.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-2">No batches configured for selected branches</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-1.5 max-h-[140px] overflow-y-auto border rounded-md p-2">
+                {allAvailableBatches.map((batch) => {
+                  const isSelected = (formData.batches || []).includes(batch);
+                  return (
+                    <button
+                      key={batch}
+                      type="button"
+                      onClick={() => toggleBatch(batch)}
+                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-all text-left ${
+                        isSelected
+                          ? "bg-primary/10 text-primary border border-primary/30 font-medium"
+                          : "bg-muted/50 text-muted-foreground border border-transparent hover:border-primary/20 hover:bg-muted"
+                      }`}
+                    >
+                      <div className={`h-3.5 w-3.5 rounded-sm border flex items-center justify-center flex-shrink-0 ${
+                        isSelected ? "border-primary bg-primary text-white" : "border-muted-foreground/40"
+                      }`}>
+                        {isSelected && <Check className="h-2.5 w-2.5" />}
+                      </div>
+                      <span className="truncate">{batch}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -792,9 +926,9 @@ const SessionWizard = ({
         <div className="border-t my-2" />
 
         <div className="space-y-3">
-          <Label className="text-base font-semibold">Feedback Template</Label>
+          <Label className="text-base font-semibold">Feedback Template *</Label>
           <div className="space-y-2">
-            <Label>Select Template</Label>
+            <Label>Select Template *</Label>
             <Select
               value={formData.templateId}
               onValueChange={(v) => setFormData({ ...formData, templateId: v })}

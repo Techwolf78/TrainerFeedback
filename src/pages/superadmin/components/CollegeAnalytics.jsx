@@ -71,7 +71,7 @@ import {
 import { getAllSessions } from "@/services/superadmin/sessionService";
 import { getAllTrainers } from "@/services/superadmin/trainerService";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
-import { getResponseTrendData, getResponses, compileSessionStatsFromResponses } from "@/services/superadmin/responseService";
+import { getResponseTrendData, getResponses, compileSessionStatsFromResponses, getSessionStats } from "@/services/superadmin/responseService";
 
 // Helper function to get a color from red (0) to yellow (2.5) to green (5)
 const getDynamicColor = (rating) => {
@@ -141,7 +141,28 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
           getAcademicConfig(collegeId),
         ]);
 
-        setSessions(results[0] || []);
+        const rawSessions = results[0] || [];
+
+        // Resolve full stats from subcollections for sessions with lightweight compiledStats
+        const resolvedSessions = await Promise.all(
+          rawSessions.map(async (session) => {
+            // Skip active sessions (they compile stats on-the-fly) and sessions with no stats
+            if (session.status === "active" || !session.compiledStats) return session;
+            // If compiledStats is lightweight (no ratingDistribution), fetch full stats from subcollection
+            if (!session.compiledStats.ratingDistribution) {
+              try {
+                const fullStats = await getSessionStats(session.id, session);
+                return { ...session, compiledStats: fullStats };
+              } catch (e) {
+                console.error("Failed to resolve stats for session:", session.id, e);
+                return session;
+              }
+            }
+            return session;
+          })
+        );
+
+        setSessions(resolvedSessions);
         setTrainers(results[1]?.trainers || []);
         setAcademicOptions(results[2]);
       } catch (error) {
@@ -290,10 +311,16 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
         return false;
       if (filters.course !== "all" && session.course !== filters.course)
         return false;
-      if (filters.department !== "all" && session.branch !== filters.department)
+      if (filters.department !== "all" && 
+        session.branch !== filters.department && 
+        !(session.branches && session.branches.includes(filters.department))
+      )
         return false;
       if (filters.year !== "all" && session.year !== filters.year) return false;
-      if (filters.batch !== "all" && session.batch !== filters.batch)
+      if (filters.batch !== "all" && 
+        session.batch !== filters.batch && 
+        !(session.batches && session.batches.includes(filters.batch))
+      )
         return false;
 
       return true;
@@ -388,7 +415,16 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
 
       const isTrainerFilterApplied = filters.trainerId !== "all";
       const trainerStats = isTrainerFilterApplied ? cs.byTrainer?.[filters.trainerId] : null;
-      const statsToUse = trainerStats || cs;
+      
+      // Priority: trainer filter -> batch filter -> department filter -> overall
+      let statsToUse = cs;
+      if (trainerStats) {
+        statsToUse = trainerStats;
+      } else if (filters.batch !== "all" && cs.byBatch?.[filters.batch]) {
+        statsToUse = cs.byBatch[filters.batch];
+      } else if (filters.department !== "all" && cs.byBranch?.[filters.department]) {
+        statsToUse = cs.byBranch[filters.department];
+      }
 
       const sessionCount = statsToUse.totalResponses || 0;
       stats.totalResponses += sessionCount;

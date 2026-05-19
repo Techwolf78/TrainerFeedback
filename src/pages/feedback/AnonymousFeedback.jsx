@@ -44,6 +44,8 @@ export const AnonymousFeedback = () => {
   const [error, setError] = useState("");
   const [selectedTrainerId, setSelectedTrainerId] = useState(null);
   const [selectedTrainerName, setSelectedTrainerName] = useState("");
+  const [selectedBranch, setSelectedBranch] = useState(null);
+  const [selectedBatch, setSelectedBatch] = useState(null);
 
   // Helper: get trainers from session (backward compat)
   const getTrainers = (s) =>
@@ -99,6 +101,11 @@ export const AnonymousFeedback = () => {
         setSelectedTrainerId(trainers[0].id);
         setSelectedTrainerName(trainers[0].name);
       }
+      // Auto-select branch/batch if only one
+      const sessionBranches = sessionData.branches || (sessionData.branch ? [sessionData.branch] : []);
+      const sessionBatches = sessionData.batches || (sessionData.batch ? [sessionData.batch] : []);
+      if (sessionBranches.length === 1) setSelectedBranch(sessionBranches[0]);
+      if (sessionBatches.length === 1) setSelectedBatch(sessionBatches[0]);
       checkPreviousSubmission(sessionData);
     } catch (err) {
       console.error("Error loading session:", err);
@@ -179,6 +186,22 @@ export const AnonymousFeedback = () => {
         return;
       }
 
+      // Validate branch selection if multiple branches
+      const sessionBranches = session.branches || (session.branch ? [session.branch] : []);
+      if (sessionBranches.length > 1 && !selectedBranch) {
+        setError("Please select your department/branch");
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Validate batch selection if multiple batches
+      const sessionBatches = session.batches || (session.batch ? [session.batch] : []);
+      if (sessionBatches.length > 1 && !selectedBatch) {
+        setError("Please select your batch");
+        setIsSubmitting(false);
+        return;
+      }
+
       // Format answers array
       const answers = questions
         .map((q, index) => ({
@@ -198,6 +221,8 @@ export const AnonymousFeedback = () => {
         phaseId,
         selectedTrainerId: selectedTrainerId || getTrainers(session)?.[0]?.id || null,
         selectedTrainerName: selectedTrainerName || getTrainers(session)?.[0]?.name || null,
+        selectedBranch: selectedBranch || sessionBranches[0] || null,
+        selectedBatch: selectedBatch || sessionBatches[0] || null,
       });
 
       // Mark as submitted in localStorage (for history/UX, not blocking anymore)
@@ -504,13 +529,23 @@ export const AnonymousFeedback = () => {
                 </span>
               </div>
               <div className="flex">
-                <span className="text-muted-foreground w-20 flex-shrink-0">
-                  Batch
+                <span className="text-muted-foreground w-24 flex-shrink-0">
+                  Department
                 </span>
-                <span className="font-medium">{session?.batch}</span>
+                <span className="font-medium">
+                  {(session?.branches || (session?.branch ? [session.branch] : [])).join(", ") || "N/A"}
+                </span>
               </div>
               <div className="flex">
-                <span className="text-muted-foreground w-20 flex-shrink-0">
+                <span className="text-muted-foreground w-24 flex-shrink-0">
+                  Batch
+                </span>
+                <span className="font-medium">
+                  {(session?.batches || (session?.batch ? [session.batch] : [])).join(", ") || "N/A"}
+                </span>
+              </div>
+              <div className="flex">
+                <span className="text-muted-foreground w-24 flex-shrink-0">
                   Course
                 </span>
                 <span className="font-medium">{session?.course}</span>
@@ -518,6 +553,72 @@ export const AnonymousFeedback = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Branch/Department Selector (only if multiple branches) */}
+        {(() => {
+          const sessionBranches = session?.branches || (session?.branch ? [session.branch] : []);
+          return sessionBranches.length > 1 ? (
+            <Card className="mb-5 shadow-sm border-blue-200">
+              <CardContent className="pt-6">
+                <Label className="text-base font-medium mb-3 block">
+                  Which department/branch are you in? <span className="text-destructive">*</span>
+                </Label>
+                <RadioGroup
+                  value={selectedBranch || ""}
+                  onValueChange={(value) => setSelectedBranch(value)}
+                  className="space-y-2"
+                >
+                  {sessionBranches.map((branch) => (
+                    <label
+                      key={branch}
+                      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                        selectedBranch === branch
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:border-primary/50"
+                      }`}
+                    >
+                      <RadioGroupItem value={branch} />
+                      <span className="font-medium">{branch}</span>
+                    </label>
+                  ))}
+                </RadioGroup>
+              </CardContent>
+            </Card>
+          ) : null;
+        })()}
+
+        {/* Batch Selector (only if multiple batches) */}
+        {(() => {
+          const sessionBatches = session?.batches || (session?.batch ? [session.batch] : []);
+          return sessionBatches.length > 1 ? (
+            <Card className="mb-5 shadow-sm border-blue-200">
+              <CardContent className="pt-6">
+                <Label className="text-base font-medium mb-3 block">
+                  Which batch are you in? <span className="text-destructive">*</span>
+                </Label>
+                <RadioGroup
+                  value={selectedBatch || ""}
+                  onValueChange={(value) => setSelectedBatch(value)}
+                  className="space-y-2"
+                >
+                  {sessionBatches.map((batch) => (
+                    <label
+                      key={batch}
+                      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                        selectedBatch === batch
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:border-primary/50"
+                      }`}
+                    >
+                      <RadioGroupItem value={batch} />
+                      <span className="font-medium">{batch}</span>
+                    </label>
+                  ))}
+                </RadioGroup>
+              </CardContent>
+            </Card>
+          ) : null;
+        })()}
 
         {/* Trainer Selector (only if multiple trainers) */}
         {getTrainers(session).length > 1 && (

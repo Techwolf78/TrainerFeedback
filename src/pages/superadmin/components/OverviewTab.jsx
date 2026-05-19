@@ -67,7 +67,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSuperAdminData } from "@/contexts/SuperAdminDataContext";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
 import { getAnalyticsSessions } from "@/services/superadmin/sessionService";
-import { getResponseTrendData, getResponses, compileSessionStatsFromResponses } from "@/services/superadmin/responseService";
+import { getResponseTrendData, getResponses, compileSessionStatsFromResponses, getSessionStats } from "@/services/superadmin/responseService";
 import { cn } from "@/lib/utils";
 
 
@@ -151,7 +151,16 @@ const OverviewTab = ({
 
       const isTrainerFilterApplied = filters.trainerId !== "all";
       const trainerStats = isTrainerFilterApplied ? cs.byTrainer?.[filters.trainerId] : null;
-      const stats = trainerStats || cs;
+      
+      // Priority: trainer filter -> batch filter -> department filter -> overall
+      let stats = cs;
+      if (trainerStats) {
+        stats = trainerStats;
+      } else if (filters.batch !== "all" && cs.byBatch?.[filters.batch]) {
+        stats = cs.byBatch[filters.batch];
+      } else if (filters.department && filters.department !== "all" && cs.byBranch?.[filters.department]) {
+        stats = cs.byBranch[filters.department];
+      }
 
       agg.totalResponses += stats.totalResponses || 0;
 
@@ -377,7 +386,7 @@ const OverviewTab = ({
         // We'll filter by response submission date instead
         const shouldFilterByResponseDate = sdObj && edObj && filters.dateRange !== "all";
         
-        const fetchedSessions = await getAnalyticsSessions({
+        const fetchedSessionsRaw = await getAnalyticsSessions({
           ...filters,
           ...(shouldFilterByResponseDate ? {} : {
             startDate: formatDate(sdObj),
@@ -386,6 +395,23 @@ const OverviewTab = ({
           limitCount: 50,
           includeActive: true, // Show live analytics in filtered view
         });
+
+        // Resolve full stats from subcollections for sessions with lightweight compiledStats
+        const fetchedSessions = await Promise.all(
+          fetchedSessionsRaw.map(async (session) => {
+            if (session.status === "active" || !session.compiledStats) return session;
+            if (!session.compiledStats.ratingDistribution) {
+              try {
+                const fullStats = await getSessionStats(session.id, session);
+                return { ...session, compiledStats: fullStats };
+              } catch (e) {
+                console.error("Failed to resolve stats for session in OverviewTab:", session.id, e);
+                return session;
+              }
+            }
+            return session;
+          })
+        );
 
         console.log("📊 Sessions fetched for analytics:", fetchedSessions.length, "shouldFilterByResponseDate:", shouldFilterByResponseDate);
         const computedStats = aggregateStatsFromSessions(fetchedSessions);
