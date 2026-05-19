@@ -446,7 +446,18 @@ export const compileSessionStats = async (sessionId, version = 0) => {
     // Filter responses to only include those matching the current version
     const responses = allResponses.filter(r => (r.version ?? 0) === version);
     
-    return compileSessionStatsFromResponses(responses, sessionDoc?.questions || []);
+    const compiledSegments = compileAllSegmentsFromResponses(responses, sessionDoc?.questions || []);
+    
+    // Save detailed stats in stats subcollection documents
+    await saveDecoupledStats(sessionId, compiledSegments);
+    
+    // Return duplicated full stats for the parent document
+    return {
+      ...compiledSegments.overall,
+      byTrainer: compiledSegments.byTrainer,
+      byBatch: compiledSegments.byBatch,
+      byBranch: compiledSegments.byBranch,
+    };
   } catch (error) {
     console.error('Error compiling session stats:', error);
     throw error;

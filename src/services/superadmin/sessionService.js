@@ -401,11 +401,12 @@ export const closeSessionWithStats = async (id) => {
     // Save detailed stats in stats subcollection documents
     await saveDecoupledStats(id, compiledSegments);
 
-    // Save lightweight stats on parent session document for fast listings
+    // Save duplicated full stats on parent session document
     const finalMergedStats = {
-      totalResponses: compiledSegments.overall.totalResponses || 0,
-      avgRating: compiledSegments.overall.avgRating || 0,
-      compiledAt: compiledSegments.overall.compiledAt || new Date().toISOString()
+      ...compiledSegments.overall,
+      byTrainer: compiledSegments.byTrainer,
+      byBatch: compiledSegments.byBatch,
+      byBranch: compiledSegments.byBranch,
     };
 
     let sessionDataForCache = null;

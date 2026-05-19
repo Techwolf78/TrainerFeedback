@@ -65,8 +65,9 @@ const getDynamicColor = (rating) => {
 
 const SessionAnalytics = ({ session, onBack }) => {
   const analyticsRef = useRef(null);
-  const [stats, setStats] = useState(session?.compiledStats || null);
-  const [loading, setLoading] = useState(!session?.compiledStats);
+  const hasFullStats = session?.compiledStats && session?.compiledStats.ratingDistribution;
+  const [stats, setStats] = useState(hasFullStats ? session.compiledStats : null);
+  const [loading, setLoading] = useState(!hasFullStats);
   const [isLive, setIsLive] = useState(session?.status === "active");
   const [learnedLimit, setLearnedLimit] = useState(25);
   const [futureLimit, setFutureLimit] = useState(25);
@@ -77,30 +78,37 @@ const SessionAnalytics = ({ session, onBack }) => {
       if (showToast) toast.loading("Fetching live data...");
       setLoading(true);
 
-      const { getResponses, compileSessionStatsFromResponses } =
+      const { getResponses, compileSessionStatsFromResponses, getSessionStats } =
         await import("@/services/superadmin/responseService");
 
-      const responses = await getResponses(session.id);
+      if (session.status !== "active") {
+        // Closed session: fetch resolved stats from subcollections / parent fallback
+        const resolvedStats = await getSessionStats(session.id, session);
+        setStats(resolvedStats);
+      } else {
+        // Active session: compile fresh stats from live responses on the fly
+        const responses = await getResponses(session.id);
 
-      // Filter by session version if it exists
-      const currentVersionResponses = responses.filter(
-        (r) => (r.version ?? 0) === (session.version ?? 0),
-      );
+        // Filter by session version if it exists
+        const currentVersionResponses = responses.filter(
+          (r) => (r.version ?? 0) === (session.version ?? 0),
+        );
 
-      const compiled = compileSessionStatsFromResponses(
-        currentVersionResponses,
-        session.questions || [],
-      );
+        const compiled = compileSessionStatsFromResponses(
+          currentVersionResponses,
+          session.questions || [],
+        );
 
-      setStats(compiled);
-      setLiveResponses(currentVersionResponses);
-      console.group(`--- Live Analytics: ${session.topic} ---`);
-      console.log("Total Responses:", compiled.totalResponses);
-      console.log("Top Rated Comments:", compiled.topComments);
-      console.log("Average Rated Comments:", compiled.avgComments);
-      console.log("Improvement Areas:", compiled.leastRatedComments);
-      console.log("Full Compiled Stats:", compiled);
-      console.groupEnd();
+        setStats(compiled);
+        setLiveResponses(currentVersionResponses);
+        console.group(`--- Live Analytics: ${session.topic} ---`);
+        console.log("Total Responses:", compiled.totalResponses);
+        console.log("Top Rated Comments:", compiled.topComments);
+        console.log("Average Rated Comments:", compiled.avgComments);
+        console.log("Improvement Areas:", compiled.leastRatedComments);
+        console.log("Full Compiled Stats:", compiled);
+        console.groupEnd();
+      }
       if (showToast) {
         toast.dismiss();
         toast.success("Live data updated");
