@@ -423,14 +423,35 @@ export const getAllProjectCodes = async () => {
 };
 
 /**
- * Delete a project code
+ * Delete a project code (soft-delete)
  */
 export const deleteProjectCode = async (id) => {
   try {
-    await deleteDoc(doc(db, COLLECTION_NAME, id));
+    const docRef = doc(db, COLLECTION_NAME, id);
+    await updateDoc(docRef, {
+      archived: true,
+      deletedAt: serverTimestamp()
+    });
     return true;
   } catch (error) {
-    console.error('Error deleting project code:', error);
+    console.error('Error soft-deleting project code:', error);
+    throw error;
+  }
+};
+
+/**
+ * Restore an archived project code
+ */
+export const restoreProjectCode = async (id) => {
+  try {
+    const docRef = doc(db, COLLECTION_NAME, id);
+    await updateDoc(docRef, {
+      archived: false,
+      restoredAt: serverTimestamp()
+    });
+    return true;
+  } catch (error) {
+    console.error('Error restoring project code:', error);
     throw error;
   }
 };

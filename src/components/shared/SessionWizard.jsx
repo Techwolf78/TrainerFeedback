@@ -475,7 +475,7 @@ const SessionWizard = ({
                 </div>
                 <div className="max-h-[250px] overflow-y-auto py-1">
                   {projectCodes
-                    .filter((pc) => pc.collegeId)
+                    .filter((pc) => pc.collegeId && pc.archived !== true)
                     .filter((pc) => 
                       !projectCodeSearch || 
                       pc.code.toLowerCase().includes(projectCodeSearch.toLowerCase())
@@ -486,7 +486,7 @@ const SessionWizard = ({
                     </div>
                   ) : (
                     projectCodes
-                      .filter((pc) => pc.collegeId)
+                      .filter((pc) => pc.collegeId && pc.archived !== true)
                       .filter((pc) => 
                         !projectCodeSearch || 
                         pc.code.toLowerCase().includes(projectCodeSearch.toLowerCase())

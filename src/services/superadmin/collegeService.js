@@ -93,12 +93,27 @@ export const deleteCollege = async (id) => {
   }
 };
 
-// Get all colleges
+// Restore a soft-deleted college
+export const restoreCollege = async (id) => {
+  try {
+    const docRef = doc(db, COLLECTION_NAME, id);
+    await updateDoc(docRef, {
+      isDeleted: false,
+      restoredAt: serverTimestamp(),
+    });
+    return true;
+  } catch (error) {
+    console.error('Error restoring college:', error);
+    throw error;
+  }
+};
+
+// Get all colleges (including archived ones)
 export const getAllColleges = async () => {
   try {
     const q = query(
       collection(db, COLLECTION_NAME),
-      where('isDeleted', '==', false)
+      orderBy('name', 'asc')
     );
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => ({

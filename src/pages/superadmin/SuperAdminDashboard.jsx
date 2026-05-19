@@ -445,10 +445,10 @@ const SuperAdminDashboardInner = () => {
           >
             {activeTab === "overview" && (
               <OverviewTab
-                colleges={colleges}
+                colleges={colleges.filter((c) => c.isDeleted !== true)}
                 admins={admins}
-                sessions={sessions}
-                projectCodes={projectCodes} // [NEW] Pass project codes
+                sessions={sessions.filter((s) => s.archived !== true)}
+                projectCodes={projectCodes.filter((pc) => pc.archived !== true)} // [NEW] Pass project codes
               />
             )}
 
@@ -463,12 +463,12 @@ const SuperAdminDashboardInner = () => {
             )}
 
             {activeTab === "config" && (
-              <AcademicConfigTab colleges={colleges} />
+              <AcademicConfigTab colleges={colleges.filter((c) => c.isDeleted !== true)} />
             )}
 
             {activeTab === "admins" && (
               <AdminsTab
-                colleges={colleges}
+                colleges={colleges.filter((c) => c.isDeleted !== true)}
                 onRefresh={refreshAll}
                 isDialogOpen={isAdminDialogOpen}
                 setDialogOpen={setIsAdminDialogOpen}
@@ -480,7 +480,7 @@ const SuperAdminDashboardInner = () => {
             {activeTab === "sessions" && (
               <SessionsTab
                 sessions={sessions}
-                colleges={colleges}
+                colleges={colleges.filter((c) => c.isDeleted !== true)}
                 trainers={trainers}
                 academicConfig={academicConfig}
                 onRefresh={refreshAll}

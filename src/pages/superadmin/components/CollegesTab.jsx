@@ -12,6 +12,7 @@ import {
   ListPlus,
   Search,
   X,
+  RefreshCw,
 } from "lucide-react";
 import { uploadImage } from "@/services/cloudinaryService";
 import { Button } from "@/components/ui/button";
@@ -38,13 +39,14 @@ import {
   addCollege,
   updateCollege,
   deleteCollege,
+  restoreCollege,
   bulkAddColleges,
 } from "@/services/superadmin/collegeService";
 import CollegeAnalytics from "./CollegeAnalytics";
 
 const CollegesTab = ({
-  colleges,
-  admins,
+  colleges = [],
+  admins = [],
   onRefresh,
   isDialogOpen,
   setDialogOpen,
@@ -54,6 +56,9 @@ const CollegesTab = ({
   const collegeDialogOpen =
     isDialogOpen !== undefined ? isDialogOpen : localDialogOpen;
   const setCollegeDialogOpen = setDialogOpen || setLocalDialogOpen;
+
+  // View mode: active or archived
+  const [viewMode, setViewMode] = useState("active");
 
   // Form states
   const [newCollege, setNewCollege] = useState({
@@ -78,15 +83,26 @@ const CollegesTab = ({
   // Search
   const [searchQuery, setSearchQuery] = useState("");
   const normalizedSearch = searchQuery.trim().toLowerCase();
-  const filteredColleges = normalizedSearch
-    ? colleges.filter((college) => {
-        const name = college.name?.toLowerCase() || "";
-        const code = college.code?.toLowerCase() || "";
-        return (
-          name.includes(normalizedSearch) || code.includes(normalizedSearch)
-        );
-      })
-    : colleges;
+
+  // Filter colleges based on active/archived state
+  const displayedColleges = React.useMemo(() => {
+    return colleges.filter((college) => {
+      const isArchived = college.isDeleted === true;
+      return viewMode === "active" ? !isArchived : isArchived;
+    });
+  }, [colleges, viewMode]);
+
+  // Apply search query on top of displayed colleges
+  const filteredColleges = React.useMemo(() => {
+    if (!normalizedSearch) return displayedColleges;
+    return displayedColleges.filter((college) => {
+      const name = college.name?.toLowerCase() || "";
+      const code = college.code?.toLowerCase() || "";
+      return (
+        name.includes(normalizedSearch) || code.includes(normalizedSearch)
+      );
+    });
+  }, [displayedColleges, normalizedSearch]);
 
   const escapeRegExp = (value) =>
     value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -184,15 +200,25 @@ const CollegesTab = ({
     }
   };
 
-  const handleDeleteCollege = async (id) => {
-    if (confirm("Are you sure you want to delete this college?")) {
+  const handleArchiveCollege = async (id) => {
+    if (confirm("Are you sure you want to archive this college?")) {
       try {
         await deleteCollege(id);
-        toast.success("College deleted");
+        toast.success("College archived successfully");
         onRefresh();
       } catch (error) {
-        toast.error("Failed to delete college");
+        toast.error("Failed to archive college");
       }
+    }
+  };
+
+  const handleRestoreCollege = async (id) => {
+    try {
+      await restoreCollege(id);
+      toast.success("College restored successfully");
+      onRefresh();
+    } catch (error) {
+      toast.error("Failed to restore college");
     }
   };
 
@@ -282,8 +308,8 @@ const CollegesTab = ({
           <h2 className="text-2xl font-bold tracking-tight">Colleges</h2>
           <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium">
             {searchQuery
-              ? `${filteredColleges.length} of ${colleges.length}`
-              : `${colleges.length} Total`}
+              ? `${filteredColleges.length} of ${colleges.filter(c => viewMode === "active" ? c.isDeleted !== true : c.isDeleted === true).length}`
+              : `${colleges.filter(c => viewMode === "active" ? c.isDeleted !== true : c.isDeleted === true).length} Total`}
           </span>
         </div>
 
@@ -306,6 +332,29 @@ const CollegesTab = ({
                 <X className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
             )}
+          </div>
+
+          <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+            <button
+              onClick={() => setViewMode("active")}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                viewMode === "active"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-900"
+              }`}
+            >
+              Active
+            </button>
+            <button
+              onClick={() => setViewMode("archived")}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                viewMode === "archived"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-900"
+              }`}
+            >
+              Archived
+            </button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -567,22 +616,32 @@ const CollegesTab = ({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                    <DropdownMenuItem
-                      onClick={() => setSelectedCollegeForAnalytics(college)}
-                    >
-                      <BarChart3 className="mr-2 h-4 w-4" /> View Analytics
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => openEditCollegeDialog(college)}
-                    >
-                      <Pencil className="mr-2 h-4 w-4" /> Edit College
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                      onClick={() => handleDeleteCollege(college.id)}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" /> Delete College
-                    </DropdownMenuItem>
+                    {viewMode === "active" ? (
+                      <>
+                        <DropdownMenuItem
+                          onClick={() => setSelectedCollegeForAnalytics(college)}
+                        >
+                          <BarChart3 className="mr-2 h-4 w-4" /> View Analytics
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => openEditCollegeDialog(college)}
+                        >
+                          <Pencil className="mr-2 h-4 w-4" /> Edit College
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                          onClick={() => handleArchiveCollege(college.id)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" /> Archive College
+                        </DropdownMenuItem>
+                      </>
+                    ) : (
+                      <DropdownMenuItem
+                        onClick={() => handleRestoreCollege(college.id)}
+                      >
+                        <RefreshCw className="mr-2 h-4 w-4 text-emerald-600 animate-spin-hover" /> Restore College
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -604,9 +663,18 @@ const CollegesTab = ({
               <span>
                 {admins.filter((a) => a.collegeId === college.id).length} admin(s)
               </span>
-              <span className="flex items-center gap-1">
-                <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                Active
+              <span className="flex items-center gap-1 font-medium">
+                {viewMode === "active" ? (
+                  <>
+                    <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                    <span className="text-green-600">Active</span>
+                  </>
+                ) : (
+                  <>
+                    <div className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                    <span className="text-slate-500">Archived</span>
+                  </>
+                )}
               </span>
             </div>
           </div>
@@ -616,7 +684,9 @@ const CollegesTab = ({
           <div className="col-span-full text-center py-12">
             <Building2 className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
             <h3 className="text-lg font-medium text-muted-foreground mb-2">
-              {searchQuery ? "No colleges match your search" : "No colleges yet"}
+              {searchQuery
+                ? `No ${viewMode} colleges match your search`
+                : `No ${viewMode} colleges yet`}
             </h3>
             <p className="text-muted-foreground">
               {searchQuery ? (
@@ -624,8 +694,10 @@ const CollegesTab = ({
                   Try an exact name or code, or use fewer characters for a broader
                   match.
                 </>
-              ) : (
+              ) : viewMode === "active" ? (
                 "Create your first college to get started"
+              ) : (
+                "Archived colleges will appear here"
               )}
             </p>
             {searchQuery && (

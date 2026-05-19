@@ -220,9 +220,35 @@ export const updateSession = async (id, updates) => {
   }
 };
 
-// Delete a session
-// NOTE: deleteSession has been intentionally removed to enforce data immutability.
-// Raw response subcollections must never be orphaned or lost.
+// Soft delete (archive) a session
+export const deleteSession = async (id) => {
+  try {
+    const docRef = doc(db, COLLECTION_NAME, id);
+    await updateDoc(docRef, {
+      archived: true,
+      updatedAt: serverTimestamp(),
+    });
+    return true;
+  } catch (error) {
+    console.error("Error archiving session:", error);
+    throw error;
+  }
+};
+
+// Restore a soft-deleted (archived) session
+export const restoreSession = async (id) => {
+  try {
+    const docRef = doc(db, COLLECTION_NAME, id);
+    await updateDoc(docRef, {
+      archived: false,
+      updatedAt: serverTimestamp(),
+    });
+    return true;
+  } catch (error) {
+    console.error("Error restoring session:", error);
+    throw error;
+  }
+};
 
 // Get all sessions (allows filtering)
 export const getAllSessions = async (collegeId = null) => {

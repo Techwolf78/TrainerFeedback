@@ -27,6 +27,7 @@ import {
   getAllProjectCodes,
   addProjectCodes as addProjectCodesService,
   deleteProjectCode as deleteProjectCodeService,
+  restoreProjectCode as restoreProjectCodeService,
   rerunCollegeMatching as rerunCollegeMatchingService,
   createProjectCode as createProjectCodeService,
   updateProjectCode as updateProjectCodeService,
@@ -251,15 +252,32 @@ export const SuperAdminDataProvider = ({ children }) => {
     }
   }, []);
 
-  // Delete project code
+  // Delete project code (soft delete / archive)
   const deleteProjectCode = useCallback(async (id) => {
     try {
       await deleteProjectCodeService(id);
-      setProjectCodes((prev) => prev.filter((c) => c.id !== id));
-      toast.success("Project code deleted");
+      setProjectCodes((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, archived: true } : c))
+      );
+      toast.success("Project code archived successfully");
     } catch (error) {
-      console.error("Failed to delete project code:", error);
-      toast.error("Failed to delete project code");
+      console.error("Failed to archive project code:", error);
+      toast.error("Failed to archive project code");
+      throw error;
+    }
+  }, []);
+
+  // Restore project code
+  const restoreProjectCode = useCallback(async (id) => {
+    try {
+      await restoreProjectCodeService(id);
+      setProjectCodes((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, archived: false } : c))
+      );
+      toast.success("Project code restored successfully");
+    } catch (error) {
+      console.error("Failed to restore project code:", error);
+      toast.error("Failed to restore project code");
       throw error;
     }
   }, []);
@@ -587,6 +605,7 @@ export const SuperAdminDataProvider = ({ children }) => {
     createProjectCode,
     updateProjectCode,
     deleteProjectCode,
+    restoreProjectCode,
     rerunMatching,
 
     // College Actions

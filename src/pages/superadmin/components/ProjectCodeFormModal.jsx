@@ -113,9 +113,10 @@ const ProjectCodeFormModal = ({
   }, [searchQuery, open]);
 
   const filteredColleges = useMemo(() => {
-    if (!searchQuery) return colleges;
+    const activeColleges = colleges.filter(c => c.isDeleted !== true);
+    if (!searchQuery) return activeColleges;
     const lower = searchQuery.toLowerCase();
-    return colleges.filter(c => 
+    return activeColleges.filter(c => 
       c.name.toLowerCase().includes(lower) || 
       c.code.toLowerCase().includes(lower)
     );
