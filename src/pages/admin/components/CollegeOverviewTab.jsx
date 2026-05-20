@@ -303,10 +303,16 @@ const CollegeOverviewTab = () => {
         return false;
       if (filters.course !== "all" && session.course !== filters.course)
         return false;
-      if (filters.department !== "all" && session.branch !== filters.department)
+      if (filters.department !== "all" && 
+        session.branch !== filters.department && 
+        !(session.branches && session.branches.includes(filters.department))
+      )
         return false;
       if (filters.year !== "all" && session.year !== filters.year) return false;
-      if (filters.batch !== "all" && session.batch !== filters.batch)
+      if (filters.batch !== "all" && 
+        session.batch !== filters.batch && 
+        !(session.batches && session.batches.includes(filters.batch))
+      )
         return false;
 
       return true;
@@ -329,8 +335,8 @@ const CollegeOverviewTab = () => {
       };
     }
 
-    // If date range filter or trainer filter is active, recalculate from individual responses
-    const shouldRecalculateFromResponses = (filters.dateRange !== "all" || filters.trainerId !== "all") && filteredResponses.length > 0;
+    // Recalculate from individual responses if available
+    const shouldRecalculateFromResponses = filteredResponses.length > 0;
     if (shouldRecalculateFromResponses) {
       const compiledStats = compileSessionStatsFromResponses(filteredResponses);
       
@@ -380,6 +386,28 @@ const CollegeOverviewTab = () => {
         categoryAverages,
         qualitative: { high: compiledStats.topComments || [], low: compiledStats.leastRatedComments || [], future: compiledStats.futureTopics || [] },
         topicsLearned: compiledStats.topicsLearned || [],
+      };
+    }
+
+    const hasActiveFilters = 
+      filters.trainerId !== "all" ||
+      filters.course !== "all" ||
+      filters.department !== "all" ||
+      filters.year !== "all" ||
+      filters.batch !== "all" ||
+      filters.dateRange !== "all";
+
+    if (hasActiveFilters) {
+      return {
+        totalSessions: filteredSessions.length,
+        totalResponses: 0,
+        totalRatingsCount: 0,
+        totalHours: (Number(filteredSessions.reduce((sum, s) => sum + (Number(s.sessionDuration) || 60), 0)) || 0) / 60,
+        avgRating: "0.00",
+        ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+        categoryAverages: {},
+        qualitative: { high: [], low: [], future: [] },
+        topicsLearned: [],
       };
     }
 
@@ -741,8 +769,16 @@ const CollegeOverviewTab = () => {
   const topTrainers = useMemo(() => {
     const trainerStats = {};
 
-    // Use filtered responses if date range is active
-    if (filters.dateRange !== "all" && filteredResponses.length > 0) {
+    const hasActiveFilters = 
+      filters.trainerId !== "all" ||
+      filters.course !== "all" ||
+      filters.department !== "all" ||
+      filters.year !== "all" ||
+      filters.batch !== "all" ||
+      filters.dateRange !== "all";
+
+    // Use filtered responses if available
+    if (filteredResponses.length > 0) {
       // Build trainer stats from filtered responses
       const sessionMap = {};
       filteredSessions.forEach((session) => {
@@ -758,6 +794,9 @@ const CollegeOverviewTab = () => {
         const trainerId = response.selectedTrainerId || session.assignedTrainer?.id;
         const trainerName = response.selectedTrainerName || session.assignedTrainer?.name || "Unknown";
         if (!trainerId) return;
+
+        // Filter trainer if a specific trainer is selected
+        if (filters.trainerId !== "all" && trainerId !== filters.trainerId) return;
 
         if (!trainerStats[trainerId]) {
           trainerStats[trainerId] = {
@@ -826,8 +865,11 @@ const CollegeOverviewTab = () => {
               ? parseFloat((data.ratingSum / data.ratingCount).toFixed(2))
               : 0,
         }))
-        .sort((a, b) => b.avgRating - a.avgRating)
-        .slice(0, 10);
+        .sort((a, b) => b.avgRating - a.avgRating);
+    }
+
+    if (hasActiveFilters) {
+      return [];
     }
 
     // Default: Use session compiled stats
@@ -837,31 +879,34 @@ const CollegeOverviewTab = () => {
 
       const sessionTrainers = session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : []);
       sessionTrainers.forEach(({ id: trainerId, name: trainerName }) => {
-      if (!trainerId) return;
+        if (!trainerId) return;
 
-      const tStats = cs.byTrainer?.[trainerId];
-      const useTrainerStats = !!tStats;
+        // Filter trainer if a specific trainer is selected
+        if (filters.trainerId !== "all" && trainerId !== filters.trainerId) return;
 
-      if (!trainerStats[trainerId]) {
-        trainerStats[trainerId] = {
-          name: trainerName,
-          ratingSum: 0,
-          ratingCount: 0,
-          sessions: 0,
-          responses: 0,
-          recentComments: [],
-          domains: new Set(),
-          topics: new Set(),
-        };
-      }
+        const tStats = cs.byTrainer?.[trainerId];
+        const useTrainerStats = !!tStats;
 
-      if (session.domain) {
-        trainerStats[trainerId].domains.add(session.domain);
-      }
+        if (!trainerStats[trainerId]) {
+          trainerStats[trainerId] = {
+            name: trainerName,
+            ratingSum: 0,
+            ratingCount: 0,
+            sessions: 0,
+            responses: 0,
+            recentComments: [],
+            domains: new Set(),
+            topics: new Set(),
+          };
+        }
 
-      if (session.topic) {
-        trainerStats[trainerId].topics.add(session.topic);
-      }
+        if (session.domain) {
+          trainerStats[trainerId].domains.add(session.domain);
+        }
+
+        if (session.topic) {
+          trainerStats[trainerId].topics.add(session.topic);
+        }
 
         const statsToUse = useTrainerStats ? tStats : cs;
         Object.entries(statsToUse.ratingDistribution || {}).forEach(
@@ -895,9 +940,8 @@ const CollegeOverviewTab = () => {
             ? (data.ratingSum / data.ratingCount).toFixed(1)
             : 0,
       }))
-      .sort((a, b) => b.avgRating - a.avgRating)
-      .slice(0, 5);
-  }, [filteredSessions, filteredResponses, filters.dateRange]);
+      .sort((a, b) => b.avgRating - a.avgRating);
+  }, [filteredSessions, filteredResponses, filters.dateRange, filters.trainerId]);
 
   if (loading) {
     return (
@@ -978,6 +1022,48 @@ const CollegeOverviewTab = () => {
               </Select>
             </div>
 
+            <div className="space-y-0.5 col-span-1">
+              <Label className="text-[11px] font-semibold">Year</Label>
+              <Select
+                value={filters.year}
+                onValueChange={(v) =>
+                  setFilters({ ...filters, year: v, department: "all", batch: "all" })
+                }
+                disabled={filters.course === "all"}
+              >
+                <SelectTrigger
+                  className={`h-8 text-[13px] font-medium px-2 ${filters.course === "all" ? "opacity-50" : ""}`}
+                >
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
+                <SelectContent>
+                  <div className="p-2 sticky top-0 bg-white z-10 border-b border-slate-100">
+                    <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
+                      <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
+                      <input 
+                        type="text" 
+                        placeholder="Search years..." 
+                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700" 
+                        value={searchQueries.year}
+                        onChange={(e) => handleSearchChange("year", e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()} 
+                      />
+                    </div>
+                  </div>
+                  <SelectItem value="all" className="text-[13px] font-medium">
+                    All Years
+                  </SelectItem>
+                  {availableYears
+                    .filter((y) => !searchQueries.year || y.toLowerCase().includes(searchQueries.year.toLowerCase()))
+                    .map((y) => (
+                    <SelectItem key={y} value={y} className="text-[13px] font-medium">
+                      Year {y}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-0.5">
               <Label className="text-[11px] font-semibold">Department</Label>
               <Select
@@ -986,7 +1072,6 @@ const CollegeOverviewTab = () => {
                   setFilters({
                     ...filters,
                     department: v,
-                    year: "all",
                     batch: "all",
                   })
                 }
@@ -1019,48 +1104,6 @@ const CollegeOverviewTab = () => {
                     .map((d) => (
                     <SelectItem key={d} value={d} className="text-[13px] font-medium">
                       {d}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-0.5 col-span-1">
-              <Label className="text-[11px] font-semibold">Year</Label>
-              <Select
-                value={filters.year}
-                onValueChange={(v) =>
-                  setFilters({ ...filters, year: v, batch: "all" })
-                }
-                disabled={filters.course === "all"}
-              >
-                <SelectTrigger
-                  className={`h-8 text-[13px] font-medium px-2 ${filters.course === "all" ? "opacity-50" : ""}`}
-                >
-                  <SelectValue placeholder="All" />
-                </SelectTrigger>
-                <SelectContent>
-                  <div className="p-2 sticky top-0 bg-white z-10 border-b border-slate-100">
-                    <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
-                      <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
-                      <input 
-                        type="text" 
-                        placeholder="Search years..." 
-                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700" 
-                        value={searchQueries.year}
-                        onChange={(e) => handleSearchChange("year", e.target.value)}
-                        onKeyDown={(e) => e.stopPropagation()} 
-                      />
-                    </div>
-                  </div>
-                  <SelectItem value="all" className="text-[13px] font-medium">
-                    All Years
-                  </SelectItem>
-                  {availableYears
-                    .filter((y) => !searchQueries.year || y.toLowerCase().includes(searchQueries.year.toLowerCase()))
-                    .map((y) => (
-                    <SelectItem key={y} value={y} className="text-[13px] font-medium">
-                      Year {y}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1606,7 +1649,7 @@ const CollegeOverviewTab = () => {
               Highest rated
             </CardDescription>
           </CardHeader>
-          <CardContent className="h-[160px] overflow-hidden scrollbar-hide">
+          <CardContent className="h-[160px] overflow-y-auto scrollbar-hide">
             <div className="space-y-2">
               {topTrainers.length > 0 ? (
                 topTrainers.map((trainer, idx) => (

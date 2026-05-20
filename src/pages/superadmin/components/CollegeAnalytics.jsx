@@ -355,8 +355,8 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
       };
     }
 
-    // If date range filter is active or trainer filter is active, recalculate from individual responses
-    const shouldRecalculateFromResponses = (filters.dateRange !== "all" || filters.trainerId !== "all") && filteredResponses.length > 0;
+    // Recalculate from individual responses if available
+    const shouldRecalculateFromResponses = filteredResponses.length > 0;
     if (shouldRecalculateFromResponses) {
       const compiledStats = compileSessionStatsFromResponses(filteredResponses);
       
@@ -406,6 +406,28 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
         categoryAverages,
         qualitative: { high: compiledStats.topComments || [], low: compiledStats.leastRatedComments || [], future: compiledStats.futureTopics || [] },
         topicsLearned: compiledStats.topicsLearned || [],
+      };
+    }
+
+    const hasActiveFilters = 
+      filters.trainerId !== "all" ||
+      filters.course !== "all" ||
+      filters.department !== "all" ||
+      filters.year !== "all" ||
+      filters.batch !== "all" ||
+      filters.dateRange !== "all";
+
+    if (hasActiveFilters) {
+      return {
+        totalSessions: filteredSessions.length,
+        totalResponses: 0,
+        totalRatingsCount: 0,
+        totalHours: (Number(filteredSessions.reduce((sum, s) => sum + (Number(s.sessionDuration) || 60), 0)) || 0) / 60,
+        avgRating: "0.00",
+        ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+        categoryAverages: {},
+        qualitative: { high: [], low: [], future: [] },
+        topicsLearned: [],
       };
     }
 
@@ -772,8 +794,16 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
   const topTrainers = useMemo(() => {
     const trainerStats = {};
 
-    // Use filtered responses if date range is active
-    if (filters.dateRange !== "all" && filteredResponses.length > 0) {
+    const hasActiveFilters = 
+      filters.trainerId !== "all" ||
+      filters.course !== "all" ||
+      filters.department !== "all" ||
+      filters.year !== "all" ||
+      filters.batch !== "all" ||
+      filters.dateRange !== "all";
+
+    // Use filtered responses if available
+    if (filteredResponses.length > 0) {
       // Build trainer stats from filtered responses
       const sessionMap = {};
       filteredSessions.forEach((session) => {
@@ -789,6 +819,9 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
         const trainerId = response.selectedTrainerId || session.assignedTrainer?.id;
         const trainerName = response.selectedTrainerName || session.assignedTrainer?.name || "Unknown";
         if (!trainerId) return;
+
+        // Filter trainer if a specific trainer is selected
+        if (filters.trainerId !== "all" && trainerId !== filters.trainerId) return;
 
         if (!trainerStats[trainerId]) {
           trainerStats[trainerId] = {
@@ -857,8 +890,11 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
               ? parseFloat((data.ratingSum / data.ratingCount).toFixed(2))
               : 0,
         }))
-        .sort((a, b) => b.avgRating - a.avgRating)
-        .slice(0, 10);
+        .sort((a, b) => b.avgRating - a.avgRating);
+    }
+
+    if (hasActiveFilters) {
+      return [];
     }
 
     // Default: Use session compiled stats
@@ -870,6 +906,9 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
       const sessionTrainers = session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : []);
       sessionTrainers.forEach(({ id: trainerId, name: trainerName }) => {
         if (!trainerId) return;
+
+        // Filter trainer if a specific trainer is selected
+        if (filters.trainerId !== "all" && trainerId !== filters.trainerId) return;
 
         // Use byTrainer stats if available for accurate per-trainer data
         const tStats = cs.byTrainer?.[trainerId];
@@ -928,9 +967,8 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
             ? (data.ratingSum / data.ratingCount).toFixed(1)
             : 0,
       }))
-      .sort((a, b) => b.avgRating - a.avgRating)
-      .slice(0, 5);
-  }, [filteredSessions, filteredResponses, filters.dateRange]);
+      .sort((a, b) => b.avgRating - a.avgRating);
+  }, [filteredSessions, filteredResponses, filters.dateRange, filters.trainerId]);
 
   if (loading) {
     return (
@@ -1041,6 +1079,48 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
               </Select>
             </div>
 
+            <div className="space-y-0.5 col-span-1">
+              <Label className="text-[11px] font-semibold">Year</Label>
+              <Select
+                value={filters.year}
+                onValueChange={(v) =>
+                  setFilters({ ...filters, year: v, department: "all", batch: "all" })
+                }
+                disabled={filters.course === "all"}
+              >
+                <SelectTrigger
+                  className={`h-7 text-[13px] font-medium px-2 ${filters.course === "all" ? "opacity-50" : ""}`}
+                >
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
+                <SelectContent>
+                  <div className="p-2 sticky top-0 bg-white z-10 border-b border-slate-100">
+                    <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
+                      <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
+                      <input 
+                        type="text" 
+                        placeholder="Search years..." 
+                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700" 
+                        value={searchQueries.year}
+                        onChange={(e) => handleSearchChange("year", e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()} 
+                      />
+                    </div>
+                  </div>
+                  <SelectItem value="all" className="text-[13px] font-medium">
+                    All Years
+                  </SelectItem>
+                  {availableYears
+                    .filter((y) => !searchQueries.year || y.toLowerCase().includes(searchQueries.year.toLowerCase()))
+                    .map((y) => (
+                    <SelectItem key={y} value={y} className="text-[13px] font-medium">
+                      Year {y}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-0.5">
               <Label className="text-[11px] font-semibold">Department</Label>
               <Select
@@ -1049,7 +1129,6 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                   setFilters({
                     ...filters,
                     department: v,
-                    year: "all",
                     batch: "all",
                   })
                 }
@@ -1082,48 +1161,6 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                     .map((d) => (
                     <SelectItem key={d} value={d} className="text-[13px] font-medium">
                       {d}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-0.5 col-span-1">
-              <Label className="text-[11px] font-semibold">Year</Label>
-              <Select
-                value={filters.year}
-                onValueChange={(v) =>
-                  setFilters({ ...filters, year: v, batch: "all" })
-                }
-                disabled={filters.course === "all"}
-              >
-                <SelectTrigger
-                  className={`h-7 text-[13px] font-medium px-2 ${filters.course === "all" ? "opacity-50" : ""}`}
-                >
-                  <SelectValue placeholder="All" />
-                </SelectTrigger>
-                <SelectContent>
-                  <div className="p-2 sticky top-0 bg-white z-10 border-b border-slate-100">
-                    <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
-                      <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
-                      <input 
-                        type="text" 
-                        placeholder="Search years..." 
-                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700" 
-                        value={searchQueries.year}
-                        onChange={(e) => handleSearchChange("year", e.target.value)}
-                        onKeyDown={(e) => e.stopPropagation()} 
-                      />
-                    </div>
-                  </div>
-                  <SelectItem value="all" className="text-[13px] font-medium">
-                    All Years
-                  </SelectItem>
-                  {availableYears
-                    .filter((y) => !searchQueries.year || y.toLowerCase().includes(searchQueries.year.toLowerCase()))
-                    .map((y) => (
-                    <SelectItem key={y} value={y} className="text-[13px] font-medium">
-                      Year {y}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1669,7 +1706,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
               Highest rated
             </CardDescription>
           </CardHeader>
-          <CardContent className="h-[160px] overflow-hidden scrollbar-hide">
+          <CardContent className="h-[160px] overflow-y-auto scrollbar-hide">
             <div className="space-y-2">
               {topTrainers.length > 0 ? (
                 topTrainers.map((trainer, idx) => (

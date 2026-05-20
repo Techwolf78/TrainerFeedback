@@ -153,6 +153,7 @@ const SessionAnalytics = ({ session, onBack }) => {
         { header: "Response ID", key: "id", width: 20 },
         { header: "Submitted At", key: "submittedAt", width: 20 },
         { header: "Device ID", key: "deviceId", width: 20 },
+        { header: "Trainer Name", key: "selectedTrainerName", width: 25 },
         ...questions.map((q, i) => ({
           header: `Q${i + 1}: ${q.text || q.question}`,
           key: `q_${q.id}`,
@@ -168,6 +169,7 @@ const SessionAnalytics = ({ session, onBack }) => {
             ? resp.submittedAt.toDate().toLocaleString()
             : new Date(resp.submittedAt).toLocaleString(),
           deviceId: resp.deviceId,
+          selectedTrainerName: resp.selectedTrainerName || "N/A",
         };
         if (resp.answers) {
           resp.answers.forEach((ans) => {
@@ -197,8 +199,17 @@ const SessionAnalytics = ({ session, onBack }) => {
         { field: "Session Topic", value: session.topic },
         { field: "College", value: session.collegeName },
         { field: "Trainer", value: activeTrainers.length > 0 ? activeTrainers.join(", ") : (session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : [])).map(t => t.name).join(", ") || "N/A" },
+        { field: "Domain", value: session.domain },
+        { field: "Course", value: session.course },
+        { field: "Batch", value: (session.batches || (session.batch ? [session.batch] : [])).join(", ") || "N/A" },
+        { field: "Department", value: (session.branches || (session.branch ? [session.branch] : [])).join(", ") || "N/A" },
+        { field: "Session Date", value: session.sessionDate },
+        { field: "Session Time", value: session.sessionTime },
+        { field: "", value: "" },
         { field: "Total Responses", value: stats.totalResponses },
         { field: "Average Rating", value: stats.avgRating },
+        { field: "Top Rating", value: stats.topRating },
+        { field: "Least Rating", value: stats.leastRating },
       ]);
       summarySheet.getRow(1).font = { bold: true };
       summarySheet.getRow(1).fill = {
@@ -208,7 +219,37 @@ const SessionAnalytics = ({ session, onBack }) => {
       };
       summarySheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
 
-      // --- SHEET 3: COMMENTS ---
+      // --- SHEET 3: RATING DISTRIBUTION ---
+      const ratingSheet = workbook.addWorksheet("Rating Distribution");
+      ratingSheet.columns = [
+        { header: "Rating", key: "rating", width: 15 },
+        { header: "Count", key: "count", width: 15 },
+        { header: "Percentage", key: "percentage", width: 15 },
+      ];
+      const totalRatings = Object.values(stats.ratingDistribution || {}).reduce(
+        (a, b) => a + b,
+        0,
+      );
+      Object.entries(stats.ratingDistribution || {}).forEach(
+        ([rating, count]) => {
+          ratingSheet.addRow({
+            rating: `${rating} Star`,
+            count: count,
+            percentage:
+              totalRatings > 0
+                ? `${((count / totalRatings) * 100).toFixed(1)}%`
+                : "0%",
+          });
+        },
+      );
+      ratingSheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+      ratingSheet.getRow(1).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF6366F1" },
+      };
+
+      // --- SHEET 4: COMMENTS ---
       const commentsSheet = workbook.addWorksheet("Comments");
       commentsSheet.columns = [
         { header: "Category", key: "category", width: 20 },
@@ -252,11 +293,11 @@ const SessionAnalytics = ({ session, onBack }) => {
       });
       saveAs(
         blob,
-        `analytics_${session.topic.replace(/[^a-z0-9]/gi, "_")}.xlsx`,
+        `feedback_${session.topic.replace(/[^a-z0-9]/gi, "_")}_${session.sessionDate}.xlsx`,
       );
 
       toast.dismiss();
-      toast.success("Report exported");
+      toast.success("Excel report exported successfully");
     } catch (error) {
       console.error("Export failed:", error);
       toast.dismiss();
