@@ -865,10 +865,11 @@ export const migrateSessionStats = async (sessionId, sessionData = null) => {
       byBranch
     });
 
-    const { updateDoc } = await import('firebase/firestore');
-    await updateDoc(doc(db, 'sessions', sessionId), {
-      compiledStats: null
-    });
+    // Keep compiledStats on parent doc for production rollout safety:
+    // const { updateDoc } = await import('firebase/firestore');
+    // await updateDoc(doc(db, 'sessions', sessionId), {
+    //   compiledStats: null
+    // });
 
     console.log(`[Migration] Legacy session ${sessionId} successfully migrated to decoupled subcollections.`);
     return true;
