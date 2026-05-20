@@ -73,54 +73,47 @@ export const subscribeToSessions = (callback) => {
     limit(50),
   );
 
-  let activeSessionUnsubscribes = {}; // { sessionId: unsubscribeFunction }
-
-  return onSnapshot(q, (snapshot) => {
-    const sessions = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-
-    // Identify sessions that need live response tracking or have existing stats in doc
-    // We now start listeners for ALL fetched sessions so that stats are loaded correctly in lists
-    const sessionIdsInView = new Set(sessions.map((s) => s.id));
-
-    // Cleanup unsubscribes for sessions that are no longer in view
-    Object.keys(activeSessionUnsubscribes).forEach((id) => {
-      if (!sessionIdsInView.has(id)) {
-        activeSessionUnsubscribes[id]();
-        delete activeSessionUnsubscribes[id];
-      }
+  return onSnapshot(q, async (snapshot) => {
+    let sessions = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        isLive: data.status === "active",
+        responseCount: data.compiledStats?.totalResponses || 0,
+      };
     });
 
-    // Setup new unsubscribes for sessions
-    sessions.forEach((session) => {
-      if (!activeSessionUnsubscribes[session.id]) {
-        // console.log(`[Stats] Starting sub-listener for session: ${session.id}`);
-        const responsesRef = collection(db, COLLECTION_NAME, session.id, "responses");
-        const responsesQuery = query(responsesRef, orderBy("submittedAt", "desc"));
-
-        activeSessionUnsubscribes[session.id] = onSnapshot(responsesQuery, async (responseSnapshot) => {
-          const responses = responseSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-          if (responses.length > 0) {
-            const { compileSessionStatsFromResponses } = await import("./responseService");
-            const liveStats = compileSessionStatsFromResponses(responses, session.questions || []);
-
-            // Identify current session in the list and update it
-            const updatedSessions = sessions.map(s => 
-              s.id === session.id ? { ...s, compiledStats: liveStats, isLive: s.status === "active", responseCount: responses.length } : s
-            );
-            
-            callback(
-              updatedSessions,
-              snapshot.docs[snapshot.docs.length - 1],
-              snapshot.docs.length === 50
-            );
+    // Resolve stats once if compiledStats is null or missing ratingDistribution for inactive sessions.
+    // We do NOT subscribe to active sessions' responses or auto-compile them dynamically in-memory.
+    for (let session of sessions) {
+      if (session.status !== "active") {
+        if (!session.compiledStats || !session.compiledStats.ratingDistribution) {
+          try {
+            const { getSessionStats } = await import("./responseService");
+            const fullStats = await getSessionStats(session.id, session);
+            if (fullStats) {
+              sessions = sessions.map(s => 
+                s.id === session.id 
+                  ? { 
+                      ...s, 
+                      compiledStats: fullStats,
+                      responseCount: fullStats.totalResponses || 0 
+                    } 
+                  : s
+              );
+              callback(
+                sessions,
+                snapshot.docs[snapshot.docs.length - 1],
+                snapshot.docs.length === 50
+              );
+            }
+          } catch (e) {
+            console.error("Failed to resolve stats for inactive session in subscribe:", session.id, e);
           }
-        });
+        }
       }
-    });
+    }
 
     // Initial callback for the main sessions update
     callback(
@@ -146,55 +139,47 @@ export const subscribeToCollegeSessions = (collegeId, callback) => {
     limit(100),
   );
 
-  let activeSessionUnsubscribes = {};
-
-  return onSnapshot(q, (snapshot) => {
-    let currentSessions = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-
-    // Identify sessions that need live response tracking or have existing stats
-    // We now start listeners for ALL fetched sessions so that stats are loaded correctly in lists
-    const sessionIdsInView = new Set(currentSessions.map((s) => s.id));
-
-    // Cleanup unsubscribes
-    Object.keys(activeSessionUnsubscribes).forEach((id) => {
-      if (!sessionIdsInView.has(id)) {
-        if (typeof activeSessionUnsubscribes[id] === "function") {
-          activeSessionUnsubscribes[id]();
-        }
-        delete activeSessionUnsubscribes[id];
-      }
+  return onSnapshot(q, async (snapshot) => {
+    let currentSessions = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        isLive: data.status === "active",
+        responseCount: data.compiledStats?.totalResponses || 0,
+      };
     });
 
-    // Setup sub-listeners for sessions
-    currentSessions.forEach((session) => {
-      if (!activeSessionUnsubscribes[session.id]) {
-        const responsesRef = collection(db, COLLECTION_NAME, session.id, "responses");
-        const responsesQuery = query(responsesRef, orderBy("submittedAt", "desc"));
-
-        activeSessionUnsubscribes[session.id] = onSnapshot(responsesQuery, async (responseSnapshot) => {
-          const responses = responseSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-          if (responses.length > 0) {
-            const { compileSessionStatsFromResponses } = await import("./responseService");
-            const liveStats = compileSessionStatsFromResponses(responses, session.questions || []);
-
-            // Update the specific session in the list
-            currentSessions = currentSessions.map(s => 
-              s.id === session.id ? { ...s, compiledStats: liveStats, isLive: s.status === "active", responseCount: responses.length } : s
-            );
-            
-            callback(
-              currentSessions,
-              snapshot.docs[snapshot.docs.length - 1],
-              snapshot.docs.length === 100
-            );
+    // Resolve stats once if compiledStats is null or missing ratingDistribution for inactive sessions.
+    // We do NOT subscribe to active sessions' responses or auto-compile them dynamically in-memory.
+    for (let session of currentSessions) {
+      if (session.status !== "active") {
+        if (!session.compiledStats || !session.compiledStats.ratingDistribution) {
+          try {
+            const { getSessionStats } = await import("./responseService");
+            const fullStats = await getSessionStats(session.id, session);
+            if (fullStats) {
+              currentSessions = currentSessions.map(s => 
+                s.id === session.id 
+                  ? { 
+                      ...s, 
+                      compiledStats: fullStats,
+                      responseCount: fullStats.totalResponses || 0 
+                    } 
+                  : s
+              );
+              callback(
+                currentSessions,
+                snapshot.docs[snapshot.docs.length - 1],
+                snapshot.docs.length === 100
+              );
+            }
+          } catch (e) {
+            console.error("Failed to resolve stats for inactive session in subscribeToCollegeSessions:", session.id, e);
           }
-        });
+        }
       }
-    });
+    }
 
     // Initial callback
     callback(
@@ -422,7 +407,7 @@ export const closeSessionWithStats = async (id) => {
     const sessionDataToCompile = sessionSnap.data();
 
     const allResponses = await getResponses(id);
-    const compiledSegments = compileAllSegmentsFromResponses(allResponses, sessionDataToCompile.questions || []);
+    const compiledSegments = compileAllSegmentsFromResponses(allResponses, sessionDataToCompile.questions || [], sessionDataToCompile);
 
     // Save detailed stats in stats subcollection documents
     await saveDecoupledStats(id, compiledSegments);
@@ -505,10 +490,39 @@ export const getOlderSessions = async (lastDoc, pageSize = 50) => {
     );
 
     const snapshot = await getDocs(q);
-    const sessions = snapshot.docs.map((doc) => ({
+    const rawSessions = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
+
+    // Resolve full stats for older inactive sessions
+    const { getSessionStats } = await import("./responseService");
+    const sessions = await Promise.all(
+      rawSessions.map(async (session) => {
+        const isLive = session.status === "active";
+        if (isLive) {
+          return {
+            ...session,
+            isLive,
+            responseCount: session.compiledStats?.totalResponses || 0,
+          };
+        }
+        
+        let resolvedSession = { ...session, isLive };
+        if (!session.compiledStats || !session.compiledStats.ratingDistribution) {
+          try {
+            const fullStats = await getSessionStats(session.id, session);
+            if (fullStats) {
+              resolvedSession.compiledStats = fullStats;
+            }
+          } catch (e) {
+            console.error("Failed to resolve stats for older session:", session.id, e);
+          }
+        }
+        resolvedSession.responseCount = resolvedSession.compiledStats?.totalResponses || 0;
+        return resolvedSession;
+      })
+    );
 
     return {
       sessions,
@@ -619,34 +633,11 @@ export const getAnalyticsSessions = async (params) => {
     filtered.sort((a, b) => (b.sessionDate || "").localeCompare(a.sessionDate || ""));
 
     // Slice to desired limitCount
-    const sessions = filtered.slice(0, limitCount);
-
-    // For active sessions (live), ensure we can still show stats even if they have not been closed/compiled yet.
-    const activeWithoutStats = sessions.filter(
-      (s) => s.status === "active" && !s.compiledStats,
-    );
-
-    if (activeWithoutStats.length > 0) {
-      try {
-        const { compileSessionStats } = await import("./responseService");
-        await Promise.all(
-          activeWithoutStats.map(async (s) => {
-            try {
-              const reactivationCount = s.reactivationCount || 0;
-              s.compiledStats = await compileSessionStats(s.id, reactivationCount);
-            } catch (err) {
-              // Best-effort: leave compiledStats undefined if compilation fails
-              console.warn(
-                `Failed to compile stats for active session ${s.id}:`,
-                err,
-              );
-            }
-          }),
-        );
-      } catch (err) {
-        console.warn("Failed to dynamically import responseService for live stats:", err);
-      }
-    }
+    const sessions = filtered.slice(0, limitCount).map((s) => ({
+      ...s,
+      isLive: s.status === "active",
+      responseCount: s.compiledStats?.totalResponses || 0,
+    }));
 
     return sessions;
   } catch (error) {

@@ -69,7 +69,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
-import { getResponseTrendData, getResponses, compileSessionStatsFromResponses } from "@/services/superadmin/responseService";
+import { getResponseTrendData, getResponses, compileSessionStatsFromResponses, processQualitativeComments } from "@/services/superadmin/responseService";
 import { useAdminData } from "@/contexts/AdminDataContext";
 
 // Helper function to get a color from red (0) to yellow (2.5) to green (5)
@@ -384,7 +384,11 @@ const CollegeOverviewTab = () => {
         avgRating: (compiledStats.avgRating || 0).toFixed(2),
         ratingDistribution: compiledStats.ratingDistribution || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
         categoryAverages,
-        qualitative: { high: compiledStats.topComments || [], low: compiledStats.leastRatedComments || [], future: compiledStats.futureTopics || [] },
+        qualitative: {
+          high: processQualitativeComments(compiledStats.topComments, 'high'),
+          low: processQualitativeComments(compiledStats.leastRatedComments, 'low'),
+          future: compiledStats.futureTopics || []
+        },
         topicsLearned: compiledStats.topicsLearned || [],
       };
     }
@@ -917,7 +921,7 @@ const CollegeOverviewTab = () => {
         );
         trainerStats[trainerId].responses += statsToUse.totalResponses || 0;
         trainerStats[trainerId].sessions += 1;
-        const comments = statsToUse.topComments || cs.comments || [];
+        const comments = processQualitativeComments(statsToUse.topComments || cs.comments || [], 'high');
         comments.slice(0, 2).forEach((c) => {
           if (trainerStats[trainerId].recentComments.length < 3) {
             trainerStats[trainerId].recentComments.push({

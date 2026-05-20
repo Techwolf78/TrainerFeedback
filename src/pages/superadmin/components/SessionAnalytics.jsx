@@ -53,6 +53,8 @@ import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { toPng } from "html-to-image";
 import { useRef } from "react";
+import { processQualitativeComments, compileSessionStats } from "@/services/superadmin/responseService";
+import { updateSession } from "@/services/superadmin/sessionService";
 
 // Helper function to get a color from red (0) to yellow (2.5) to green (5)
 const getDynamicColor = (rating) => {
@@ -66,7 +68,16 @@ const getDynamicColor = (rating) => {
 const SessionAnalytics = ({ session, onBack }) => {
   const analyticsRef = useRef(null);
   const hasFullStats = session?.compiledStats && session?.compiledStats.ratingDistribution;
-  const [stats, setStats] = useState(hasFullStats ? session.compiledStats : null);
+  const [stats, setStats] = useState(() => {
+    if (!hasFullStats) return null;
+    const cs = session.compiledStats;
+    return {
+      ...cs,
+      topComments: processQualitativeComments(cs.topComments, 'high'),
+      leastRatedComments: processQualitativeComments(cs.leastRatedComments, 'low'),
+      avgComments: processQualitativeComments(cs.avgComments)
+    };
+  });
   const [loading, setLoading] = useState(!hasFullStats);
   const [isLive, setIsLive] = useState(session?.status === "active");
   const [learnedLimit, setLearnedLimit] = useState(25);
@@ -78,47 +89,78 @@ const SessionAnalytics = ({ session, onBack }) => {
       if (showToast) toast.loading("Fetching live data...");
       setLoading(true);
 
-      const { getResponses, compileSessionStatsFromResponses, getSessionStats } =
-        await import("@/services/superadmin/responseService");
+      const { getSessionStats } = await import("@/services/superadmin/responseService");
 
       if (session.status !== "active") {
         // Closed session: fetch resolved stats from subcollections / parent fallback
         const resolvedStats = await getSessionStats(session.id, session);
-        setStats(resolvedStats);
+        if (resolvedStats) {
+          setStats({
+            ...resolvedStats,
+            topComments: processQualitativeComments(resolvedStats.topComments, 'high'),
+            leastRatedComments: processQualitativeComments(resolvedStats.leastRatedComments, 'low'),
+            avgComments: processQualitativeComments(resolvedStats.avgComments)
+          });
+        } else {
+          setStats(null);
+        }
       } else {
-        // Active session: compile fresh stats from live responses on the fly
-        const responses = await getResponses(session.id);
-
-        // Filter by session version if it exists
-        const currentVersionResponses = responses.filter(
-          (r) => (r.version ?? 0) === (session.version ?? 0),
-        );
-
-        const compiled = compileSessionStatsFromResponses(
-          currentVersionResponses,
-          session.questions || [],
-        );
-
-        setStats(compiled);
-        setLiveResponses(currentVersionResponses);
-        console.group(`--- Live Analytics: ${session.topic} ---`);
-        console.log("Total Responses:", compiled.totalResponses);
-        console.log("Top Rated Comments:", compiled.topComments);
-        console.log("Average Rated Comments:", compiled.avgComments);
-        console.log("Improvement Areas:", compiled.leastRatedComments);
-        console.log("Full Compiled Stats:", compiled);
-        console.groupEnd();
+        // Active session: fetch the latest session document from Firestore to check for manually compiled stats
+        const { getSessionById } = await import("@/services/superadmin/sessionService");
+        const latestSession = await getSessionById(session.id);
+        if (latestSession && latestSession.compiledStats) {
+          setStats({
+            ...latestSession.compiledStats,
+            topComments: processQualitativeComments(latestSession.compiledStats.topComments, 'high'),
+            leastRatedComments: processQualitativeComments(latestSession.compiledStats.leastRatedComments, 'low'),
+            avgComments: processQualitativeComments(latestSession.compiledStats.avgComments)
+          });
+        } else {
+          setStats(null);
+        }
       }
       if (showToast) {
         toast.dismiss();
-        toast.success("Live data updated");
+        toast.success("Data updated");
       }
     } catch (error) {
-      console.error("Failed to fetch live stats:", error);
+      console.error("Failed to fetch stats:", error);
       if (showToast) {
         toast.dismiss();
-        toast.error("Failed to update live data");
+        toast.error("Failed to update data");
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCompile = async () => {
+    try {
+      toast.loading("Compiling session statistics...");
+      setLoading(true);
+      
+      const compiled = await compileSessionStats(session.id, session.reactivationCount || 0);
+      
+      // Update session document with latest compiled stats without closing it
+      const { serverTimestamp } = await import("firebase/firestore");
+      await updateSession(session.id, {
+        compiledStats: compiled,
+        lastCompiledAt: serverTimestamp(),
+      });
+
+      setStats({
+        ...compiled,
+        topComments: processQualitativeComments(compiled.topComments, 'high'),
+        leastRatedComments: processQualitativeComments(compiled.leastRatedComments, 'low'),
+        avgComments: processQualitativeComments(compiled.avgComments)
+      });
+      
+      toast.dismiss();
+      toast.success("Statistics compiled successfully");
+    } catch (error) {
+      console.error("Failed to compile stats:", error);
+      toast.dismiss();
+      toast.error("Failed to compile statistics");
     } finally {
       setLoading(false);
     }
@@ -353,7 +395,7 @@ const SessionAnalytics = ({ session, onBack }) => {
       <div className="text-center py-12">
         <p className="text-muted-foreground">
           {session.status === "active"
-            ? "No responses received yet for this active session."
+            ? "No statistics compiled yet for this active session."
             : "No analytics data available for this session."}
         </p>
         <div className="flex justify-center gap-4 mt-4">
@@ -370,9 +412,10 @@ const SessionAnalytics = ({ session, onBack }) => {
               variant="default"
               size="lg"
               className="gap-2"
-              onClick={() => fetchLiveStats(true)}
+              onClick={handleCompile}
+              disabled={loading}
             >
-              <RefreshCw className="h-5 w-5" /> Refresh
+              <RefreshCw className={`h-5 w-5 ${loading ? "animate-spin" : ""}`} /> Compile Stats
             </Button>
           )}
         </div>
@@ -497,12 +540,12 @@ const SessionAnalytics = ({ session, onBack }) => {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => fetchLiveStats(true)}
+              onClick={handleCompile}
               className="gap-1 h-7 text-[13px] px-2 font-medium"
               disabled={loading}
             >
               <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
-              Refresh
+              Compile Stats
             </Button>
           )}
           <Button
