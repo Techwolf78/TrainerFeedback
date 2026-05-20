@@ -71,7 +71,7 @@ import {
 import { getAllSessions } from "@/services/superadmin/sessionService";
 import { getAllTrainers } from "@/services/superadmin/trainerService";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
-import { getResponseTrendData, getResponses, compileSessionStatsFromResponses, getSessionStats } from "@/services/superadmin/responseService";
+import { getResponseTrendData, getResponses, compileSessionStatsFromResponses, getSessionStats, processQualitativeComments } from "@/services/superadmin/responseService";
 
 // Helper function to get a color from red (0) to yellow (2.5) to green (5)
 const getDynamicColor = (rating) => {
@@ -159,15 +159,15 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
         const resolvedSessions = await Promise.all(
           rawSessions.map(async (session) => {
             // Skip active sessions (they compile stats on-the-fly) and sessions with no stats
-            if (session.status === "active" || !session.compiledStats) return session;
-            // If compiledStats is lightweight (no ratingDistribution), fetch full stats from subcollection
-            if (!session.compiledStats.ratingDistribution) {
+            if (session.status === "active") return session;
+            if (!session.compiledStats || !session.compiledStats.ratingDistribution) {
               try {
                 const fullStats = await getSessionStats(session.id, session);
-                return { ...session, compiledStats: fullStats };
+                if (fullStats) {
+                  return { ...session, compiledStats: fullStats };
+                }
               } catch (e) {
                 console.error("Failed to resolve stats for session:", session.id, e);
-                return session;
               }
             }
             return session;
@@ -404,7 +404,11 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
         avgRating: (compiledStats.avgRating || 0).toFixed(2),
         ratingDistribution: compiledStats.ratingDistribution || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
         categoryAverages,
-        qualitative: { high: compiledStats.topComments || [], low: compiledStats.leastRatedComments || [], future: compiledStats.futureTopics || [] },
+        qualitative: {
+          high: processQualitativeComments(compiledStats.topComments, 'high'),
+          low: processQualitativeComments(compiledStats.leastRatedComments, 'low'),
+          future: compiledStats.futureTopics || []
+        },
         topicsLearned: compiledStats.topicsLearned || [],
       };
     }
@@ -549,6 +553,12 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
         
         let allResponses = allResponsesToLoad.flat();
 
+        // Create a session lookup map to check fallback values from the session
+        const sessionMap = {};
+        filteredSessions.forEach((s) => {
+          sessionMap[s.id] = s;
+        });
+
         // Filter by response submission date if date range is not "all"
         if (filters.dateRange !== "all") {
           const { startDate, endDate } = getDateRange(
@@ -557,7 +567,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
             filters.customEndDate
           );
           
-        if (startDate && endDate) {
+          if (startDate && endDate) {
             allResponses = allResponses.filter((response) => {
               let responseDate;
               if (response.submittedAt?.toDate) {
@@ -575,26 +585,51 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
 
         // Filter by trainerId if trainer filter is active
         if (filters.trainerId !== "all") {
-          allResponses = allResponses.filter((response) => response.selectedTrainerId === filters.trainerId);
+          const trainerIdFilter = filters.trainerId;
+          allResponses = allResponses.filter((response) => {
+            if (response.selectedTrainerId) {
+              return response.selectedTrainerId === trainerIdFilter;
+            }
+            // Fallback to session trainers if not specified in response
+            const session = sessionMap[response.sessionId];
+            if (!session) return false;
+            const sessionTrainers = session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : []);
+            return sessionTrainers.some(t => t.id === trainerIdFilter);
+          });
         }
 
-        // Filter by batch if batch filter is active
+        // Filter by batch if batch filter is active (case-insensitive with fallback)
         if (filters.batch !== "all") {
-          allResponses = allResponses.filter(
-            (response) =>
-              response.selectedBatch === filters.batch ||
-              response.batch === filters.batch
-          );
+          const batchFilter = filters.batch.toLowerCase();
+          allResponses = allResponses.filter((response) => {
+            const rBatch = (response.selectedBatch || response.batch || "").toLowerCase();
+            if (rBatch) {
+              return rBatch === batchFilter;
+            }
+            // Fallback to session batch if not specified in response
+            const session = sessionMap[response.sessionId];
+            if (!session) return false;
+            const sBatch = (session.batch || "").toLowerCase();
+            const sBatches = (session.batches || []).map(b => b.toLowerCase());
+            return sBatch === batchFilter || sBatches.includes(batchFilter);
+          });
         }
 
-        // Filter by department if active
+        // Filter by department if active (case-insensitive with fallback)
         if (filters.department !== "all") {
-          allResponses = allResponses.filter(
-            (response) =>
-              response.selectedBranch === filters.department ||
-              response.branch === filters.department ||
-              response.department === filters.department
-          );
+          const deptFilter = filters.department.toLowerCase();
+          allResponses = allResponses.filter((response) => {
+            const rDept = (response.selectedBranch || response.branch || response.department || "").toLowerCase();
+            if (rDept) {
+              return rDept === deptFilter;
+            }
+            // Fallback to session branch/branches if not specified in response
+            const session = sessionMap[response.sessionId];
+            if (!session) return false;
+            const sBranch = (session.branch || "").toLowerCase();
+            const sBranches = (session.branches || []).map(b => b.toLowerCase());
+            return sBranch === deptFilter || sBranches.includes(deptFilter);
+          });
         }
 
         setFilteredResponses(allResponses);
@@ -704,8 +739,8 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
   const domainAnalyticsData = useMemo(() => {
     const domainMap = {};
 
-    // Use filtered responses if date range is active
-    if (filters.dateRange !== "all" && filteredResponses.length > 0) {
+    // Use filtered responses if available
+    if (filteredResponses.length > 0) {
       const sessionMap = {};
       filteredSessions.forEach((session) => {
         sessionMap[session.id] = session;
@@ -775,7 +810,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     });
 
     return { chartData, totalResponses };
-  }, [filteredSessions, filteredResponses, filters.dateRange]);
+  }, [filteredSessions, filteredResponses]);
 
   const ratingDistributionData = useMemo(() => {
     const distribution = aggregatedStats.ratingDistribution || {
@@ -944,7 +979,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
         );
         trainerStats[trainerId].responses += statsToUse.totalResponses || 0;
         trainerStats[trainerId].sessions += 1;
-        const comments = statsToUse.topComments || cs.comments || [];
+        const comments = processQualitativeComments(statsToUse.topComments || cs.comments || [], 'high');
         comments.slice(0, 2).forEach((c) => {
           if (trainerStats[trainerId].recentComments.length < 3) {
             trainerStats[trainerId].recentComments.push({

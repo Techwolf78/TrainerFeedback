@@ -67,7 +67,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSuperAdminData } from "@/contexts/SuperAdminDataContext";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
 import { getAnalyticsSessions } from "@/services/superadmin/sessionService";
-import { getResponseTrendData, getResponses, compileSessionStatsFromResponses, getSessionStats } from "@/services/superadmin/responseService";
+import { getResponseTrendData, getResponses, compileSessionStatsFromResponses, getSessionStats, processQualitativeComments } from "@/services/superadmin/responseService";
 import { cn } from "@/lib/utils";
 
 
@@ -264,7 +264,8 @@ const OverviewTab = ({
       avgRating: agg.ratingCount > 0 ? (agg.ratingSum / agg.ratingCount).toFixed(2) : 0,
       categoryAverages,
       qualitative: {
-        ...agg.qualitative,
+        high: processQualitativeComments(agg.qualitative.high, 'high'),
+        low: processQualitativeComments(agg.qualitative.low, 'low'),
         future
       }
     };
@@ -410,14 +411,15 @@ const OverviewTab = ({
         // Resolve full stats from subcollections for sessions with lightweight compiledStats
         const fetchedSessions = await Promise.all(
           fetchedSessionsRaw.map(async (session) => {
-            if (session.status === "active" || !session.compiledStats) return session;
-            if (!session.compiledStats.ratingDistribution) {
+            if (session.status === "active") return session;
+            if (!session.compiledStats || !session.compiledStats.ratingDistribution) {
               try {
                 const fullStats = await getSessionStats(session.id, session);
-                return { ...session, compiledStats: fullStats };
+                if (fullStats) {
+                  return { ...session, compiledStats: fullStats };
+                }
               } catch (e) {
                 console.error("Failed to resolve stats for session in OverviewTab:", session.id, e);
-                return session;
               }
             }
             return session;
@@ -443,10 +445,10 @@ const OverviewTab = ({
     return () => clearTimeout(timer);
   }, [filters, isDefaultView]);
 
-  // Load and filter responses by submission date when date range is active or trainer filter is active
+  // Load and filter responses by submission date and other active filters
   useEffect(() => {
     const loadFilteredResponses = async () => {
-      const shouldLoad = (filters.dateRange !== "all" || filters.trainerId !== "all") && fetchedFilteredSessions.length > 0;
+      const shouldLoad = !isDefaultView && fetchedFilteredSessions.length > 0;
       if (!shouldLoad) {
         setFilteredResponses([]);
         return;
@@ -455,16 +457,26 @@ const OverviewTab = ({
       try {
         // Load all responses for filtered sessions with sessionId attached
         const allResponsesToLoad = await Promise.all(
-          fetchedFilteredSessions.map((session) =>
-            getResponses(session.id)
+          fetchedFilteredSessions.map((session) => {
+            // Live responses shouldn't load for active sessions unless manually compiled
+            if (session.status === "active" && !session.compiledStats) {
+              return Promise.resolve([]);
+            }
+            return getResponses(session.id)
               .then((responses) =>
                 responses.map((r) => ({ ...r, sessionId: session.id }))
               )
-              .catch(() => [])
-          )
+              .catch(() => []);
+          })
         );
 
         let allResponses = allResponsesToLoad.flat();
+
+        // Create a session lookup map to check fallback values from the session
+        const sessionMap = {};
+        fetchedFilteredSessions.forEach((s) => {
+          sessionMap[s.id] = s;
+        });
 
         // Filter by response submission date
         const { startDate, endDate } = getDateRange(
@@ -489,18 +501,36 @@ const OverviewTab = ({
           });
         }
 
-        // Filter by trainerId if trainer filter is active
+        // Filter by trainerId if trainer filter is active (case-insensitive with fallback)
         if (filters.trainerId !== "all") {
-          allResponses = allResponses.filter((response) => response.selectedTrainerId === filters.trainerId);
+          const trainerIdFilter = filters.trainerId;
+          allResponses = allResponses.filter((response) => {
+            if (response.selectedTrainerId) {
+              return response.selectedTrainerId === trainerIdFilter;
+            }
+            // Fallback to session trainers
+            const session = sessionMap[response.sessionId];
+            if (!session) return false;
+            const sessionTrainers = session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : []);
+            return sessionTrainers.some(t => t.id === trainerIdFilter);
+          });
         }
 
-        // Filter by batch if batch filter is active
+        // Filter by batch if batch filter is active (case-insensitive with fallback)
         if (filters.batch !== "all") {
-          allResponses = allResponses.filter(
-            (response) =>
-              response.selectedBatch === filters.batch ||
-              response.batch === filters.batch
-          );
+          const batchFilter = filters.batch.toLowerCase();
+          allResponses = allResponses.filter((response) => {
+            const rBatch = (response.selectedBatch || response.batch || "").toLowerCase();
+            if (rBatch) {
+              return rBatch === batchFilter;
+            }
+            // Fallback to session batch/batches
+            const session = sessionMap[response.sessionId];
+            if (!session) return false;
+            const sBatch = (session.batch || "").toLowerCase();
+            const sBatches = (session.batches || []).map(b => b.toLowerCase());
+            return sBatch === batchFilter || sBatches.includes(batchFilter);
+          });
         }
 
         setFilteredResponses(allResponses);
@@ -511,14 +541,14 @@ const OverviewTab = ({
     };
 
     loadFilteredResponses();
-  }, [fetchedFilteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate, filters.trainerId, filters.batch]);
+  }, [fetchedFilteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate, filters.trainerId, filters.batch, isDefaultView]);
 
   // Calculate aggregated stats from sessions
   const aggregatedStats = useMemo(() => {
     let result = null;
 
-    // If date range filter or trainer filter is active and we have filtered responses, recalculate from responses
-    const shouldRecalculateFromResponses = !isDefaultView && (filters.dateRange !== "all" || filters.trainerId !== "all") && filteredResponses.length > 0;
+    // If we have filtered responses, recalculate from responses to ensure accurate filtering
+    const shouldRecalculateFromResponses = !isDefaultView && filteredResponses.length > 0;
     if (shouldRecalculateFromResponses) {
       const compiledStats = compileSessionStatsFromResponses(filteredResponses);
 
@@ -571,27 +601,26 @@ const OverviewTab = ({
         ratingDistribution: compiledStats.ratingDistribution || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
         categoryAverages,
         qualitative: {
-          high: compiledStats.topComments || [],
-          low: compiledStats.leastRatedComments || [],
+          high: processQualitativeComments(compiledStats.topComments, 'high'),
+          low: processQualitativeComments(compiledStats.leastRatedComments, 'low'),
           future: compiledStats.futureTopics || [],
         },
         topicsLearned: compiledStats.topicsLearned || [],
       };
-    } else if (!isDefaultView && (filters.dateRange !== "all" || filters.trainerId !== "all") && analyticsData) {
-      // When date range is filtered but we don't have filtered responses yet, return empty structure
+    } else if (!isDefaultView && analyticsData) {
+      // Fallback: If we have filtered sessions but no filtered responses were successfully loaded,
+      // return a default zero state for filtered view so we don't display overall/stale cached data.
       result = {
-        totalSessions: 0,
+        totalSessions: fetchedFilteredSessions.length,
         totalResponses: 0,
         totalRatingsCount: 0,
-        totalHours: 0,
+        totalHours: (Number(fetchedFilteredSessions.reduce((sum, s) => sum + (Number(s.sessionDuration) || 60), 0)) || 0) / 60,
         avgRating: 0,
         ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
         categoryAverages: {},
         qualitative: { high: [], low: [], future: [] },
         topicsLearned: [],
       };
-    } else if (!isDefaultView && analyticsData) {
-      result = analyticsData;
     } else if (isDefaultView && sessions.length > 0) {
       result = aggregateStatsFromSessions(sessions);
     } else {
@@ -615,8 +644,8 @@ const OverviewTab = ({
   const allCollegesPerformance = useMemo(() => {
     if (!colleges || colleges.length === 0) return [];
 
-    // When date range or trainer filter is active, use filteredResponses (even if empty)
-    const shouldUseFilteredResponses = !isDefaultView && (filters.dateRange !== "all" || filters.trainerId !== "all");
+    // Use filtered responses when any filter is active
+    const shouldUseFilteredResponses = !isDefaultView;
     
     if (shouldUseFilteredResponses) {
       if (filteredResponses.length === 0) return [];
@@ -724,8 +753,8 @@ const OverviewTab = ({
   
   useEffect(() => {
     const calculateTrendData = async () => {
-      // When date range or trainer filter is active, use filteredResponses (even if empty)
-      const shouldUseFilteredResponses = !isDefaultView && (filters.dateRange !== "all" || filters.trainerId !== "all");
+      // When filters are active, use filteredResponses (even if empty)
+      const shouldUseFilteredResponses = !isDefaultView;
       
       if (shouldUseFilteredResponses) {
         if (filteredResponses.length === 0) {

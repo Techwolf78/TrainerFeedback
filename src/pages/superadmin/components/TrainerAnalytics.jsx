@@ -50,7 +50,7 @@ import {
   Cell,
 } from "recharts";
 import { getSessionsByTrainer } from "@/services/superadmin/sessionService";
-import { getResponseTrendData } from "@/services/superadmin/responseService";
+import { getResponseTrendData, processQualitativeComments } from "@/services/superadmin/responseService";
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
 
@@ -360,7 +360,11 @@ const TrainerAnalytics = ({ trainerId, trainerName, onBack }) => {
       avgRating,
       ratingDistribution: stats.ratingDistribution,
       categoryAverages,
-      qualitative: stats.qualitative,
+      qualitative: {
+        high: processQualitativeComments(stats.qualitative.high, 'high'),
+        low: processQualitativeComments(stats.qualitative.low, 'low'),
+        future: stats.qualitative.future,
+      },
     };
   }, [filteredSessions]);
 

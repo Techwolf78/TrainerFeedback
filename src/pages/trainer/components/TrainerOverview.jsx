@@ -51,6 +51,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 // Removed legacy mock imports
 import { getAnalyticsSessions } from "@/services/superadmin/sessionService"; 
+import { processQualitativeComments } from "@/services/superadmin/responseService";
 import { toast } from "sonner";
 
 const blankSegmentStats = {
@@ -306,8 +307,8 @@ const TrainerOverview = ({ sessions = [], isLoading: isDashboardLoading = false 
       ratingDistribution: stats.ratingDistribution,
       categoryAverages,
       qualitative: {
-        high: stats.qualitative.high.sort((a, b) => (b.avgRating || 0) - (a.avgRating || 0)).slice(0, 5),
-        low: stats.qualitative.low.sort((a, b) => (a.avgRating || 0) - (b.avgRating || 0)).slice(0, 5),
+        high: processQualitativeComments(stats.qualitative.high, 'high').slice(0, 5),
+        low: processQualitativeComments(stats.qualitative.low, 'low').slice(0, 5),
         future: stats.qualitative.future.sort((a, b) => (b.count || 0) - (a.count || 0)).slice(0, 10)
       },
     };
