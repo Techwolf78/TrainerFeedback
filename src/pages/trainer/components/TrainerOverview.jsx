@@ -47,6 +47,7 @@ import {
   PolarGrid,
   PolarAngleAxis,
   PolarRadiusAxis,
+  Cell,
 } from "recharts";
 import { useAuth } from "@/contexts/AuthContext";
 // Removed legacy mock imports
@@ -581,76 +582,90 @@ const TrainerOverview = ({ sessions = [], isLoading: isDashboardLoading = false 
 
       {/* Stats Cards */}
       <div className="grid gap-3 md:gap-4 grid-cols-2 lg:grid-cols-4">
-        <Card className="glass-card">
+        <Card className="glass-card overflow-hidden relative group border-none shadow-md">
+          <div className="absolute top-0 left-0 w-1 h-full bg-blue-500 mr-2"></div>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">
+            <CardTitle className="text-sm font-semibold text-slate-600">
               Total Responses
             </CardTitle>
-            <ClipboardList className="h-4 w-4 text-muted-foreground" />
+            <div className="p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors">
+              <ClipboardList className="h-4 w-4 text-blue-600" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">
+            <div className="text-3xl font-bold text-slate-800">
               {aggregatedStats.totalResponses}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Total Student Responses
+            <p className="text-xs text-slate-500 mt-1 font-medium">
+              Student feedback received
             </p>
           </CardContent>
         </Card>
 
-        <Card className="glass-card">
+        <Card className="glass-card overflow-hidden relative group border-none shadow-md">
+          <div className="absolute top-0 left-0 w-1 h-full bg-amber-500 mr-2"></div>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">
+            <CardTitle className="text-sm font-semibold text-slate-600">
               Average Rating
             </CardTitle>
-            <Star className="h-4 w-4 text-yellow-500" />
+            <div className="p-2 bg-amber-50 rounded-lg group-hover:bg-amber-100 transition-colors">
+              <Star className="h-4 w-4 text-amber-500 fill-amber-500" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">
+            <div className="text-3xl font-bold text-slate-800">
               {aggregatedStats.avgRating}
             </div>
             <div className="flex items-center gap-1 mt-1">
               {[1, 2, 3, 4, 5].map((i) => (
                 <Star
                   key={i}
-                  className={`h-3 w-3 ${i <= Math.round(Number(aggregatedStats.avgRating)) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"}`}
+                  className={`h-3 w-3 ${i <= Math.round(Number(aggregatedStats.avgRating)) ? "fill-amber-400 text-amber-400" : "text-slate-300"}`}
                 />
               ))}
-              <span className="text-xs text-muted-foreground ml-1">
+              <span className="text-xs text-slate-500 ml-1 font-medium">
                 out of 5.0
               </span>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="glass-card">
+        <Card className="glass-card overflow-hidden relative group border-none shadow-md">
+          <div className="absolute top-0 left-0 w-1 h-full bg-purple-500 mr-2"></div>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">
+            <CardTitle className="text-sm font-semibold text-slate-600">
               Total Sessions
             </CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <div className="p-2 bg-purple-50 rounded-lg group-hover:bg-purple-100 transition-colors">
+              <Calendar className="h-4 w-4 text-purple-600" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">
+            <div className="text-3xl font-bold text-slate-800">
               {aggregatedStats.totalSessions}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Conducted Sessions
+            <p className="text-xs text-slate-500 mt-1 font-medium">
+              Conducted modules
             </p>
           </CardContent>
         </Card>
 
-        <Card className="glass-card">
+        <Card className="glass-card overflow-hidden relative group border-none shadow-md">
+          <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500 mr-2"></div>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Hours</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-semibold text-slate-600">
+              Total Hours
+            </CardTitle>
+            <div className="p-2 bg-emerald-50 rounded-lg group-hover:bg-emerald-100 transition-colors">
+              <Clock className="h-4 w-4 text-emerald-600" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">
+            <div className="text-3xl font-bold text-slate-800">
               {aggregatedStats.totalHours}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Training Hours Delivered
+            <p className="text-xs text-slate-500 mt-1 font-medium">
+              Training delivery time
             </p>
           </CardContent>
         </Card>
@@ -736,7 +751,7 @@ const TrainerOverview = ({ sessions = [], isLoading: isDashboardLoading = false 
                       dataKey="score"
                       stroke="hsl(var(--primary))"
                       fill="hsl(var(--primary))"
-                      fillOpacity={0.4}
+                      fillOpacity={0.5}
                     />
                     <Tooltip
                       contentStyle={{ borderRadius: "8px" }}
@@ -802,9 +817,19 @@ const TrainerOverview = ({ sessions = [], isLoading: isDashboardLoading = false 
                   />
                   <Bar
                     dataKey="count"
-                    fill="url(#barGradient)"
                     radius={[4, 4, 0, 0]}
-                  />
+                  >
+                    {ratingDistributionData.map((entry, index) => {
+                      const colors = [
+                        "#ef4444", // 1 - Red
+                        "#f97316", // 2 - Orange
+                        "#facc15", // 3 - Yellow
+                        "#84cc16", // 4 - Lime
+                        "#22c55e", // 5 - Green
+                      ];
+                      return <Cell key={`cell-${index}`} fill={colors[index] || "hsl(var(--primary))"} />;
+                    })}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>

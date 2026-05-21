@@ -275,33 +275,53 @@ const TrainerSessions = ({ sessions, loading, onEdit, onRefresh, projectCodes = 
   return (
     <div className="space-y-6">
       
-      {/* Stats Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
-        <div className="flex items-center gap-4 p-4 bg-card border rounded-xl shadow-sm">
-          <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+      {/* Dashboard Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Sessions */}
+        <div className="bg-white border-none rounded-2xl p-5 shadow-sm flex items-center gap-4 relative overflow-hidden group">
+          <div className="absolute top-0 left-0 w-1.5 h-full bg-primary/60 mr-2"></div>
+          <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
             <Calendar className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <p className="text-3xl font-bold text-foreground">{sessionStats.total}</p>
-            <p className="text-sm text-muted-foreground">Total Sessions</p>
+            <p className="text-sm font-semibold text-slate-500">Total Sessions</p>
+            <p className="text-3xl font-bold text-slate-800">{sessionStats.total}</p>
           </div>
         </div>
-        <div className="hidden sm:flex items-center gap-4 p-4 bg-card border rounded-xl shadow-sm">
-          <div className="h-12 w-12 rounded-full bg-green-500/10 flex items-center justify-center">
-            <CheckCircle2 className="h-6 w-6 text-green-500" />
+
+        {/* Active Now */}
+        <div className="bg-white border-none rounded-2xl p-5 shadow-sm flex items-center gap-4 relative overflow-hidden group">
+          <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500/60 mr-2"></div>
+          <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <PlayCircle className="h-6 w-6 text-blue-500" />
           </div>
           <div>
-            <p className="text-3xl font-bold text-foreground">{sessionStats.active}</p>
-            <p className="text-sm text-muted-foreground">Active Sessions</p>
+            <p className="text-sm font-semibold text-slate-500">Active Now</p>
+            <p className="text-3xl font-bold text-slate-800">{sessionStats.active}</p>
           </div>
         </div>
-        <div className="hidden sm:flex items-center gap-4 p-4 bg-card border rounded-xl shadow-sm">
-          <div className="h-12 w-12 rounded-full bg-green-500/10 flex items-center justify-center">
-            <FiCheckSquare className="h-6 w-6 text-green-500" />
+
+        {/* In Progress */}
+        <div className="bg-white border-none rounded-2xl p-5 shadow-sm flex items-center gap-4 relative overflow-hidden group">
+          <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-500/60 mr-2"></div>
+          <div className="h-12 w-12 rounded-xl bg-amber-50 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <AlertTriangle className="h-6 w-6 text-amber-500" />
           </div>
           <div>
-            <p className="text-3xl font-bold text-foreground">{sessionStats.inactive}</p>
-            <p className="text-sm text-muted-foreground">Completed Sessions</p>
+            <p className="text-sm font-semibold text-slate-500">In Progress</p>
+            <p className="text-3xl font-bold text-slate-800">{sessionStats.active}</p>
+          </div>
+        </div>
+
+        {/* Completed */}
+        <div className="bg-white border-none rounded-2xl p-5 shadow-sm flex items-center gap-4 relative overflow-hidden group">
+          <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500/60 mr-2"></div>
+          <div className="h-12 w-12 rounded-xl bg-emerald-50 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <FiCheckSquare className="h-6 w-6 text-emerald-500" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-500">Completed</p>
+            <p className="text-3xl font-bold text-slate-800">{sessionStats.inactive}</p>
           </div>
         </div>
       </div>

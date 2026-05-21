@@ -217,12 +217,12 @@ const TrainerDashboard = () => {
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
-              className={`w-full justify-start h-10 mb-1 ${
-                isSidebarCollapsed ? "px-2 justify-center" : "px-3 gap-3"
+              className={`w-full justify-start h-11 mb-2 transition-all duration-200 ${
+                isSidebarCollapsed ? "px-2 justify-center" : "px-4 gap-3"
               } ${
                 isActive
-                  ? "bg-primary-foreground text-primary hover:bg-primary-foreground hover:text-primary"
-                  : "text-primary-foreground hover:bg-primary/80"
+                  ? "bg-white/15 text-white border-l-4 border-blue-400 font-bold shadow-sm"
+                  : "text-white/70 hover:bg-white/10 hover:text-white"
               }`}
               onClick={() => navigate(path)}
             >
@@ -252,7 +252,7 @@ const TrainerDashboard = () => {
 
       {/* Sidebar - hidden on mobile, shown as overlay when menu open */}
       <aside
-        className={`bg-primary text-primary-foreground border-r border-primary/80 flex flex-col transition-all duration-300 ease-in-out h-screen z-50
+        className={`bg-[linear-gradient(180deg,#01224E_0%,#013366_100%)] text-primary-foreground border-r border-primary/20 flex flex-col transition-all duration-300 ease-in-out h-screen z-50 shadow-2xl
           ${isSidebarCollapsed ? "w-20" : "w-64"}
           fixed lg:relative
           ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
@@ -382,7 +382,7 @@ const TrainerDashboard = () => {
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
-                  className={`text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground ${
+                  className={`text-white/70 hover:bg-red-500/20 hover:text-red-100 transition-colors ${
                     isSidebarCollapsed
                       ? "h-10 w-10 p-0"
                       : "w-full justify-start gap-3"
