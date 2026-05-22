@@ -67,7 +67,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSuperAdminData } from "@/contexts/SuperAdminDataContext";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
 import { getAnalyticsSessions } from "@/services/superadmin/sessionService";
-import { getResponseTrendData, getResponses, compileSessionStatsFromResponses, getSessionStats, processQualitativeComments } from "@/services/superadmin/responseService";
+import { getResponseTrendData, getResponses, compileSessionStatsFromResponses, getSessionStats, processQualitativeComments, isValidTopicOrInterest } from "@/services/superadmin/responseService";
 import { cn } from "@/lib/utils";
 
 // Helper to render session ID in two lines to save width
@@ -271,6 +271,7 @@ const OverviewTab = ({
       if (stats.topicsLearned) {
         if (!agg.topicsLearnedSessionIds) agg.topicsLearnedSessionIds = {};
         stats.topicsLearned.forEach(topic => {
+          if (!isValidTopicOrInterest(topic)) return;
           const name = topic.name.toLowerCase();
           agg.topicsLearned[name] = (agg.topicsLearned[name] || 0) + topic.count;
           if (!agg.topicsLearnedSessionIds[name]) {
@@ -286,6 +287,7 @@ const OverviewTab = ({
       // Future Topics
       if (stats.futureTopics) {
         stats.futureTopics.forEach(topic => {
+          if (!isValidTopicOrInterest(topic)) return;
           const name = (topic.name || "").toLowerCase();
           if (!agg.qualitative.futureTopics) agg.qualitative.futureTopics = {};
           if (!agg.qualitative.futureTopics[name]) {
@@ -672,9 +674,9 @@ const OverviewTab = ({
         qualitative: {
           high: processQualitativeComments(compiledStats.topComments, 'high'),
           low: processQualitativeComments(compiledStats.leastRatedComments, 'low'),
-          future: compiledStats.futureTopics || [],
+          future: (compiledStats.futureTopics || []).filter(isValidTopicOrInterest),
         },
-        topicsLearned: compiledStats.topicsLearned || [],
+        topicsLearned: (compiledStats.topicsLearned || []).filter(isValidTopicOrInterest),
       };
     } else if (!isDefaultView && analyticsData) {
       // Fallback: If we have filtered sessions but no filtered responses were successfully loaded,
@@ -1605,8 +1607,7 @@ const OverviewTab = ({
               color: "border-l-violet-500",
               items: (aggregatedStats.qualitative.future || []).map(item => ({
                 ...item,
-                // Ensure avgRating is hidden if it's 0 or null (often happens with text-only data)
-                avgRating: Number(item.avgRating) > 0 ? item.avgRating : null
+                avgRating: null
               })),
               empty: "No requests yet.",
               theme: "violet"

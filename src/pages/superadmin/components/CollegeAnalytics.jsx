@@ -71,7 +71,7 @@ import {
 import { getAllSessions } from "@/services/superadmin/sessionService";
 import { getAllTrainers } from "@/services/superadmin/trainerService";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
-import { getResponseTrendData, getResponses, compileSessionStatsFromResponses, getSessionStats, processQualitativeComments } from "@/services/superadmin/responseService";
+import { getResponseTrendData, getResponses, compileSessionStatsFromResponses, getSessionStats, processQualitativeComments, isValidTopicOrInterest } from "@/services/superadmin/responseService";
 
 // Helper function to get a color from red (0) to yellow (2.5) to green (5)
 const getDynamicColor = (rating) => {
@@ -407,9 +407,9 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
         qualitative: {
           high: processQualitativeComments(compiledStats.topComments, 'high'),
           low: processQualitativeComments(compiledStats.leastRatedComments, 'low'),
-          future: compiledStats.futureTopics || []
+          future: (compiledStats.futureTopics || []).filter(isValidTopicOrInterest)
         },
-        topicsLearned: compiledStats.topicsLearned || [],
+        topicsLearned: (compiledStats.topicsLearned || []).filter(isValidTopicOrInterest),
       };
     }
 
@@ -494,6 +494,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
       // Aggregate topics
       if (statsToUse.topicsLearned) {
         statsToUse.topicsLearned.forEach((topic) => {
+          if (!isValidTopicOrInterest(topic)) return;
           const name = topic.name.toLowerCase();
           stats.allTopics[name] = (stats.allTopics[name] || 0) + topic.count;
         });
@@ -1287,7 +1288,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
-                        className="h-7 text-[13px] font-medium px-2 justify-start text-left font-normal flex-1"
+                        className="h-7 text-[13px] font-medium px-2 justify-start text-left flex-1"
                       >
                         <CalendarIcon className="mr-1 h-3 w-3 shrink-0" />
                         <span className="truncate">
@@ -1754,7 +1755,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
                         #{idx + 1}
                       </div>
                       <div className="space-y-0.5">
-                        <p className="font-semibold text-[13px] font-medium leading-none">
+                        <p className="font-semibold text-[13px] leading-none">
                           {trainer.name}
                         </p>
                         <p className="text-[10px] text-muted-foreground">

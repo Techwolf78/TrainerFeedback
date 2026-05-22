@@ -268,7 +268,7 @@ export const compileSessionStatsFromResponses = (
         const topics = val
           .split(",")
           .map((t) => t.trim())
-          .filter(Boolean);
+          .filter((t) => t && isValidTopicOrInterest(t));
         topics.forEach((t) => {
           topicsLearnedRaw.push({
             name: t,
@@ -286,7 +286,7 @@ export const compileSessionStatsFromResponses = (
         const futures = val
           .split(",")
           .map((t) => t.trim())
-          .filter(Boolean);
+          .filter((f) => f && isValidTopicOrInterest(f));
         futures.forEach((f) => {
           futureTopicsRaw.push({
             text: f,
@@ -299,8 +299,8 @@ export const compileSessionStatsFromResponses = (
     });
   });
 
-  const topicCounts = {};
-  const topicSessionIds = {};
+  const topicCounts = Object.create(null);
+  const topicSessionIds = Object.create(null);
   topicsLearnedRaw.forEach((tObj) => {
     const normalized = tObj.name.toLowerCase();
     topicCounts[normalized] = (topicCounts[normalized] || 0) + 1;
@@ -320,7 +320,7 @@ export const compileSessionStatsFromResponses = (
     }))
     .slice(0, 15);
 
-  const futureTopicCounts = {};
+  const futureTopicCounts = Object.create(null);
   futureTopicsRaw.forEach((f) => {
     const normalized = f.text.trim();
     if (!normalized) return;
@@ -1117,6 +1117,69 @@ export const migrateSessionStats = async (sessionId, sessionData = null) => {
  * @param {Array} comments - Array of comments (can be strings or objects with a text property)
  * @param {String|null} type - Optional type ('high' for highlights, 'low' for pain points) to run sentiment checks
  * @returns {Array} - Cleaned and sorted comments
+ */
+export const isValidTopicOrInterest = (topic) => {
+  if (!topic) return false;
+  let text = "";
+  if (typeof topic === "string") {
+    text = topic;
+  } else if (typeof topic === "object") {
+    text = topic.name || topic.text || "";
+  }
+  if (typeof text !== "string") return false;
+  const trimmed = text.trim();
+  
+  if (trimmed.length < 2) {
+    const char = trimmed.toLowerCase();
+    if (char !== "c" && char !== "r") {
+      return false;
+    }
+  }
+
+  if (/^[.,\/#!$%\^&\*;:{}=\-_`~()?\s]+$/.test(trimmed)) return false;
+
+  const lower = trimmed.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "").trim();
+
+  const uselessWords = new Set([
+    "no",
+    "na",
+    "nil",
+    "none",
+    "nothing",
+    "n/a",
+    "no feedback",
+    "no comments",
+    "good",
+    "nice",
+    "ok",
+    "yes",
+    "thanks",
+    "thank you",
+    "sir",
+    "ma'am",
+    "mam",
+    "okay",
+    "no concerns",
+    "no concerns reported",
+    "nothing yet",
+    "not",
+    "neither",
+    "null",
+    "undefined",
+  ]);
+
+  if (uselessWords.has(lower)) return false;
+
+  return true;
+};
+
+/**
+ * Filters and sanitizes raw feedback comments by stripping out useless fillers,
+ * removing duplicates, and sorting by content quality (length & detail).
+ *
+ * @param {Array} comments - The raw comment objects.
+ * @param {string} [type] - Optional ('high'|'low') to run sentiment checks.
+ * @returns {Array}
  */
 export const processQualitativeComments = (comments, type = null) => {
   if (!comments || !Array.isArray(comments)) return [];

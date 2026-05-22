@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -53,7 +53,7 @@ import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { toPng } from "html-to-image";
 import { useRef } from "react";
-import { processQualitativeComments, compileSessionStats } from "@/services/superadmin/responseService";
+import { processQualitativeComments, compileSessionStats, isValidTopicOrInterest } from "@/services/superadmin/responseService";
 import { updateSession } from "@/services/superadmin/sessionService";
 
 // Helper function to get a color from red (0) to yellow (2.5) to green (5)
@@ -425,8 +425,16 @@ const SessionAnalytics = ({ session, onBack }) => {
 
   const loadMoreStep = 25;
 
-  const learnedToShow = (stats.topicsLearned || []).slice(0, learnedLimit);
-  const futureToShow = (stats.futureTopics || []).slice(0, futureLimit);
+  const filteredTopicsLearned = useMemo(() => {
+    return (stats.topicsLearned || []).filter(isValidTopicOrInterest);
+  }, [stats.topicsLearned]);
+
+  const filteredFutureTopics = useMemo(() => {
+    return (stats.futureTopics || []).filter(isValidTopicOrInterest);
+  }, [stats.futureTopics]);
+
+  const learnedToShow = filteredTopicsLearned.slice(0, learnedLimit);
+  const futureToShow = filteredFutureTopics.slice(0, futureLimit);
 
   // Prepare chart data - all ratings for bar chart (including zeros)
   const ratingDataAll = Object.entries(stats.ratingDistribution || {}).map(
@@ -1101,7 +1109,7 @@ const SessionAnalytics = ({ session, onBack }) => {
 
               <TabsContent value="learned" className="mt-0">
                 <div className="max-h-[160px] overflow-y-auto pr-1">
-                  {(stats.topicsLearned || []).length > 0 ? (
+                  {filteredTopicsLearned.length > 0 ? (
                     <>
                       <div className="flex flex-wrap gap-1.5 p-1">
                         <TooltipProvider>
@@ -1125,7 +1133,7 @@ const SessionAnalytics = ({ session, onBack }) => {
                         </TooltipProvider>
                       </div>
 
-                      {stats.topicsLearned.length > learnedLimit && (
+                      {filteredTopicsLearned.length > learnedLimit && (
                         <div className="flex justify-center mt-2">
                           <Button
                             size="sm"
@@ -1134,7 +1142,7 @@ const SessionAnalytics = ({ session, onBack }) => {
                               setLearnedLimit((v) =>
                                 Math.min(
                                   v + loadMoreStep,
-                                  stats.topicsLearned.length,
+                                  filteredTopicsLearned.length,
                                 ),
                               )
                             }
@@ -1142,7 +1150,7 @@ const SessionAnalytics = ({ session, onBack }) => {
                             Load{" "}
                             {Math.min(
                               loadMoreStep,
-                              stats.topicsLearned.length - learnedLimit,
+                              filteredTopicsLearned.length - learnedLimit,
                             )}{" "}
                             more
                           </Button>
@@ -1159,7 +1167,7 @@ const SessionAnalytics = ({ session, onBack }) => {
 
               <TabsContent value="future" className="mt-0">
                 <div className="max-h-[160px] overflow-y-auto pr-1">
-                  {(stats.futureTopics || []).length > 0 ? (
+                  {filteredFutureTopics.length > 0 ? (
                     <>
                       <div className="flex flex-wrap gap-1.5 p-1">
                         {futureToShow.map((topic, idx) => {
@@ -1179,7 +1187,7 @@ const SessionAnalytics = ({ session, onBack }) => {
                         })}
                       </div>
 
-                      {stats.futureTopics.length > futureLimit && (
+                      {filteredFutureTopics.length > futureLimit && (
                         <div className="flex justify-center mt-2">
                           <Button
                             size="sm"
@@ -1188,7 +1196,7 @@ const SessionAnalytics = ({ session, onBack }) => {
                               setFutureLimit((v) =>
                                 Math.min(
                                   v + loadMoreStep,
-                                  stats.futureTopics.length,
+                                  filteredFutureTopics.length,
                                 ),
                               )
                             }
@@ -1196,7 +1204,7 @@ const SessionAnalytics = ({ session, onBack }) => {
                             Load{" "}
                             {Math.min(
                               loadMoreStep,
-                              stats.futureTopics.length - futureLimit,
+                              filteredFutureTopics.length - futureLimit,
                             )}{" "}
                             more
                           </Button>

@@ -52,7 +52,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 // Removed legacy mock imports
 import { getAnalyticsSessions } from "@/services/superadmin/sessionService"; 
-import { processQualitativeComments } from "@/services/superadmin/responseService";
+import { processQualitativeComments, isValidTopicOrInterest } from "@/services/superadmin/responseService";
 import { toast } from "sonner";
 
 const blankSegmentStats = {
@@ -282,7 +282,7 @@ const TrainerOverview = ({ sessions = [], isLoading: isDashboardLoading = false 
       if (cs.avgComments)
         stats.qualitative.avg.push(...cs.avgComments.map((c) => withDate(c)));
       if (cs.futureTopics)
-        stats.qualitative.future.push(...cs.futureTopics.map((c) => withDate(c)));
+        stats.qualitative.future.push(...cs.futureTopics.filter(isValidTopicOrInterest).map((c) => withDate(c)));
     });
 
     const avgRating =

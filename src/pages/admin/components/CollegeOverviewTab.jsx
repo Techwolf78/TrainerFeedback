@@ -69,7 +69,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
-import { getResponseTrendData, getResponses, compileSessionStatsFromResponses, processQualitativeComments } from "@/services/superadmin/responseService";
+import { getResponseTrendData, getResponses, compileSessionStatsFromResponses, processQualitativeComments, isValidTopicOrInterest } from "@/services/superadmin/responseService";
 import { useAdminData } from "@/contexts/AdminDataContext";
 
 // Helper function to get a color from red (0) to yellow (2.5) to green (5)
@@ -387,9 +387,9 @@ const CollegeOverviewTab = () => {
         qualitative: {
           high: processQualitativeComments(compiledStats.topComments, 'high'),
           low: processQualitativeComments(compiledStats.leastRatedComments, 'low'),
-          future: compiledStats.futureTopics || []
+          future: (compiledStats.futureTopics || []).filter(isValidTopicOrInterest)
         },
-        topicsLearned: compiledStats.topicsLearned || [],
+        topicsLearned: (compiledStats.topicsLearned || []).filter(isValidTopicOrInterest),
       };
     }
 
@@ -473,6 +473,7 @@ const CollegeOverviewTab = () => {
       // Aggregate topics
       if (cs.topicsLearned) {
         cs.topicsLearned.forEach((topic) => {
+          if (!isValidTopicOrInterest(topic)) return;
           const name = topic.name.toLowerCase();
           stats.allTopics[name] = (stats.allTopics[name] || 0) + topic.count;
         });
@@ -1199,7 +1200,7 @@ const CollegeOverviewTab = () => {
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
-                        className="h-8 text-[13px] font-medium px-2 justify-start text-left font-normal flex-1"
+                        className="h-8 text-[13px] font-medium px-2 justify-start text-left flex-1"
                       >
                         <CalendarIcon className="mr-1 h-3 w-3 shrink-0" />
                         <span className="truncate">
@@ -1666,7 +1667,7 @@ const CollegeOverviewTab = () => {
                         #{idx + 1}
                       </div>
                       <div className="space-y-0.5">
-                        <p className="font-semibold text-[13px] font-medium leading-none">
+                        <p className="font-semibold text-[13px] leading-none">
                           {trainer.name}
                         </p>
                         <p className="text-[10px] text-muted-foreground">
