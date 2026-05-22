@@ -65,7 +65,12 @@ import {
   deleteSession,
   restoreSession,
 } from "@/services/superadmin/sessionService";
-import { compileSessionStats, getResponses, compileSessionStatsFromResponses, migrateSessionStats } from "@/services/superadmin/responseService";
+import {
+  compileSessionStats,
+  getResponses,
+  compileSessionStatsFromResponses,
+  migrateSessionStats,
+} from "@/services/superadmin/responseService";
 import { serverTimestamp, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
@@ -125,8 +130,12 @@ const SessionsTab = ({
   // Session stats for cards
   const sessionStats = useMemo(() => {
     const total = sessions.filter((s) => s.archived !== true).length;
-    const active = sessions.filter((s) => s.status === "active" && s.archived !== true).length;
-    const inactive = sessions.filter((s) => s.status === "inactive" && s.archived !== true).length;
+    const active = sessions.filter(
+      (s) => s.status === "active" && s.archived !== true,
+    ).length;
+    const inactive = sessions.filter(
+      (s) => s.status === "inactive" && s.archived !== true,
+    ).length;
     const archived = sessions.filter((s) => s.archived === true).length;
     return { total, active, inactive, archived };
   }, [sessions]);
@@ -188,7 +197,10 @@ const SessionsTab = ({
           return false;
         if (
           filters.trainerId !== "all" &&
-          !(session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : [])).some(t => t.id === filters.trainerId)
+          !(
+            session.assignedTrainers ||
+            (session.assignedTrainer ? [session.assignedTrainer] : [])
+          ).some((t) => t.id === filters.trainerId)
         )
           return false;
         if (
@@ -217,12 +229,14 @@ const SessionsTab = ({
   const handleToggleStatus = async (session) => {
     // Only allow closing active sessions - no reopening allowed
     if (session.status !== "active") {
-      toast.error("This phase is permanently closed and cannot be reopened. Create a new session instead.");
+      toast.error(
+        "This phase is permanently closed and cannot be reopened. Create a new session instead.",
+      );
       return;
     }
 
     const confirmed = confirm(
-      "⚠️  PERMANENT ACTION\n\nClosing this session phase will:\n• Compile all current feedback statistics\n• Lock this phase permanently (cannot be reopened)\n• Allow you to create a new session for the next phase\n\nThis action cannot be undone.\n\nProceed?"
+      "⚠️  PERMANENT ACTION\n\nClosing this session phase will:\n• Compile all current feedback statistics\n• Lock this phase permanently (cannot be reopened)\n• Allow you to create a new session for the next phase\n\nThis action cannot be undone.\n\nProceed?",
     );
 
     if (!confirmed) return;
@@ -231,7 +245,9 @@ const SessionsTab = ({
       toast.loading("Compiling feedback statistics...");
       await closeSessionWithStats(session.id);
       toast.dismiss();
-      toast.success("Session phase permanently closed with compiled statistics");
+      toast.success(
+        "Session phase permanently closed with compiled statistics",
+      );
     } catch (error) {
       toast.dismiss();
       toast.error("Failed to close session");
@@ -239,7 +255,7 @@ const SessionsTab = ({
     }
   };
 
-/*
+  /*
   const handleRecalculateStats = async (session) => {
     if (!confirm("Are you sure you want to recalculate stats from raw responses? This will overwrite the existing compiled stats.")) return;
     const toastId = toast.loading("Recalculating stats...");
@@ -260,20 +276,25 @@ const SessionsTab = ({
   const handleCompileStats = async (session) => {
     // Only allow manual compilation for active sessions
     if (session.status !== "active") {
-      toast.error("Cannot compile stats for a closed phase. Stats are permanently archived.");
+      toast.error(
+        "Cannot compile stats for a closed phase. Stats are permanently archived.",
+      );
       return;
     }
 
     try {
       toast.loading("Compiling live feedback statistics...");
-      const stats = await compileSessionStats(session.id, session.reactivationCount || 0);
-      
+      const stats = await compileSessionStats(
+        session.id,
+        session.reactivationCount || 0,
+      );
+
       // Update session document with latest compiled stats without closing it
       await updateSession(session.id, {
         compiledStats: stats,
         lastCompiledAt: serverTimestamp(),
       });
-      
+
       toast.dismiss();
       toast.success("Statistics updated for all dashboards");
     } catch (error) {
@@ -315,19 +336,29 @@ const SessionsTab = ({
 
   const handleMigrateLegacyStats = async () => {
     const legacySessions = sessions.filter(
-      (s) => s.compiledStats && s.compiledStats.ratingDistribution && s.status === "inactive"
+      (s) =>
+        s.compiledStats &&
+        s.compiledStats.ratingDistribution &&
+        s.status === "inactive",
     );
     if (legacySessions.length === 0) {
       toast.info("No legacy sessions found to migrate");
       return;
     }
-    if (!confirm(`This will migrate ${legacySessions.length} session(s) from legacy stats to subcollections. Continue?`)) return;
-    
+    if (
+      !confirm(
+        `This will migrate ${legacySessions.length} session(s) from legacy stats to subcollections. Continue?`,
+      )
+    )
+      return;
+
     setIsMigrating(true);
-    const toastId = toast.loading(`Migrating ${legacySessions.length} sessions...`);
+    const toastId = toast.loading(
+      `Migrating ${legacySessions.length} sessions...`,
+    );
     let success = 0;
     let failed = 0;
-    
+
     for (const session of legacySessions) {
       try {
         const result = await migrateSessionStats(session.id, session);
@@ -337,8 +368,10 @@ const SessionsTab = ({
         failed++;
       }
     }
-    
-    toast.success(`Migration complete: ${success} migrated, ${failed} failed`, { id: toastId });
+
+    toast.success(`Migration complete: ${success} migrated, ${failed} failed`, {
+      id: toastId,
+    });
     setIsMigrating(false);
   };
 
@@ -363,7 +396,10 @@ const SessionsTab = ({
       // Compile stats on the fly for active/open sessions or if missing to guarantee freshness
       let stats = session.compiledStats;
       if (!stats || session.status === "active") {
-        stats = compileSessionStatsFromResponses(responses, session.questions || []);
+        stats = compileSessionStatsFromResponses(
+          responses,
+          session.questions || [],
+        );
       }
 
       if (!stats || stats.totalResponses === 0) {
@@ -434,11 +470,32 @@ const SessionsTab = ({
       summarySheet.addRows([
         { field: "Session Topic", value: session.topic },
         { field: "College", value: session.collegeName },
-        { field: "Trainer", value: (session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : [])).map(t => t.name).join(", ") || "N/A" },
+        {
+          field: "Trainer",
+          value:
+            (
+              session.assignedTrainers ||
+              (session.assignedTrainer ? [session.assignedTrainer] : [])
+            )
+              .map((t) => t.name)
+              .join(", ") || "N/A",
+        },
         { field: "Domain", value: session.domain },
         { field: "Course", value: session.course },
-        { field: "Batch", value: (session.batches || (session.batch ? [session.batch] : [])).join(", ") || "N/A" },
-        { field: "Department", value: (session.branches || (session.branch ? [session.branch] : [])).join(", ") || "N/A" },
+        {
+          field: "Batch",
+          value:
+            (session.batches || (session.batch ? [session.batch] : [])).join(
+              ", ",
+            ) || "N/A",
+        },
+        {
+          field: "Department",
+          value:
+            (session.branches || (session.branch ? [session.branch] : [])).join(
+              ", ",
+            ) || "N/A",
+        },
         { field: "Session Date", value: session.sessionDate },
         { field: "Session Time", value: session.sessionTime },
         { field: "", value: "" },
@@ -860,16 +917,20 @@ const SessionsTab = ({
         <p className="text-sm text-muted-foreground">
           Showing {filteredSessions.length} session(s)
         </p>
-        <Button
+        {/* <Button
           variant="outline"
           size="sm"
           onClick={handleMigrateLegacyStats}
           disabled={isMigrating}
           className="gap-2 text-xs h-8"
         >
-          {isMigrating ? <Loader2 className="h-3 w-3 animate-spin" /> : <BarChart3 className="h-3 w-3" />}
+          {isMigrating ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <BarChart3 className="h-3 w-3" />
+          )}
           Migrate Legacy Stats
-        </Button>
+        </Button> */}
       </div>
       <div className="border rounded-lg overflow-hidden bg-card">
         <Table>
@@ -915,17 +976,30 @@ const SessionsTab = ({
                   <TableCell>
                     <div className="text-sm">{session.collegeName}</div>
                     <div className="text-xs text-muted-foreground">
-                      {(session.batches || (session.batch ? [session.batch] : [])).join(", ")} ({(session.branches || (session.branch ? [session.branch] : [])).join(", ")})
+                      {(
+                        session.batches ||
+                        (session.batch ? [session.batch] : [])
+                      ).join(", ")}{" "}
+                      (
+                      {(
+                        session.branches ||
+                        (session.branch ? [session.branch] : [])
+                      ).join(", ")}
+                      )
                     </div>
                   </TableCell>
                   <TableCell>
                     {(() => {
-                      const trainers = session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : []);
+                      const trainers =
+                        session.assignedTrainers ||
+                        (session.assignedTrainer
+                          ? [session.assignedTrainer]
+                          : []);
                       if (trainers.length > 1) {
                         return (
                           <span
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary cursor-default"
-                            title={trainers.map(t => t.name).join(", ")}
+                            title={trainers.map((t) => t.name).join(", ")}
                           >
                             {trainers.length} Trainers
                           </span>
@@ -959,7 +1033,9 @@ const SessionsTab = ({
                           : "bg-gray-100 text-gray-700 border-gray-200",
                       )}
                     >
-                      {session.status === "active" ? "Current Phase Open" : "Phase Closed"}
+                      {session.status === "active"
+                        ? "Current Phase Open"
+                        : "Phase Closed"}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
@@ -981,12 +1057,14 @@ const SessionsTab = ({
                                     setSelectedSessionForAnalytics(session)
                                   }
                                 >
-                                  <BarChart3 className="mr-2 h-4 w-4" /> View Analytics
+                                  <BarChart3 className="mr-2 h-4 w-4" /> View
+                                  Analytics
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={() => handleExportResponses(session)}
                                 >
-                                  <Download className="mr-2 h-4 w-4" /> Export to Excel
+                                  <Download className="mr-2 h-4 w-4" /> Export
+                                  to Excel
                                 </DropdownMenuItem>
                               </>
                             )}
@@ -994,14 +1072,18 @@ const SessionsTab = ({
                             <DropdownMenuItem
                               onClick={() => handleRestoreSession(session.id)}
                             >
-                              <RotateCcw className="mr-2 h-4 w-4 text-emerald-600 animate-spin-hover" /> Restore Session
+                              <RotateCcw className="mr-2 h-4 w-4 text-emerald-600 animate-spin-hover" />{" "}
+                              Restore Session
                             </DropdownMenuItem>
                           </>
                         ) : (
                           <>
                             {session.status === "active" && (
-                              <DropdownMenuItem onClick={() => handleCompileStats(session)}>
-                                <RotateCcw className="mr-2 h-4 w-4" /> Compile Stats
+                              <DropdownMenuItem
+                                onClick={() => handleCompileStats(session)}
+                              >
+                                <RotateCcw className="mr-2 h-4 w-4" /> Compile
+                                Stats
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuItem
@@ -1036,12 +1118,14 @@ const SessionsTab = ({
                                     setSelectedSessionForAnalytics(session)
                                   }
                                 >
-                                  <BarChart3 className="mr-2 h-4 w-4" /> Live Analytics
+                                  <BarChart3 className="mr-2 h-4 w-4" /> Live
+                                  Analytics
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={() => handleExportResponses(session)}
                                 >
-                                  <Download className="mr-2 h-4 w-4" /> Export to Excel
+                                  <Download className="mr-2 h-4 w-4" /> Export
+                                  to Excel
                                 </DropdownMenuItem>
                               </>
                             )}
@@ -1057,10 +1141,12 @@ const SessionsTab = ({
                                     Analytics
                                   </DropdownMenuItem>
                                   <DropdownMenuItem
-                                    onClick={() => handleExportResponses(session)}
+                                    onClick={() =>
+                                      handleExportResponses(session)
+                                    }
                                   >
-                                    <Download className="mr-2 h-4 w-4" /> Export to
-                                    Excel
+                                    <Download className="mr-2 h-4 w-4" /> Export
+                                    to Excel
                                   </DropdownMenuItem>
                                 </>
                               )}
@@ -1085,7 +1171,15 @@ const SessionsTab = ({
 
       <div className="flex flex-col items-center gap-2 py-4">
         <span className="text-xs text-muted-foreground">
-          Showing {filteredSessions.length} of {sessions.filter(s => sessionTab === "archived" ? s.archived === true : s.archived !== true).length} loaded sessions
+          Showing {filteredSessions.length} of{" "}
+          {
+            sessions.filter((s) =>
+              sessionTab === "archived"
+                ? s.archived === true
+                : s.archived !== true,
+            ).length
+          }{" "}
+          loaded sessions
         </span>
         {hasMoreSessions && (
           <Button
@@ -1128,10 +1222,17 @@ const SessionsTab = ({
                 <AlertTriangle className="h-4 w-4 flex-shrink-0" />
                 <p className="text-sm">
                   {sessionToExport?.status === "active" ? (
-                    <span>This is an active session. The export will pull and compile all live responses in real-time.</span>
+                    <span>
+                      This is an active session. The export will pull and
+                      compile all live responses in real-time.
+                    </span>
                   ) : (
                     <span>
-                      This report contains <strong>{sessionToExport?.compiledStats?.totalResponses || 0}</strong> responses.
+                      This report contains{" "}
+                      <strong>
+                        {sessionToExport?.compiledStats?.totalResponses || 0}
+                      </strong>{" "}
+                      responses.
                     </span>
                   )}
                 </p>
@@ -1160,4 +1261,3 @@ const SessionsTab = ({
 };
 
 export default SessionsTab;
-
