@@ -215,6 +215,8 @@ export const AnonymousFeedback = () => {
         const val = responses[q.idx]?.value;
         if (!val || (Array.isArray(val) && val.length === 0)) {
           setError("Please answer all required questions");
+          toast.error("Please answer all required questions");
+          window.scrollTo({ top: 0, behavior: "smooth" });
           setIsSubmitting(false);
           return;
         }
@@ -224,6 +226,8 @@ export const AnonymousFeedback = () => {
       const sessionTrainers = getTrainers(session);
       if (sessionTrainers.length > 1 && !selectedTrainerId) {
         setError("Please select the trainer you are providing feedback for");
+        toast.error("Please select the trainer you are providing feedback for");
+        window.scrollTo({ top: 0, behavior: "smooth" });
         setIsSubmitting(false);
         return;
       }
@@ -232,6 +236,8 @@ export const AnonymousFeedback = () => {
       const sessionBranches = session.branches || (session.branch ? [session.branch] : []);
       if (sessionBranches.length > 1 && !selectedBranch) {
         setError("Please select your department/branch");
+        toast.error("Please select your department/branch");
+        window.scrollTo({ top: 0, behavior: "smooth" });
         setIsSubmitting(false);
         return;
       }
@@ -240,6 +246,8 @@ export const AnonymousFeedback = () => {
       const sessionBatches = session.batches || (session.batch ? [session.batch] : []);
       if (sessionBatches.length > 1 && !selectedBatch) {
         setError("Please select your batch");
+        toast.error("Please select your batch");
+        window.scrollTo({ top: 0, behavior: "smooth" });
         setIsSubmitting(false);
         return;
       }
@@ -259,6 +267,8 @@ export const AnonymousFeedback = () => {
         if (typeof ans.value === "string" && ans.value.trim() !== "") {
           if (!englishRegex.test(ans.value)) {
             setError("Language not supported. Please write your feedback in English only.");
+            toast.error("Language not supported. Please write your feedback in English only.");
+            window.scrollTo({ top: 0, behavior: "smooth" });
             setIsSubmitting(false);
             return;
           }
