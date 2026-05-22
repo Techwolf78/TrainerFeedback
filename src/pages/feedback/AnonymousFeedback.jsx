@@ -28,6 +28,48 @@ const getDeviceId = () => {
   return deviceId;
 };
 
+// Fetch client IP address with a timeout to avoid blocking submission
+const fetchClientIp = async () => {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1500); // 1.5 second timeout
+    const res = await fetch("https://api.ipify.org?format=json", { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const data = await res.json();
+      return data.ip;
+    }
+  } catch (e) {
+    console.error("Silent IP fetch failed:", e);
+  }
+  return null;
+};
+
+// Generate a non-PII browser fingerprint based on client configuration
+const getBrowserFingerprint = () => {
+  try {
+    const keys = [
+      navigator.userAgent,
+      navigator.language,
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+      window.screen.width,
+      window.screen.height,
+      window.screen.colorDepth,
+      navigator.hardwareConcurrency || "",
+    ].join("|");
+    
+    let hash = 0;
+    for (let i = 0; i < keys.length; i++) {
+      hash = (hash << 5) - hash + keys.charCodeAt(i);
+      hash |= 0;
+    }
+    return `fp_${Math.abs(hash).toString(36)}`;
+  } catch (e) {
+    return "unknown";
+  }
+};
+
+
 export const AnonymousFeedback = () => {
   const { sessionId } = useParams();
   const location = useLocation();
@@ -211,6 +253,9 @@ export const AnonymousFeedback = () => {
         }))
         .filter((a) => a.value !== null);
 
+      // Fetch IP silently before submit
+      const ipAddress = await fetchClientIp();
+
       // Submit to Firebase subcollection
       const version = session.reactivationCount || 0;
       const phaseId = session.phaseId || null;
@@ -223,6 +268,16 @@ export const AnonymousFeedback = () => {
         selectedTrainerName: selectedTrainerName || getTrainers(session)?.[0]?.name || null,
         selectedBranch: selectedBranch || sessionBranches[0] || null,
         selectedBatch: selectedBatch || sessionBatches[0] || null,
+        // Silent security metadata for tracing abuse/spam
+        meta: {
+          ip: ipAddress,
+          fingerprint: getBrowserFingerprint(),
+          userAgent: navigator.userAgent,
+          screen: `${window.screen.width}x${window.screen.height}`,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          language: navigator.language,
+          submittedAtLocal: new Date().toISOString(),
+        }
       });
 
       // Mark as submitted in localStorage (for history/UX, not blocking anymore)
