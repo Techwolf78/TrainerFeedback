@@ -172,9 +172,16 @@ export const AnonymousFeedback = () => {
   };
 
   const handleTextChange = (index, value, type = "text") => {
-    // Validate English-only
+    // Check profanity first (abusive words in English and Romanized Hindi)
+    const abusivePattern = /\b(fuck|fucking|fucker|shit|shitty|bitch|asshole|bastard|cunt|motherfucker|dick|pussy|twat|randi|saala|kamine|chutiya|harami|madarchod|behenchod|gaand|bhosdike|lauda|luda|chut)\b/i;
     const englishRegex = /^[A-Za-z0-9\s.,!?'"\-()@#%&*+=:;/\\_`~|<>]*$/;
-    if (value && !englishRegex.test(value)) {
+    
+    if (value && abusivePattern.test(value)) {
+      setFieldErrors((prev) => ({
+        ...prev,
+        [index]: "Abusive language is not allowed.",
+      }));
+    } else if (value && !englishRegex.test(value)) {
       setFieldErrors((prev) => ({
         ...prev,
         [index]: "Language not supported. Please write your feedback in English only.",
@@ -277,13 +284,22 @@ export const AnonymousFeedback = () => {
         }))
         .filter((a) => a.value !== null);
 
-      // Validate English-only input for text fields (rejects Hindi/Devanagari or other non-Latin scripts)
+      // Validate English-only and check for abusive language
       const englishRegex = /^[A-Za-z0-9\s.,!?'"\-()@#%&*+=:;/\\_`~|<>]*$/;
+      const abusivePattern = /\b(fuck|fucking|fucker|shit|shitty|bitch|asshole|bastard|cunt|motherfucker|dick|pussy|twat|randi|saala|kamine|chutiya|harami|madarchod|behenchod|gaand|bhosdike|lauda|luda|chut)\b/i;
       let firstErrorIdx = null;
       const newFieldErrors = {};
       for (const ans of answers) {
         if (typeof ans.value === "string" && ans.value.trim() !== "") {
-          if (!englishRegex.test(ans.value)) {
+          if (abusivePattern.test(ans.value)) {
+            const qIndex = questions.findIndex((q) => q.id === ans.questionId);
+            if (qIndex !== -1) {
+              newFieldErrors[qIndex] = "Abusive language is not allowed.";
+              if (firstErrorIdx === null) {
+                firstErrorIdx = qIndex;
+              }
+            }
+          } else if (!englishRegex.test(ans.value)) {
             const qIndex = questions.findIndex((q) => q.id === ans.questionId);
             if (qIndex !== -1) {
               newFieldErrors[qIndex] = "Language not supported. Please write your feedback in English only.";
@@ -297,7 +313,14 @@ export const AnonymousFeedback = () => {
 
       if (Object.keys(newFieldErrors).length > 0) {
         setFieldErrors((prev) => ({ ...prev, ...newFieldErrors }));
-        toast.error("Language not supported. Please write your feedback in English only.");
+        
+        // Customize toast depending on error type
+        const hasAbuse = Object.values(newFieldErrors).includes("Abusive language is not allowed.");
+        if (hasAbuse) {
+          toast.error("Abusive language is not allowed.");
+        } else {
+          toast.error("Language not supported. Please write your feedback in English only.");
+        }
         
         // Scroll to the first error card
         setTimeout(() => {
