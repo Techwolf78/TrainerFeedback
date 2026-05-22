@@ -88,6 +88,7 @@ export const AnonymousFeedback = () => {
   const [selectedTrainerName, setSelectedTrainerName] = useState("");
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [selectedBatch, setSelectedBatch] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
 
   // Helper: get trainers from session (backward compat)
   const getTrainers = (s) =>
@@ -171,6 +172,21 @@ export const AnonymousFeedback = () => {
   };
 
   const handleTextChange = (index, value, type = "text") => {
+    // Validate English-only
+    const englishRegex = /^[A-Za-z0-9\s.,!?'"\-()@#%&*+=:;/\\_`~|<>]*$/;
+    if (value && !englishRegex.test(value)) {
+      setFieldErrors((prev) => ({
+        ...prev,
+        [index]: "Language not supported. Please write your feedback in English only.",
+      }));
+    } else {
+      setFieldErrors((prev) => {
+        const updated = { ...prev };
+        delete updated[index];
+        return updated;
+      });
+    }
+
     setResponses((prev) => ({
       ...prev,
       [index]: { ...prev[index], value, type },
@@ -263,16 +279,36 @@ export const AnonymousFeedback = () => {
 
       // Validate English-only input for text fields (rejects Hindi/Devanagari or other non-Latin scripts)
       const englishRegex = /^[A-Za-z0-9\s.,!?'"\-()@#%&*+=:;/\\_`~|<>]*$/;
+      let firstErrorIdx = null;
+      const newFieldErrors = {};
       for (const ans of answers) {
         if (typeof ans.value === "string" && ans.value.trim() !== "") {
           if (!englishRegex.test(ans.value)) {
-            setError("Language not supported. Please write your feedback in English only.");
-            toast.error("Language not supported. Please write your feedback in English only.");
-            window.scrollTo({ top: 0, behavior: "smooth" });
-            setIsSubmitting(false);
-            return;
+            const qIndex = questions.findIndex((q) => q.id === ans.questionId);
+            if (qIndex !== -1) {
+              newFieldErrors[qIndex] = "Language not supported. Please write your feedback in English only.";
+              if (firstErrorIdx === null) {
+                firstErrorIdx = qIndex;
+              }
+            }
           }
         }
+      }
+
+      if (Object.keys(newFieldErrors).length > 0) {
+        setFieldErrors((prev) => ({ ...prev, ...newFieldErrors }));
+        toast.error("Language not supported. Please write your feedback in English only.");
+        
+        // Scroll to the first error card
+        setTimeout(() => {
+          const cardElement = document.getElementById(`question-card-${firstErrorIdx}`);
+          if (cardElement) {
+            cardElement.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }, 100);
+        
+        setIsSubmitting(false);
+        return;
       }
 
       // Fetch IP silently before submit
@@ -748,7 +784,11 @@ export const AnonymousFeedback = () => {
 
           <div className="space-y-6">
             {questions.map((question, index) => (
-              <Card key={question.id || index}>
+              <Card
+                id={`question-card-${index}`}
+                key={question.id || index}
+                className={fieldErrors[index] ? "border-destructive ring-1 ring-destructive transition-all duration-300" : "transition-all duration-300"}
+              >
                 <CardContent className="pt-6">
                   <div className="space-y-4">
                     <div className="flex items-start justify-between">
@@ -883,7 +923,13 @@ export const AnonymousFeedback = () => {
                             )
                           }
                           rows={3}
+                          className={fieldErrors[index] ? "border-destructive focus-visible:ring-destructive" : ""}
                         />
+                        {fieldErrors[index] && (
+                          <p className="text-sm font-medium text-destructive mt-1">
+                            {fieldErrors[index]}
+                          </p>
+                        )}
                       </div>
                     )}
 
@@ -897,7 +943,13 @@ export const AnonymousFeedback = () => {
                             handleTextChange(index, e.target.value, "futureSession")
                           }
                           rows={3}
+                          className={fieldErrors[index] ? "border-destructive focus-visible:ring-destructive" : ""}
                         />
+                        {fieldErrors[index] && (
+                          <p className="text-sm font-medium text-destructive mt-1">
+                            {fieldErrors[index]}
+                          </p>
+                        )}
                       </div>
                     )}
 
@@ -915,7 +967,13 @@ export const AnonymousFeedback = () => {
                             handleTextChange(index, e.target.value, "topicslearned")
                           }
                           rows={3}
+                          className={fieldErrors[index] ? "border-destructive focus-visible:ring-destructive" : ""}
                         />
+                        {fieldErrors[index] && (
+                          <p className="text-sm font-medium text-destructive mt-1">
+                            {fieldErrors[index]}
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>
