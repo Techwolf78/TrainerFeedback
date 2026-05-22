@@ -172,8 +172,8 @@ export const AnonymousFeedback = () => {
   };
 
   const handleTextChange = (index, value, type = "text") => {
-    // Check profanity first (abusive words in English and Romanized Hindi)
-    const abusivePattern = /\b(fuck|fucking|fucker|shit|shitty|bitch|asshole|bastard|cunt|motherfucker|dick|pussy|twat|randi|saala|kamine|chutiya|harami|madarchod|behenchod|gaand|bhosdike|lauda|luda|chut)\b/i;
+    // Check profanity first (abusive words in English, Romanized Hindi, and threats/violence)
+    const abusivePattern = /\b(fuck|fucking|fucker|shit|shitty|bitch|asshole|bastard|cunt|motherfucker|dick|pussy|twat|randi|saala|kamine|chutiya|harami|madarchod|behenchod|gaand|bhosdike|lauda|luda|chut|murder|kill|killer|killing|die|suicide|bomb|blast|attack|death)\b/i;
     const englishRegex = /^[A-Za-z0-9\s.,!?'"\-()@#%&*+=:;/\\_`~|<>]*$/;
     
     if (value && abusivePattern.test(value)) {
@@ -286,7 +286,7 @@ export const AnonymousFeedback = () => {
 
       // Validate English-only and check for abusive language
       const englishRegex = /^[A-Za-z0-9\s.,!?'"\-()@#%&*+=:;/\\_`~|<>]*$/;
-      const abusivePattern = /\b(fuck|fucking|fucker|shit|shitty|bitch|asshole|bastard|cunt|motherfucker|dick|pussy|twat|randi|saala|kamine|chutiya|harami|madarchod|behenchod|gaand|bhosdike|lauda|luda|chut)\b/i;
+      const abusivePattern = /\b(fuck|fucking|fucker|shit|shitty|bitch|asshole|bastard|cunt|motherfucker|dick|pussy|twat|randi|saala|kamine|chutiya|harami|madarchod|behenchod|gaand|bhosdike|lauda|luda|chut|murder|kill|killer|killing|die|suicide|bomb|blast|attack|death)\b/i;
       let firstErrorIdx = null;
       const newFieldErrors = {};
       for (const ans of answers) {
