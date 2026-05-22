@@ -34,6 +34,7 @@ import {
   ChevronDown,
   Pencil,
   Database,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -48,6 +49,7 @@ import TemplatesTab from "./components/TemplatesTab";
 import ProjectCodesTab from "./components/ProjectCodesTab";
 import TicketsTab from "./components/TicketsTab";
 import DatabaseMonitorTab from "./components/DatabaseMonitorTab";
+import SettingsTab from "./components/SettingsTab";
 import SessionResponses from "../admin/SessionResponses";
 import ProfilePage from "@/components/shared/ProfilePage";
 import Loader from "@/components/ui/Loader";
@@ -161,6 +163,8 @@ const SuperAdminDashboardInner = () => {
         return "tickets";
       case "database":
         return "database";
+      case "settings":
+        return "settings";
       case "academic-config":
         return "config";
       case "db-monitor":
@@ -277,6 +281,8 @@ const SuperAdminDashboardInner = () => {
         return "Support Tickets";
       case "database":
         return "Database Monitor";
+      case "settings":
+        return "System Settings";
       case "profile":
         return "My Profile";
       default:
@@ -340,7 +346,7 @@ const SuperAdminDashboardInner = () => {
             <NavItem id="config" label="Configuration" icon={RefreshCw} path="/super-admin/academic-config" />
             <NavItem id="database" label="Database Monitor" icon={Database} path="/super-admin/database" />
             <NavItem id="tickets" label="Support" icon={Ticket} path="/super-admin/tickets" />
-
+            <NavItem id="settings" label="Settings" icon={Settings} path="/super-admin/settings" />
           </div>
         </nav>
 
@@ -495,6 +501,8 @@ const SuperAdminDashboardInner = () => {
             {activeTab === "tickets" && <TicketsTab />}
 
             {activeTab === "database" && <DatabaseMonitorTab />}
+
+            {activeTab === "settings" && <SettingsTab />}
 
             {activeTab === "profile" && <ProfilePage />}
           </div>

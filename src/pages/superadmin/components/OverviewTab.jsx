@@ -70,6 +70,42 @@ import { getAnalyticsSessions } from "@/services/superadmin/sessionService";
 import { getResponseTrendData, getResponses, compileSessionStatsFromResponses, getSessionStats, processQualitativeComments } from "@/services/superadmin/responseService";
 import { cn } from "@/lib/utils";
 
+// Helper to render session ID in two lines to save width
+const renderSessionId = (id) => {
+  if (!id) return "-";
+  if (id.includes("-")) {
+    const parts = id.split("-");
+    if (parts.length >= 4) {
+      const firstPart = parts.slice(0, 2).join("-");
+      const secondPart = parts.slice(2).join("-");
+      return (
+        <div className="leading-none font-mono text-[9px] text-muted-foreground mt-0.5 select-all">
+          <div>{firstPart}</div>
+          <div>{secondPart}</div>
+        </div>
+      );
+    } else {
+      const mid = Math.ceil(parts.length / 2);
+      const firstPart = parts.slice(0, mid).join("-");
+      const secondPart = parts.slice(mid).join("-");
+      return (
+        <div className="leading-none font-mono text-[9px] text-muted-foreground mt-0.5 select-all">
+          <div>{firstPart}</div>
+          <div>{secondPart}</div>
+        </div>
+      );
+    }
+  }
+  if (id.length > 10) {
+    return (
+      <div className="leading-none font-mono text-[9px] text-muted-foreground mt-0.5 select-all">
+        <div>{id.substring(0, 10)}</div>
+        <div>{id.substring(10)}</div>
+      </div>
+    );
+  }
+  return <span className="font-mono text-[9px] text-muted-foreground select-all">{id}</span>;
+};
 
 const COLORS = [
   "#2563eb", // Blue 600
@@ -101,6 +137,20 @@ const OverviewTab = ({
   const { sessions = [], trainers = [] } = useSuperAdminData();
 
   // Data State
+  const [showSessionId, setShowSessionId] = useState(() => {
+    return localStorage.getItem("superadmin_settings_show_session_id") === "true";
+  });
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      setShowSessionId(localStorage.getItem("superadmin_settings_show_session_id") === "true");
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+    };
+  }, []);
+
   const [analyticsData, setAnalyticsData] = useState(null);
   const [analyticsCache, setAnalyticsCache] = useState({});
   const [isFetchingAnalytics, setIsFetchingAnalytics] = useState(false);
@@ -192,8 +242,9 @@ const OverviewTab = ({
       ];
 
       comments.forEach((c) => {
-        if (c.avgRating >= 4) agg.qualitative.high.push(c);
-        else if (c.avgRating <= 2.5) agg.qualitative.low.push(c);
+        const commentWithSession = { ...c, sessionId: c.sessionId || s.id };
+        if (c.avgRating >= 4) agg.qualitative.high.push(commentWithSession);
+        else if (c.avgRating <= 2.5) agg.qualitative.low.push(commentWithSession);
       });
 
       // Rating Distribution
@@ -216,10 +267,19 @@ const OverviewTab = ({
       }
 
       // Topics
+      // Topics
       if (stats.topicsLearned) {
+        if (!agg.topicsLearnedSessionIds) agg.topicsLearnedSessionIds = {};
         stats.topicsLearned.forEach(topic => {
           const name = topic.name.toLowerCase();
           agg.topicsLearned[name] = (agg.topicsLearned[name] || 0) + topic.count;
+          if (!agg.topicsLearnedSessionIds[name]) {
+            agg.topicsLearnedSessionIds[name] = new Set();
+          }
+          const tSessIds = topic.sessionId || s.id;
+          tSessIds.split(",").map(id => id.trim()).forEach(id => {
+            if (id) agg.topicsLearnedSessionIds[name].add(id);
+          });
         });
       }
 
@@ -229,10 +289,14 @@ const OverviewTab = ({
           const name = (topic.name || "").toLowerCase();
           if (!agg.qualitative.futureTopics) agg.qualitative.futureTopics = {};
           if (!agg.qualitative.futureTopics[name]) {
-            agg.qualitative.futureTopics[name] = { count: 0, ratingSum: 0 };
+            agg.qualitative.futureTopics[name] = { count: 0, ratingSum: 0, sessionIds: new Set() };
           }
           agg.qualitative.futureTopics[name].count += (topic.count || 1);
           agg.qualitative.futureTopics[name].ratingSum += (topic.avgRating || 0) * (topic.count || 1);
+          const tSessIds = topic.sessionId || s.id;
+          tSessIds.split(",").map(id => id.trim()).forEach(id => {
+            if (id) agg.qualitative.futureTopics[name].sessionIds.add(id);
+          });
         });
       }
     });
@@ -242,14 +306,19 @@ const OverviewTab = ({
       .map(([name, data]) => ({
         name: name.charAt(0).toUpperCase() + name.slice(1),
         count: data.count,
-        avgRating: (data.ratingSum / data.count).toFixed(2)
+        avgRating: (data.ratingSum / data.count).toFixed(2),
+        sessionId: Array.from(data.sessionIds).join(", ")
       }))
       .sort((a, b) => b.count - a.count);
 
     // Format topics learned as array
     const topicsLearnedArray = Object.entries(agg.topicsLearned || {})
       .sort((a, b) => b[1] - a[1])
-      .map(([name, count]) => ({ name, count }));
+      .map(([name, count]) => ({
+        name: name.charAt(0).toUpperCase() + name.slice(1),
+        count,
+        sessionId: Array.from(agg.topicsLearnedSessionIds?.[name] || []).join(", ")
+      }));
 
     // Formatting category averages
     const categoryAverages = {};
@@ -1523,7 +1592,8 @@ const OverviewTab = ({
               color: "border-l-blue-500",
               items: (aggregatedStats.topicsLearned || []).map(topic => ({
                 text: topic.name || topic,
-                count: topic.count || 1
+                count: topic.count || 1,
+                sessionId: topic.sessionId
               })),
               empty: "Analysis in progress.",
               theme: "blue"
@@ -1572,15 +1642,22 @@ const OverviewTab = ({
                             <p className="text-[11px] leading-tight text-slate-700 font-medium italic">
                               "{item.text || item.value || item.name || "—"}"
                             </p>
-                            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-50">
-                              {item.avgRating != null && (
-                                <div className="flex items-center gap-1 text-[9px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-100/50">
-                                  <Star className="h-2.5 w-2.5 fill-amber-600" />
-                                  {item.avgRating}
-                                </div>
-                              )}
+                            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-50 gap-2">
+                              <div className="flex items-start gap-2 max-w-full overflow-hidden">
+                                {item.avgRating != null && (
+                                  <div className="flex items-center gap-1 text-[9px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-100/50 flex-shrink-0">
+                                    <Star className="h-2.5 w-2.5 fill-amber-600" />
+                                    {item.avgRating}
+                                  </div>
+                                )}
+                                {showSessionId && item.sessionId && (
+                                  <div className="text-[9px] font-mono text-slate-500 border-l border-slate-200 pl-2 break-words select-all" title={item.sessionId}>
+                                    {item.sessionId}
+                                  </div>
+                                )}
+                              </div>
                               {item.count != null && (
-                                <p className="text-[8px] font-bold text-slate-400 uppercase">
+                                <p className="text-[8px] font-bold text-slate-400 uppercase flex-shrink-0">
                                   {item.count} {item.count === 1 ? "Cit." : "Cits."}
                                 </p>
                               )}

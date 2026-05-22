@@ -191,6 +191,7 @@ export const compileSessionStatsFromResponses = (
 
     return {
       responseId: response.id,
+      sessionId: response.sessionId,
       avgRating,
       textComments: textAnswers.map((a) => a.value),
       answers,
@@ -231,6 +232,7 @@ export const compileSessionStatsFromResponses = (
           text: comment,
           avgRating: Math.round(resp.avgRating * 100) / 100,
           responseId: resp.responseId,
+          sessionId: resp.sessionId,
         });
         localUsedResponseIds.add(resp.responseId);
         if (globalUsedIds) globalUsedIds.add(resp.responseId);
@@ -267,7 +269,12 @@ export const compileSessionStatsFromResponses = (
           .split(",")
           .map((t) => t.trim())
           .filter(Boolean);
-        topicsLearnedRaw.push(...topics);
+        topics.forEach((t) => {
+          topicsLearnedRaw.push({
+            name: t,
+            sessionId: resp.sessionId || resp.id,
+          });
+        });
       }
       if (
         (type === "futuresession" ||
@@ -284,7 +291,8 @@ export const compileSessionStatsFromResponses = (
           futureTopicsRaw.push({
             text: f,
             avgRating: Math.round(resp.avgRating * 100) / 100,
-            responseId: resp.id,
+            responseId: resp.responseId,
+            sessionId: resp.sessionId,
           });
         });
       }
@@ -292,15 +300,23 @@ export const compileSessionStatsFromResponses = (
   });
 
   const topicCounts = {};
-  topicsLearnedRaw.forEach((t) => {
-    const normalized = t.toLowerCase();
+  const topicSessionIds = {};
+  topicsLearnedRaw.forEach((tObj) => {
+    const normalized = tObj.name.toLowerCase();
     topicCounts[normalized] = (topicCounts[normalized] || 0) + 1;
+    if (!topicSessionIds[normalized]) {
+      topicSessionIds[normalized] = new Set();
+    }
+    if (tObj.sessionId) {
+      topicSessionIds[normalized].add(tObj.sessionId);
+    }
   });
   const topicsLearned = Object.entries(topicCounts)
     .sort((a, b) => b[1] - a[1])
     .map(([name, count]) => ({
       name: name.charAt(0).toUpperCase() + name.slice(1),
       count,
+      sessionId: Array.from(topicSessionIds[name] || []).join(", "),
     }))
     .slice(0, 15);
 
@@ -309,10 +325,13 @@ export const compileSessionStatsFromResponses = (
     const normalized = f.text.trim();
     if (!normalized) return;
     if (!futureTopicCounts[normalized]) {
-      futureTopicCounts[normalized] = { count: 0, ratingSum: 0 };
+      futureTopicCounts[normalized] = { count: 0, ratingSum: 0, sessionIds: new Set() };
     }
     futureTopicCounts[normalized].count++;
     futureTopicCounts[normalized].ratingSum += f.avgRating || 0;
+    if (f.sessionId) {
+      futureTopicCounts[normalized].sessionIds.add(f.sessionId);
+    }
   });
 
   const futureTopics = Object.entries(futureTopicCounts)
@@ -327,6 +346,7 @@ export const compileSessionStatsFromResponses = (
       text: name,
       count: data.count,
       avgRating: Math.round((data.ratingSum / data.count) * 100) / 100,
+      sessionId: Array.from(data.sessionIds).join(", "),
     }))
     .slice(0, 100);
 

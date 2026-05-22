@@ -51,6 +51,43 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
+// Helper to render session ID in two lines to save width
+const renderSessionId = (id) => {
+  if (!id) return "-";
+  if (id.includes("-")) {
+    const parts = id.split("-");
+    if (parts.length >= 4) {
+      const firstPart = parts.slice(0, 2).join("-");
+      const secondPart = parts.slice(2).join("-");
+      return (
+        <div className="leading-tight font-mono text-[10px] text-muted-foreground">
+          <div>{firstPart}</div>
+          <div>{secondPart}</div>
+        </div>
+      );
+    } else {
+      const mid = Math.ceil(parts.length / 2);
+      const firstPart = parts.slice(0, mid).join("-");
+      const secondPart = parts.slice(mid).join("-");
+      return (
+        <div className="leading-tight font-mono text-[10px] text-muted-foreground">
+          <div>{firstPart}</div>
+          <div>{secondPart}</div>
+        </div>
+      );
+    }
+  }
+  if (id.length > 10) {
+    return (
+      <div className="leading-tight font-mono text-[10px] text-muted-foreground">
+        <div>{id.substring(0, 10)}</div>
+        <div>{id.substring(10)}</div>
+      </div>
+    );
+  }
+  return <span className="font-mono text-[10px] text-muted-foreground">{id}</span>;
+};
+
 const CollegeSessionsTab = () => {
   const { college, trainers, loadTrainers, sessions, loadSessions, loading } =
     useAdminData();
@@ -457,6 +494,7 @@ const CollegeSessionsTab = () => {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[100px]">SN ID</TableHead>
               <TableHead>Project Code</TableHead>
               <TableHead>Topic / Domain</TableHead>
               <TableHead>Course / Batch</TableHead>
@@ -470,7 +508,7 @@ const CollegeSessionsTab = () => {
             {filteredSessions.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={8}
                   className="h-24 text-center text-muted-foreground"
                 >
                   No sessions found matching filters.
@@ -485,6 +523,9 @@ const CollegeSessionsTab = () => {
                     session.isLive && "bg-blue-50/30 hover:bg-blue-50/50"
                   )}
                 >
+                  <TableCell>
+                    {renderSessionId(session.id)}
+                  </TableCell>
                   <TableCell className="text-sm font-medium">
                     {session.projectCode || "-"}
                   </TableCell>

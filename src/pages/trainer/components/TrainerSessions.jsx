@@ -58,6 +58,43 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/comp
 import SessionAnalytics from '@/pages/superadmin/components/SessionAnalytics';
 import { ShareSessionModal } from '@/components/shared/ShareSessionModal';
 
+// Helper to render session ID in two lines to save width
+const renderSessionId = (id) => {
+  if (!id) return "-";
+  if (id.includes("-")) {
+    const parts = id.split("-");
+    if (parts.length >= 4) {
+      const firstPart = parts.slice(0, 2).join("-");
+      const secondPart = parts.slice(2).join("-");
+      return (
+        <div className="leading-tight font-mono text-[10px] text-muted-foreground">
+          <div>{firstPart}</div>
+          <div>{secondPart}</div>
+        </div>
+      );
+    } else {
+      const mid = Math.ceil(parts.length / 2);
+      const firstPart = parts.slice(0, mid).join("-");
+      const secondPart = parts.slice(mid).join("-");
+      return (
+        <div className="leading-tight font-mono text-[10px] text-muted-foreground">
+          <div>{firstPart}</div>
+          <div>{secondPart}</div>
+        </div>
+      );
+    }
+  }
+  if (id.length > 10) {
+    return (
+      <div className="leading-tight font-mono text-[10px] text-muted-foreground">
+        <div>{id.substring(0, 10)}</div>
+        <div>{id.substring(10)}</div>
+      </div>
+    );
+  }
+  return <span className="font-mono text-[10px] text-muted-foreground">{id}</span>;
+};
+
 const TrainerSessions = ({ sessions, loading, onEdit, onRefresh, projectCodes = [] }) => {
   const { user } = useAuth();
   
@@ -518,6 +555,7 @@ const TrainerSessions = ({ sessions, loading, onEdit, onRefresh, projectCodes = 
               <div key={session.id} className="bg-card border rounded-xl p-4 shadow-sm space-y-3">
                 <div className="flex justify-between items-start">
                   <div>
+                    <div className="text-[10px] font-mono text-muted-foreground mb-0.5">{session.id}</div>
                     <h3 className="font-semibold text-foreground">{session.topic}</h3>
                     <p className="text-xs text-muted-foreground">{session.domain}</p>
                   </div>
@@ -565,6 +603,7 @@ const TrainerSessions = ({ sessions, loading, onEdit, onRefresh, projectCodes = 
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[100px]">SN ID</TableHead>
               <TableHead>Topic / Domain</TableHead>
               <TableHead>Course / Batch</TableHead>
               <TableHead>Schedule</TableHead>
@@ -574,12 +613,15 @@ const TrainerSessions = ({ sessions, loading, onEdit, onRefresh, projectCodes = 
           </TableHeader>
           <TableBody>
             {loading ? (
-                <TableRow><TableCell colSpan={5} className="h-24 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="h-24 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
             ) : filteredSessions.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No sessions found.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No sessions found.</TableCell></TableRow>
             ) : (
               filteredSessions.map((session) => (
                 <TableRow key={session.id} className="hover:bg-muted/50 transition-colors">
+                  <TableCell>
+                    {renderSessionId(session.id)}
+                  </TableCell>
                   <TableCell>
                     <div className="font-medium text-foreground">{session.topic}</div>
                     <div className="text-xs text-muted-foreground">{session.domain}</div>
