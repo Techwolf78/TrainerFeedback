@@ -69,6 +69,62 @@ const getBrowserFingerprint = () => {
   }
 };
 
+// Detect gibberish/meaningless text & keyboard mashes
+const isGibberish = (text) => {
+  if (!text) return false;
+  const clean = text.toLowerCase().trim();
+  if (clean.length < 4) return false;
+
+  // Split text into words (alphabetic only)
+  const words = clean.split(/[^a-z]+/).filter(w => w.length >= 3);
+  if (words.length === 0) return false;
+
+  const techWhitelist = new Set([
+    "html", "css", "js", "ts", "sql", "xml", "json", "rest", "api", "http", "https", 
+    "dbms", "rdbms", "jdbc", "odbc", "smtp", "ftp", "sdk", "aws", "vm", "gcp", "ip", 
+    "tcp", "udp", "dns", "ssh", "ssl", "tls", "dom", "mvc", "oop", "fp", "cli", 
+    "ide", "git", "ci", "cd", "qa", "ui", "ux", "seo", "npm", "npx", "pip", "yarn", 
+    "pnpm", "txt", "csv", "pdf", "png", "jpg", "svg", "svn"
+  ]);
+
+  for (const word of words) {
+    if (techWhitelist.has(word)) continue;
+
+    // Rule 1: Too many repeated characters (e.g. "aaaa", "zzzz")
+    if (/(.)\1{3,}/.test(word)) return true;
+
+    // Rule 2: 4 or more consecutive consonants (excluding common English clusters/blends)
+    if (/[bcdfghjklmnpqrstvwxz]{4,}/.test(word)) {
+      const validClusters = /(ngth|ghts|rths|lths|tch|sch|str|thr|ph|sh|ch|th|ck|ld|nd|st|rt|rn|lt|mp|pt)$/;
+      if (!validClusters.test(word)) {
+        return true;
+      }
+    }
+
+    // Rule 3: Word of length >= 4 with no vowels (e.g. "wqfwq", "zxcv")
+    if (word.length >= 4 && !/[aeiouy]/.test(word)) {
+      return true;
+    }
+
+    // Rule 4: Keyboard row/quadrant mashes (e.g. left hand home row / top row mashes like "wfeqw", "asdfg")
+    if (word.length >= 5) {
+      const vowels = (word.match(/[aeiouy]/g) || []).length;
+      if (vowels <= 1) {
+        const leftHandKeys = /^[qwerasdfzxcvtgb]+$/;
+        if (leftHandKeys.test(word)) {
+          // Allow common English 1-vowel left-hand words
+          const allowedLeft = ["class", "start", "great", "water", "trade", "state", "stage", "craft", "waste", "saved", "dates", "rates", "faces", "facts"];
+          if (!allowedLeft.includes(word)) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+};
+
 
 export const AnonymousFeedback = () => {
   const { sessionId } = useParams();
@@ -180,6 +236,11 @@ export const AnonymousFeedback = () => {
       setFieldErrors((prev) => ({
         ...prev,
         [index]: "Abusive language is not allowed.",
+      }));
+    } else if (value && isGibberish(value)) {
+      setFieldErrors((prev) => ({
+        ...prev,
+        [index]: "Meaningless text or gibberish is not allowed.",
       }));
     } else if (value && !englishRegex.test(value)) {
       setFieldErrors((prev) => ({
@@ -299,6 +360,14 @@ export const AnonymousFeedback = () => {
                 firstErrorIdx = qIndex;
               }
             }
+          } else if (isGibberish(ans.value)) {
+            const qIndex = questions.findIndex((q) => q.id === ans.questionId);
+            if (qIndex !== -1) {
+              newFieldErrors[qIndex] = "Meaningless text or gibberish is not allowed.";
+              if (firstErrorIdx === null) {
+                firstErrorIdx = qIndex;
+              }
+            }
           } else if (!englishRegex.test(ans.value)) {
             const qIndex = questions.findIndex((q) => q.id === ans.questionId);
             if (qIndex !== -1) {
@@ -316,8 +385,12 @@ export const AnonymousFeedback = () => {
         
         // Customize toast depending on error type
         const hasAbuse = Object.values(newFieldErrors).includes("Abusive language is not allowed.");
+        const hasGibberish = Object.values(newFieldErrors).includes("Meaningless text or gibberish is not allowed.");
+        
         if (hasAbuse) {
           toast.error("Abusive language is not allowed.");
+        } else if (hasGibberish) {
+          toast.error("Meaningless text or gibberish is not allowed.");
         } else {
           toast.error("Language not supported. Please write your feedback in English only.");
         }
