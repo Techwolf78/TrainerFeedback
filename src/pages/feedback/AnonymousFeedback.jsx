@@ -253,6 +253,18 @@ export const AnonymousFeedback = () => {
         }))
         .filter((a) => a.value !== null);
 
+      // Validate English-only input for text fields (rejects Hindi/Devanagari or other non-Latin scripts)
+      const englishRegex = /^[A-Za-z0-9\s.,!?'"\-()@#%&*+=:;/\\_`~|<>]*$/;
+      for (const ans of answers) {
+        if (typeof ans.value === "string" && ans.value.trim() !== "") {
+          if (!englishRegex.test(ans.value)) {
+            setError("Language not supported. Please write your feedback in English only.");
+            setIsSubmitting(false);
+            return;
+          }
+        }
+      }
+
       // Fetch IP silently before submit
       const ipAddress = await fetchClientIp();
 
