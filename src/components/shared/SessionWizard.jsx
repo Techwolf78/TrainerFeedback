@@ -270,22 +270,27 @@ const SessionWizard = ({
   const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
-      let sessionQuestions = [...(formData.questions || [])];
+      let sessionQuestions = [];
 
-      // Template Logic
-      if (formData.templateId) {
-        const selectedTemplate = templates.find(
-          (t) => t.id === formData.templateId,
-        );
-        if (selectedTemplate && selectedTemplate.sections) {
-          const templateQuestions = selectedTemplate.sections.flatMap(
-            (section) =>
-              (section.questions || []).map((q) => ({
-                ...q,
-                id: `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${q.id || "new"}`,
-              })),
+      // If we are updating an existing session and the template hasn't changed,
+      // we preserve the existing questions to prevent duplication.
+      if (session?.id && formData.templateId === session.templateId) {
+        sessionQuestions = [...(formData.questions || [])];
+      } else {
+        // Otherwise (new session, or changed template), load questions from the template
+        if (formData.templateId) {
+          const selectedTemplate = templates.find(
+            (t) => t.id === formData.templateId,
           );
-          sessionQuestions = [...sessionQuestions, ...templateQuestions];
+          if (selectedTemplate && selectedTemplate.sections) {
+            sessionQuestions = selectedTemplate.sections.flatMap(
+              (section) =>
+                (section.questions || []).map((q) => ({
+                  ...q,
+                  id: `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${q.id || "new"}`,
+                })),
+            );
+          }
         }
       }
 
