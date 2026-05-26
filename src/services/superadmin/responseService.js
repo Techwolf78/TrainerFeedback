@@ -146,6 +146,7 @@ export const getResponseTrendData = async (sessionIds) => {
 export const compileSessionStatsFromResponses = (
   responses,
   sessionQuestions = [],
+  sessionId = "",
 ) => {
   if (!responses || responses.length === 0) {
     return {
@@ -164,6 +165,8 @@ export const compileSessionStatsFromResponses = (
       compiledAt: new Date().toISOString(),
     };
   }
+
+  const inferredSessionId = sessionId || responses.find(r => r.sessionId)?.sessionId || "";
 
   // Calculate per-response averages and extract comments
   const responseStats = responses.map((response) => {
@@ -190,8 +193,8 @@ export const compileSessionStatsFromResponses = (
     });
 
     return {
-      responseId: response.id,
-      sessionId: response.sessionId,
+      responseId: response.id || "",
+      sessionId: response.sessionId || inferredSessionId,
       avgRating,
       textComments: textAnswers.map((a) => a.value),
       answers,
@@ -231,8 +234,8 @@ export const compileSessionStatsFromResponses = (
         comments.push({
           text: comment,
           avgRating: Math.round(resp.avgRating * 100) / 100,
-          responseId: resp.responseId,
-          sessionId: resp.sessionId,
+          responseId: resp.responseId || "",
+          sessionId: resp.sessionId || "",
         });
         localUsedResponseIds.add(resp.responseId);
         if (globalUsedIds) globalUsedIds.add(resp.responseId);
@@ -257,7 +260,7 @@ export const compileSessionStatsFromResponses = (
   // Topics/Future
   const topicsLearnedRaw = [];
   const futureTopicsRaw = [];
-  responses.forEach((resp) => {
+  responseStats.forEach((resp) => {
     (resp.answers || []).forEach((ans) => {
       const type = (ans.type || "").toLowerCase();
       if (
@@ -272,7 +275,7 @@ export const compileSessionStatsFromResponses = (
         topics.forEach((t) => {
           topicsLearnedRaw.push({
             name: t,
-            sessionId: resp.sessionId || resp.id,
+            sessionId: resp.sessionId || resp.responseId || "",
           });
         });
       }
@@ -290,9 +293,9 @@ export const compileSessionStatsFromResponses = (
         futures.forEach((f) => {
           futureTopicsRaw.push({
             text: f,
-            avgRating: Math.round(resp.avgRating * 100) / 100,
-            responseId: resp.responseId,
-            sessionId: resp.sessionId,
+            avgRating: Math.round((resp.avgRating || 0) * 100) / 100,
+            responseId: resp.responseId || "",
+            sessionId: resp.sessionId || "",
           });
         });
       }
@@ -796,7 +799,11 @@ export const compileAllSegmentsFromResponses = (
   sessionQuestions = [],
   sessionDoc = null,
 ) => {
-  const overall = compileSessionStatsFromResponses(responses, sessionQuestions);
+  const overall = compileSessionStatsFromResponses(
+    responses,
+    sessionQuestions,
+    sessionDoc?.id || "",
+  );
 
   const questionCategoryMap = {};
   (sessionQuestions || []).forEach((q) => {

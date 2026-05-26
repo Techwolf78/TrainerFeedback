@@ -53,7 +53,9 @@ import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { toPng } from "html-to-image";
 import { useRef } from "react";
-import { processQualitativeComments, compileSessionStats, isValidTopicOrInterest } from "@/services/superadmin/responseService";
+import { db } from "@/services/firebase";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+import { processQualitativeComments, compileSessionStats, isValidTopicOrInterest, compileSessionStatsFromResponses } from "@/services/superadmin/responseService";
 import { updateSession } from "@/services/superadmin/sessionService";
 
 // Helper function to get a color from red (0) to yellow (2.5) to green (5)
@@ -167,8 +169,52 @@ const SessionAnalytics = ({ session, onBack }) => {
   };
 
   useEffect(() => {
-    fetchLiveStats();
-  }, [session?.id]);
+    if (!session?.id) return;
+
+    if (session.status !== "active") {
+      fetchLiveStats();
+      return;
+    }
+
+    // Live subscription for active sessions to recalculate stats in real time on client side
+    setLoading(true);
+    const responsesRef = collection(db, "sessions", session.id, "responses");
+    const q = query(responsesRef, orderBy("submittedAt", "desc"));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const rawResponses = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        const version = session.reactivationCount || 0;
+        const responses = rawResponses.filter((r) => (r.version ?? 0) === version);
+
+        const compiled = compileSessionStatsFromResponses(
+          responses,
+          session.questions || [],
+          session.id
+        );
+
+        setStats({
+          ...compiled,
+          topComments: processQualitativeComments(compiled.topComments, "high"),
+          leastRatedComments: processQualitativeComments(compiled.leastRatedComments, "low"),
+          avgComments: processQualitativeComments(compiled.avgComments),
+        });
+        setLiveResponses(responses);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Real-time responses listener failed:", error);
+        fetchLiveStats();
+      }
+    );
+
+    return () => unsubscribe();
+  }, [session?.id, session?.status]);
 
   const handleExport = async () => {
     if (!stats) return;
