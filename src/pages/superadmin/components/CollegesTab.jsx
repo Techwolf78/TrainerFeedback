@@ -41,6 +41,8 @@ import {
   deleteCollege,
   restoreCollege,
   bulkAddColleges,
+  getCollegeCodeValidationMessage,
+  normalizeCollegeCode,
 } from "@/services/superadmin/collegeService";
 import CollegeAnalytics from "./CollegeAnalytics";
 
@@ -176,18 +178,25 @@ const CollegesTab = ({
       return;
     }
 
+    const normalizedCode = normalizeCollegeCode(newCollege.code);
+    const codeValidationMessage = getCollegeCodeValidationMessage(normalizedCode);
+    if (codeValidationMessage) {
+      toast.error(codeValidationMessage);
+      return;
+    }
+
     try {
       if (isEditingCollege) {
         await updateCollege(editingCollegeId, {
           name: newCollege.name.trim(),
-          code: newCollege.code.trim().toUpperCase(),
+          code: normalizedCode,
           logoUrl: newCollege.logoUrl.trim(),
         });
         toast.success("College updated successfully");
       } else {
         await addCollege({
           name: newCollege.name.trim(),
-          code: newCollege.code.trim().toUpperCase(),
+          code: normalizedCode,
           logoUrl: newCollege.logoUrl.trim(),
         });
         toast.success("College created successfully");
@@ -413,11 +422,15 @@ const CollegesTab = ({
                 onChange={(e) =>
                   setNewCollege({
                     ...newCollege,
-                    code: e.target.value.toUpperCase(),
+                    code: e.target.value.toUpperCase().replace(/\s/g, ""),
                   })
                 }
-                placeholder="e.g., GIT"
+                placeholder="e.g., ICEM"
+                maxLength={12}
               />
+              <p className="text-xs text-muted-foreground">
+                Use only the short code, such as ICEM, SPIT, IUD, or RCOEM.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -500,7 +513,10 @@ const CollegesTab = ({
               <p className="text-xs font-medium text-muted-foreground mb-1">
                 Expected JSON format:
               </p>
-              <pre className="text-xs text-foreground/80 whitespace-pre-wrap">{`[\n  { "Name": "College Name", "College Code": "CODE" },\n  { "Name": "Another College", "College Code": "AC" }\n]`}</pre>
+              <pre className="text-xs text-foreground/80 whitespace-pre-wrap">{`[\n  { "Name": "College Name", "College Code": "ICEM" },\n  { "Name": "Another College", "College Code": "SPIT" }\n]`}</pre>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Do not paste full project codes like GIT/Engg/4th/26-27 here.
+              </p>
             </div>
 
             <div className="space-y-2">

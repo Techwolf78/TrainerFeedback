@@ -1,0 +1,302 @@
+{
+  "month": "May 2026",
+  "totalSessions": 11,
+  "totalResponses": 8184,
+  "overallAvgRating": 4.54,
+  "colleges": [
+    {
+      "name": "Indira University - Pune",
+      "sessions": 1,
+      "responses": 48,
+      "avgRating": 4.66
+    },
+    {
+      "name": "Shri Ramdeobaba College Of Engineering And Management",
+      "sessions": 7,
+      "responses": 3205,
+      "avgRating": 4.57
+    },
+    {
+      "name": "Sharad Institute Of Technology",
+      "sessions": 3,
+      "responses": 4931,
+      "avgRating": 4.51
+    }
+  ],
+  "trainers": [
+    {
+      "name": "Onkar Holkar ",
+      "sessions": 1,
+      "responses": 833,
+      "avgRating": 4.76,
+      "categoryAverages": {
+        "delivery": 4.78,
+        "engagement": 4.74,
+        "overall": 4.73,
+        "communication": 4.76,
+        "knowledge": 4.78,
+        "content": 4.75
+      }
+    },
+    {
+      "name": "Dr VIRAJ VIJAY ATRE",
+      "sessions": 1,
+      "responses": 48,
+      "avgRating": 4.66,
+      "categoryAverages": {
+        "delivery": 4.65,
+        "engagement": 4.69,
+        "overall": 4.63,
+        "communication": 4.67,
+        "knowledge": 4.73,
+        "content": 4.6
+      }
+    },
+    {
+      "name": "Rahul Patil",
+      "sessions": 1,
+      "responses": 1751,
+      "avgRating": 4.57,
+      "categoryAverages": {
+        "delivery": 4.58,
+        "engagement": 4.58,
+        "overall": 4.56,
+        "communication": 4.57,
+        "knowledge": 4.57,
+        "content": 4.57
+      }
+    },
+    {
+      "name": "Moin Anis Hasanfatta",
+      "sessions": 3,
+      "responses": 1251,
+      "avgRating": 4.53,
+      "categoryAverages": {
+        "delivery": 4.55,
+        "engagement": 4.53,
+        "overall": 4.51,
+        "communication": 4.53,
+        "knowledge": 4.55,
+        "content": 4.5
+      }
+    },
+    {
+      "name": "Mukesh Ranjith ",
+      "sessions": 3,
+      "responses": 1121,
+      "avgRating": 4.49,
+      "categoryAverages": {
+        "delivery": 4.51,
+        "engagement": 4.51,
+        "overall": 4.41,
+        "communication": 4.52,
+        "knowledge": 4.5,
+        "content": 4.47
+      }
+    },
+    {
+      "name": "Mohan Patel",
+      "sessions": 1,
+      "responses": 2347,
+      "avgRating": 4.48,
+      "categoryAverages": {
+        "delivery": 4.47,
+        "engagement": 4.48,
+        "overall": 4.45,
+        "communication": 4.47,
+        "knowledge": 4.49,
+        "content": 4.47
+      }
+    },
+    {
+      "name": "V. Suresh nair",
+      "sessions": 1,
+      "responses": 833,
+      "avgRating": 4.47,
+      "categoryAverages": {
+        "delivery": 4.48,
+        "engagement": 4.48,
+        "overall": 4.35,
+        "communication": 4.48,
+        "knowledge": 4.48,
+        "content": 4.46
+      }
+    }
+  ],
+  "topPositiveComments": [
+    {
+      "text": "The sessions were truly great and impactful. Thank you Sir for sharing the immense and in-depth knowledge of the Project Management.",
+      "trainer": "Dr VIRAJ VIJAY ATRE",
+      "college": "Indira University - Pune",
+      "rating": 5
+    },
+    {
+      "text": "Great insights from the faculty introduced to some reference case study and book by",
+      "trainer": "Dr VIRAJ VIJAY ATRE",
+      "college": "Indira University - Pune",
+      "rating": 5
+    },
+    {
+      "text": "The sessions were great",
+      "trainer": "Dr VIRAJ VIJAY ATRE",
+      "college": "Indira University - Pune",
+      "rating": 5
+    },
+    {
+      "text": "Excellent faculty",
+      "trainer": "Dr VIRAJ VIJAY ATRE",
+      "college": "Indira University - Pune",
+      "rating": 5
+    },
+    {
+      "text": "I like how sir is interacting and his knowledge about any field",
+      "trainer": "V. Suresh nair",
+      "college": "Sharad Institute Of Technology",
+      "rating": 5
+    },
+    {
+      "text": "It was very excellent and innovative",
+      "trainer": "V. Suresh nair",
+      "college": "Sharad Institute Of Technology",
+      "rating": 5
+    },
+    {
+      "text": "It was great",
+      "trainer": "V. Suresh nair",
+      "college": "Sharad Institute Of Technology",
+      "rating": 5
+    },
+    {
+      "text": "Excellent teaching",
+      "trainer": "V. Suresh nair",
+      "college": "Sharad Institute Of Technology",
+      "rating": 5
+    },
+    {
+      "text": "Great experience",
+      "trainer": "V. Suresh nair",
+      "college": "Sharad Institute Of Technology",
+      "rating": 5
+    },
+    {
+      "text": "Great teaching",
+      "trainer": "V. Suresh nair",
+      "college": "Sharad Institute Of Technology",
+      "rating": 5
+    }
+  ],
+  "topCriticalComments": [
+    {
+      "text": "Trainer don't have the teaching experience \nNo concepts are cleared\nTeaching is not appropriate \nWasting most of the time",
+      "trainer": "Mohan Patel",
+      "college": "Sharad Institute Of Technology",
+      "rating": 1
+    },
+    {
+      "text": "Trainer is not good in technical knowledge.\nHe is very lazy and in full day only teaches 1-2hr.",
+      "trainer": "Mohan Patel",
+      "college": "Sharad Institute Of Technology",
+      "rating": 1
+    },
+    {
+      "text": "The training experience was very disappointing. The trainer’s teaching style was not effective, and concepts were often explained in a way that made them difficult to understand. There was very little interaction with students, which created an unengaging learning environment. It also felt like more attention was given to students who already had prior knowledge of the topic, while those trying to learn from scratch were not adequately supported.\n\nA trainer should ensure that every student understands the concepts before moving ahead, but that effort seemed missing. Doubts were not handled properly, and there was little concern about whether students were actually learning or not. Training should encourage growth and confidence for everyone, not just those who already know the subject. Overall, this experience did not meet expectations and left a negative impression.",
+      "trainer": "Moin Anis Hasanfatta",
+      "college": "Shri Ramdeobaba College Of Engineering And Management",
+      "rating": 1
+    },
+    {
+      "text": "The session was again disappointing. The trainer did not interact much with students or make enough effort to ensure everyone was understanding the concepts. Most attention seemed to go toward students who already knew the topic, while others were left behind.\n\nCompared to this, the previous trainer was much better at explaining concepts, interacting with students, and making sure everyone stayed involved.",
+      "trainer": "Moin Anis Hasanfatta",
+      "college": "Shri Ramdeobaba College Of Engineering And Management",
+      "rating": 1
+    },
+    {
+      "text": "Change mentor please, teacher not teaching properly not able to understand and not stick with syllabus",
+      "trainer": "Moin Anis Hasanfatta",
+      "college": "Shri Ramdeobaba College Of Engineering And Management",
+      "rating": 1
+    },
+    {
+      "text": "The session was boring. No interaction at all. Totally Not worth it",
+      "trainer": "Moin Anis Hasanfatta",
+      "college": "Shri Ramdeobaba College Of Engineering And Management",
+      "rating": 1
+    },
+    {
+      "text": "The class was soo dead that please change the Teacher",
+      "trainer": "Moin Anis Hasanfatta",
+      "college": "Shri Ramdeobaba College Of Engineering And Management",
+      "rating": 1
+    },
+    {
+      "text": "Not explaining anything",
+      "trainer": "Moin Anis Hasanfatta",
+      "college": "Shri Ramdeobaba College Of Engineering And Management",
+      "rating": 1
+    },
+    {
+      "text": "Nope",
+      "trainer": "Moin Anis Hasanfatta",
+      "college": "Shri Ramdeobaba College Of Engineering And Management",
+      "rating": 1
+    },
+    {
+      "text": "dont ask feedback",
+      "trainer": "Mukesh Ranjith ",
+      "college": "Shri Ramdeobaba College Of Engineering And Management",
+      "rating": 1
+    }
+  ],
+  "popularFutureTopics": [
+    {
+      "name": "Spring Boot",
+      "count": 91,
+      "avgRating": 4.32
+    },
+    {
+      "name": "Scada",
+      "count": 88,
+      "avgRating": 4.53
+    },
+    {
+      "name": "Springboot",
+      "count": 76,
+      "avgRating": 4.37
+    },
+    {
+      "name": "DSA",
+      "count": 66,
+      "avgRating": 4.58
+    },
+    {
+      "name": "microservices",
+      "count": 63,
+      "avgRating": 4.54
+    },
+    {
+      "name": "Redis",
+      "count": 53,
+      "avgRating": 4.92
+    },
+    {
+      "name": "Aptitude",
+      "count": 48,
+      "avgRating": 4.64
+    },
+    {
+      "name": "Average",
+      "count": 48,
+      "avgRating": 4.75
+    },
+    {
+      "name": "Percentage",
+      "count": 46,
+      "avgRating": 4.35
+    },
+    {
+      "name": "Docker",
+      "count": 44,
+      "avgRating": 4.53
+    }
+  ]
+}

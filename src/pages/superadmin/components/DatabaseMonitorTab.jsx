@@ -26,6 +26,7 @@ import {
   Sparkles,
   HardDrive,
   Info,
+  Trash2,
 } from "lucide-react";
 
 // Firestore Billing Rules-based Document Size Estimator
@@ -268,7 +269,7 @@ const DatabaseMonitorTab = () => {
               Google Cloud Firestore enforces a strict **1 MB document limit** (1,024 KB). 
               Our optimized database stores individual student feedback safely inside a subcollection (allowing billions of entries), but session dashboards read from the session document itself. 
               **Low (&lt; 20 KB)** and **Medium (20 - 50 KB)** levels are extremely healthy. 
-              If any session document exceeds **50 KB** or contains **duplicate questions** from prior updates, it will trigger a "Needs Attention" alert, allowing you to instantly consolidate it using the "Optimize" tool.
+              If a session contains **duplicate questions** from prior updates, it will display an "Optimize Now" button to consolidate them. If a session document exceeds **50 KB**, it will trigger a "Needs Attention" size warning for developer review (no manual actions required for non-technical users).
             </p>
           </div>
         </CardContent>
@@ -439,11 +440,16 @@ const DatabaseMonitorTab = () => {
                     <Button
                       onClick={() => handleOptimize(session)}
                       disabled={optimizingId === session.id}
-                      className="gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-4 rounded-lg shadow-sm border border-blue-700/20 transition-all"
+                      className="gap-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs h-9 px-4 rounded-lg shadow-sm border border-rose-700/20 transition-all"
                     >
-                      <Sparkles className={`h-3.5 w-3.5 ${optimizingId === session.id ? "animate-spin" : ""}`} />
-                      {optimizingId === session.id ? "Optimizing..." : "Optimize Now"}
+                      <Trash2 className={`h-3.5 w-3.5 ${optimizingId === session.id ? "animate-spin" : ""}`} />
+                      {optimizingId === session.id ? "Removing..." : "Remove Duplicate Questions"}
                     </Button>
+                  ) : session.badge === "high" ? (
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-rose-600 bg-rose-50 py-1.5 px-3 rounded-lg border border-rose-100">
+                      <AlertTriangle className="h-4 w-4" />
+                      Size Warning (Dev Action Req.)
+                    </div>
                   ) : (
                     <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 py-1.5 px-3 rounded-lg border border-emerald-100">
                       <CheckCircle2 className="h-4 w-4" />

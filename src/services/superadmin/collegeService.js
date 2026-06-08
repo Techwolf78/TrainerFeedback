@@ -14,6 +14,33 @@ import {
 } from 'firebase/firestore';
 
 const COLLECTION_NAME = 'colleges';
+const COLLEGE_CODE_REGEX = /^[A-Z0-9]{2,12}$/;
+
+export const normalizeCollegeCode = (code = '') => code.trim().toUpperCase();
+
+export const getCollegeCodeValidationMessage = (code) => {
+  const normalizedCode = normalizeCollegeCode(code);
+
+  if (!normalizedCode) {
+    return 'College code is required.';
+  }
+
+  if (normalizedCode.includes('/')) {
+    return 'Enter only the short college code, not a full project code. Example: GIT, ICEM, SPIT.';
+  }
+
+  if (!COLLEGE_CODE_REGEX.test(normalizedCode)) {
+    return 'College code must be 2-12 letters/numbers only. Do not use spaces, slashes, hyphens, or project-code details.';
+  }
+
+  return '';
+};
+
+const assertValidCollegeCode = (code) => {
+  const message = getCollegeCodeValidationMessage(code);
+  if (message) throw new Error(message);
+  return normalizeCollegeCode(code);
+};
 
 /**
  * Subscribe to real-time college updates
@@ -36,27 +63,29 @@ export const subscribeToColleges = (callback) => {
 // Add a new college
 export const addCollege = async ({ name, code, logoUrl = '' }) => {
   try {
+    const normalizedCode = assertValidCollegeCode(code);
+
     // Check for duplicate code (only among non-deleted colleges)
     const q = query(
       collection(db, COLLECTION_NAME),
-      where('code', '==', code),
+      where('code', '==', normalizedCode),
       where('isDeleted', '==', false)
     );
     const querySnapshot = await getDocs(q);
 
     if (!querySnapshot.empty) {
-      throw new Error(`College with code ${code} already exists.`);
+      throw new Error(`College with code ${normalizedCode} already exists.`);
     }
 
     const docRef = await addDoc(collection(db, COLLECTION_NAME), {
       name,
-      code,
+      code: normalizedCode,
       logoUrl,
       isDeleted: false,
       createdAt: serverTimestamp()
-    }); 0
+    });
 
-    return { id: docRef.id, name, code, logoUrl };
+    return { id: docRef.id, name, code: normalizedCode, logoUrl };
   } catch (error) {
     console.error('Error adding college:', error);
     throw error;
@@ -66,12 +95,32 @@ export const addCollege = async ({ name, code, logoUrl = '' }) => {
 // Update an existing college
 export const updateCollege = async (id, updates) => {
   try {
+    const sanitizedUpdates = { ...updates };
+
+    if (sanitizedUpdates.code !== undefined) {
+      sanitizedUpdates.code = assertValidCollegeCode(sanitizedUpdates.code);
+
+      const duplicateQ = query(
+        collection(db, COLLECTION_NAME),
+        where('code', '==', sanitizedUpdates.code),
+        where('isDeleted', '==', false)
+      );
+      const duplicateSnapshot = await getDocs(duplicateQ);
+      const hasDuplicate = duplicateSnapshot.docs.some(
+        (collegeDoc) => collegeDoc.id !== id
+      );
+
+      if (hasDuplicate) {
+        throw new Error(`College with code ${sanitizedUpdates.code} already exists.`);
+      }
+    }
+
     const docRef = doc(db, COLLECTION_NAME, id);
     await updateDoc(docRef, {
-      ...updates,
+      ...sanitizedUpdates,
       updatedAt: serverTimestamp()
     });
-    return { id, ...updates };
+    return { id, ...sanitizedUpdates };
   } catch (error) {
     console.error('Error updating college:', error);
     throw error;
@@ -169,12 +218,19 @@ export const bulkAddColleges = async (collegesArray) => {
 
     for (const item of collegesArray) {
       const name = (item.Name || item.name || '').trim();
-      const code = (item['College Code'] || item.code || '').trim().toUpperCase();
+      const code = normalizeCollegeCode(item['College Code'] || item.code || '');
       const logoUrl = (item.logoUrl || item.LogoUrl || '').trim();
 
       if (!name || !code) {
         skipped++;
         errors.push(`Skipped entry with missing name or code: ${JSON.stringify(item)}`);
+        continue;
+      }
+
+      const codeValidationMessage = getCollegeCodeValidationMessage(code);
+      if (codeValidationMessage) {
+        skipped++;
+        errors.push(`Skipped invalid college code "${code}": ${codeValidationMessage}`);
         continue;
       }
 
