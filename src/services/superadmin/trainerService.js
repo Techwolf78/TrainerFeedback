@@ -1,17 +1,14 @@
 import { db } from "../firebase";
 import {
   collection,
-  addDoc,
   updateDoc,
   doc,
   setDoc,
-  deleteDoc,
   getDocs,
   query,
   where,
   getDoc,
   serverTimestamp,
-  writeBatch,
   limit,
   startAfter,
   onSnapshot,
@@ -24,6 +21,101 @@ const COLLECTION_NAME = "trainers";
 const COUNTER_COLLECTION = "counters";
 const TRAINER_COUNTER_DOC = "trainers";
 const TRAINER_ID_REGEX = /^GA-T\d{3,}$/;
+
+const normalizeEmail = (email = "") => email.trim().toLowerCase();
+const normalizeTrainerId = (trainerId = "") => trainerId.trim().toUpperCase();
+
+const getTimestampValue = (value) => {
+  if (!value) return 0;
+  if (typeof value.toMillis === "function") return value.toMillis();
+  if (value instanceof Date) return value.getTime();
+  return 0;
+};
+
+const pickPreferredTrainerRecord = (current, incoming) => {
+  if (Boolean(current.isDeleted) !== Boolean(incoming.isDeleted)) {
+    return current.isDeleted ? incoming : current;
+  }
+
+  const currentTime = Math.max(
+    getTimestampValue(current.updatedAt),
+    getTimestampValue(current.createdAt),
+  );
+  const incomingTime = Math.max(
+    getTimestampValue(incoming.updatedAt),
+    getTimestampValue(incoming.createdAt),
+  );
+
+  return incomingTime > currentTime ? incoming : current;
+};
+
+const getTrainerDedupeKey = (trainer) => {
+  const status = trainer.isDeleted ? "archived" : "active";
+  const trainerId = normalizeTrainerId(trainer.trainer_id);
+  if (trainerId) return `${status}:trainer_id:${trainerId}`;
+
+  const email = normalizeEmail(trainer.email);
+  if (email) return `${status}:email:${email}`;
+
+  return `${status}:doc:${trainer.id}`;
+};
+
+const dedupeTrainerRecords = (trainers) => {
+  const byKey = new Map();
+  const duplicateGroups = new Map();
+
+  trainers.forEach((trainer) => {
+    const key = getTrainerDedupeKey(trainer);
+    const existing = byKey.get(key);
+
+    if (!existing) {
+      byKey.set(key, trainer);
+      return;
+    }
+
+    duplicateGroups.set(key, [
+      ...(duplicateGroups.get(key) || [existing.id]),
+      trainer.id,
+    ]);
+    byKey.set(key, pickPreferredTrainerRecord(existing, trainer));
+  });
+
+  if (duplicateGroups.size > 0) {
+    console.warn(
+      "Duplicate trainer documents detected and hidden from the UI:",
+      Array.from(duplicateGroups.entries()).map(([key, ids]) => ({ key, ids })),
+    );
+  }
+
+  return Array.from(byKey.values());
+};
+
+const getDuplicateDocs = async (field, value, excludeId = null) => {
+  if (!value) return [];
+
+  const q = query(
+    collection(db, COLLECTION_NAME),
+    where(field, "==", value),
+  );
+  const snapshot = await getDocs(q);
+
+  return snapshot.docs.filter((trainerDoc) => trainerDoc.id !== excludeId);
+};
+
+const assertTrainerUnique = async ({ trainer_id }, excludeId = null) => {
+  const normalizedTrainerId = normalizeTrainerId(trainer_id);
+
+  if (normalizedTrainerId) {
+    const duplicateIds = await getDuplicateDocs(
+      "trainer_id",
+      normalizedTrainerId,
+      excludeId,
+    );
+    if (duplicateIds.length > 0) {
+      throw new Error(`Trainer with ID ${normalizedTrainerId} already exists.`);
+    }
+  }
+};
 
 /**
  * Subscribe to real-time trainer updates
@@ -39,7 +131,7 @@ export const subscribeToTrainers = (callback) => {
         id: doc.id,
         ...doc.data(),
       }));
-      callback(trainers);
+      callback(dedupeTrainerRecords(trainers));
     },
     (error) => {
       console.error("Error subscribing to trainers:", error);
@@ -86,28 +178,22 @@ export const addTrainer = async (
 ) => {
   const { skipCounterUpdate = false } = options;
   try {
+    const normalizedTrainerId = normalizeTrainerId(trainer_id);
+    const normalizedEmail = normalizeEmail(email);
+
     // Validate ID format
-    if (!TRAINER_ID_REGEX.test(trainer_id)) {
+    if (!TRAINER_ID_REGEX.test(normalizedTrainerId)) {
       throw new Error(
         `Invalid Trainer ID format. Must be GA-TXXX (e.g., GA-T001). Received: ${trainer_id}`,
       );
     }
 
-    // Check for duplicate trainer_id
-    const q = query(
-      collection(db, COLLECTION_NAME),
-      where("trainer_id", "==", trainer_id),
-    );
-    const querySnapshot = await getDocs(q);
-
-    if (!querySnapshot.empty) {
-      throw new Error(`Trainer with ID ${trainer_id} already exists.`);
-    }
+    await assertTrainerUnique({ trainer_id: normalizedTrainerId });
 
     // Create Auth User first
     let uid;
     try {
-      uid = await createUserWithoutLoggingIn(email, password);
+      uid = await createUserWithoutLoggingIn(normalizedEmail, password);
     } catch (authError) {
       // If auth fails (e.g. email exists), throw immediately
       throw new Error(`Failed to create auth user: ${authError.message}`);
@@ -117,25 +203,26 @@ export const addTrainer = async (
     await setDoc(doc(db, COLLECTION_NAME, uid), {
       uid, // redundancy but useful
       role: "trainer",
-      trainer_id,
-      name,
+      trainer_id: normalizedTrainerId,
+      name: name.trim(),
       domain,
       specialisation,
       topics,
-      email,
+      email: normalizedEmail,
+      emailLower: normalizedEmail,
       createdAt: serverTimestamp(),
     });
 
     // Send Onboarding Email
     await sendTrainerOnboardingEmail({
-      name,
-      email,
+      name: name.trim(),
+      email: normalizedEmail,
       temporary_password: password,
     });
 
     // Update counter (skip during batch — batch updates once at the end)
     if (!skipCounterUpdate) {
-      const num = extractTrainerNumber(trainer_id);
+      const num = extractTrainerNumber(normalizedTrainerId);
       if (num > 0) {
         const currentCounter = await getTrainerIdCounter();
         if (num > currentCounter) {
@@ -145,7 +232,12 @@ export const addTrainer = async (
     }
 
     // Return compatible object
-    return { id: uid, trainer_id, name, email };
+    return {
+      id: uid,
+      trainer_id: normalizedTrainerId,
+      name: name.trim(),
+      email: normalizedEmail,
+    };
   } catch (error) {
     console.error("Error adding trainer:", error);
     throw error;
@@ -155,12 +247,29 @@ export const addTrainer = async (
 // Update an existing trainer
 export const updateTrainer = async (id, updates) => {
   try {
+    const sanitizedUpdates = { ...updates };
+
+    if (sanitizedUpdates.trainer_id) {
+      sanitizedUpdates.trainer_id = normalizeTrainerId(
+        sanitizedUpdates.trainer_id,
+      );
+    }
+
+    if (sanitizedUpdates.email) {
+      sanitizedUpdates.email = normalizeEmail(sanitizedUpdates.email);
+      sanitizedUpdates.emailLower = sanitizedUpdates.email;
+    }
+
+    if (sanitizedUpdates.trainer_id) {
+      await assertTrainerUnique(sanitizedUpdates, id);
+    }
+
     const docRef = doc(db, COLLECTION_NAME, id);
     await updateDoc(docRef, {
-      ...updates,
+      ...sanitizedUpdates,
       updatedAt: serverTimestamp(),
     });
-    return { id, ...updates };
+    return { id, ...sanitizedUpdates };
   } catch (error) {
     console.error("Error updating trainer:", error);
     throw error;
@@ -209,7 +318,7 @@ export const getAllTrainers = async (limitCount = 10, lastDoc = null, includeDel
     }));
 
     return {
-      trainers,
+      trainers: dedupeTrainerRecords(trainers),
       lastDoc: querySnapshot.docs[querySnapshot.docs.length - 1] || null,
       hasMore: querySnapshot.docs.length === limitCount,
     };
@@ -253,7 +362,9 @@ export const addTrainersBatch = async (trainers) => {
   const snapshot = await getDocs(q);
   snapshot.forEach((doc) => {
     const data = doc.data();
-    if (data.trainer_id) existingIds.add(data.trainer_id);
+    const existingTrainerId = normalizeTrainerId(data.trainer_id);
+
+    if (existingTrainerId) existingIds.add(existingTrainerId);
   });
 
   // 2. Track IDs within this batch to catch intra-batch duplicates
@@ -261,7 +372,8 @@ export const addTrainersBatch = async (trainers) => {
 
   for (const trainer of trainers) {
     try {
-      const trainerId = trainer.trainer_id;
+      const trainerId = normalizeTrainerId(trainer.trainer_id);
+      const email = normalizeEmail(trainer.email);
 
       // Validate trainer_id is provided
       if (!trainerId) {
@@ -297,7 +409,10 @@ export const addTrainersBatch = async (trainers) => {
       batchIds.add(trainerId);
 
       // Create trainer (skip counter update — we do it once at the end)
-      const added = await addTrainer(trainer, { skipCounterUpdate: true });
+      const added = await addTrainer(
+        { ...trainer, trainer_id: trainerId, email },
+        { skipCounterUpdate: true },
+      );
       results.success.push(added);
       existingIds.add(trainerId);
     } catch (error) {

@@ -12,6 +12,7 @@ import {
   MoreVertical,
   RotateCcw,
   ShieldBan,
+  Trophy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +29,7 @@ import {
 } from "@/services/superadmin/trainerService";
 import { useSuperAdminData } from "@/contexts/SuperAdminDataContext";
 import TrainerAnalytics from "./TrainerAnalytics";
+import TrainerLeaderboard from "./TrainerLeaderboard";
 import Loader from "@/components/ui/Loader";
 
 // Add these ShadCN UI imports if you haven't imported them in this file yet
@@ -56,6 +58,7 @@ const TrainersTab = () => {
   // Get trainers from context (cached, no re-fetch on tab switch)
   const {
     trainers,
+    sessions,
     loadTrainers,
     updateTrainersList,
     loading: contextLoading,
@@ -63,7 +66,9 @@ const TrainersTab = () => {
   const loading = contextLoading.trainers;
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
-  const [showArchived, setShowArchived] = useState(false);
+  const [viewMode, setViewMode] = useState("active");
+  const showArchived = viewMode === "archived";
+  const showLeaderboard = viewMode === "leaderboard";
 
   // Dialog states
   const [trainerDialogOpen, setTrainerDialogOpen] = useState(false);
@@ -95,6 +100,8 @@ const TrainersTab = () => {
   // Filter Logic
   const allFilteredTrainers = trainers
     .filter((t) => {
+      if (showLeaderboard) return false;
+
       // Primary filter: isDeleted status
       if (showArchived) {
         if (!t.isDeleted) return false;
@@ -307,21 +314,30 @@ const TrainersTab = () => {
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-4">
            <Button 
-            variant={showArchived ? "ghost" : "default"} 
+            variant={viewMode === "active" ? "default" : "ghost"} 
             size="sm" 
-            onClick={() => setShowArchived(false)}
+            onClick={() => setViewMode("active")}
             className="rounded-full shadow-sm"
           >
             All Active
           </Button>
           <Button 
-            variant={showArchived ? "default" : "ghost"} 
+            variant={viewMode === "archived" ? "default" : "ghost"} 
             size="sm" 
-            onClick={() => setShowArchived(true)}
+            onClick={() => setViewMode("archived")}
             className="rounded-full shadow-sm gap-2"
           >
             <ShieldBan className="h-3.5 w-3.5" />
             Archived/Deleted
+          </Button>
+          <Button 
+            variant={viewMode === "leaderboard" ? "default" : "ghost"} 
+            size="sm" 
+            onClick={() => setViewMode("leaderboard")}
+            className="rounded-full shadow-sm gap-2"
+          >
+            <Trophy className="h-3.5 w-3.5" />
+            Leaderboard
           </Button>
         </div>
 
@@ -329,7 +345,13 @@ const TrainersTab = () => {
           <div className="flex-1 flex max-w-md items-center gap-3">
             <div className="relative flex-1">
               <Input
-                placeholder={`Search ${showArchived ? "archived" : "active"} by name, email, or domain...`}
+                placeholder={`Search ${
+                  showLeaderboard
+                    ? "leaderboard"
+                    : showArchived
+                      ? "archived"
+                      : "active"
+                } by name, email, ID, or domain...`}
                 className="pl-10 bg-card/50 shadow-sm"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -337,13 +359,16 @@ const TrainersTab = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             </div>
             <div className="text-sm font-medium text-muted-foreground whitespace-nowrap bg-muted/50 px-3 py-1.5 rounded-md border">
-              {filteredTrainers.length}{" "}
-              {filteredTrainers.length === 1 ? "Trainer" : "Trainers"}
+              {showLeaderboard
+                ? `${trainers.filter((t) => !t.isDeleted).length} Ranked`
+                : `${filteredTrainers.length} ${
+                    filteredTrainers.length === 1 ? "Trainer" : "Trainers"
+                  }`}
             </div>
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">
             {/* Batch Import Button */}
-            {!showArchived && (
+            {!showArchived && !showLeaderboard && (
               <>
                 <Button
                   variant="outline"
@@ -579,9 +604,17 @@ const TrainersTab = () => {
         )}
       </div>
 
-      {/* Redesigned Trainers Grid */}
-      <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-        {filteredTrainers.map((trainer, index) => (
+      {showLeaderboard ? (
+        <TrainerLeaderboard
+          trainers={trainers}
+          sessions={sessions}
+          searchQuery={searchQuery}
+          onSelectTrainer={setSelectedTrainerForAnalytics}
+        />
+      ) : (
+        /* Redesigned Trainers Grid */
+        <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+          {filteredTrainers.map((trainer, index) => (
           <div
             key={trainer.id}
             className="group relative flex flex-col bg-card border rounded-xl shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 animate-fade-up overflow-hidden"
@@ -693,20 +726,20 @@ const TrainersTab = () => {
               </DropdownMenu>
             </div>
           </div>
-        ))}
+          ))}
 
-        {/* Loading State */}
-        {loading && trainers.length === 0 && (
+          {/* Loading State */}
+          {loading && trainers.length === 0 && (
           <div className="col-span-full flex flex-col items-center justify-center py-24 text-center">
             <Loader fullScreen={false} />
             <p className="text-muted-foreground animate-pulse">
               Syncing trainer database...
             </p>
           </div>
-        )}
+          )}
 
-        {/* Empty State */}
-        {!loading && filteredTrainers.length === 0 && (
+          {/* Empty State */}
+          {!loading && filteredTrainers.length === 0 && (
           <div className="col-span-full flex flex-col items-center justify-center py-20 bg-muted/10 border-2 border-dashed border-muted rounded-2xl">
             <div className="bg-background p-4 rounded-full shadow-sm mb-4">
               <Users className="h-10 w-10 text-muted-foreground/40" />
@@ -739,8 +772,9 @@ const TrainersTab = () => {
               </Button>
             )}
           </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
