@@ -179,7 +179,7 @@ const TrainerLeaderboard = ({
   }, [sessions, trainers]);
 
   const searchLower = searchQuery.trim().toLowerCase();
-  const visibleRows = leaderboard.filter((trainer) => {
+  const visibleRows = useMemo(() => leaderboard.filter((trainer) => {
     if (!searchLower) return true;
     return (
       trainer.name?.toLowerCase().includes(searchLower) ||
@@ -188,7 +188,7 @@ const TrainerLeaderboard = ({
       trainer.specialisation?.toLowerCase().includes(searchLower) ||
       trainer.trainer_id?.toLowerCase().includes(searchLower)
     );
-  });
+  }), [leaderboard, searchLower]);
 
   const topThree = visibleRows.slice(0, 3);
 
