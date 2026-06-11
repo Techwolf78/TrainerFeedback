@@ -216,11 +216,23 @@ const HelpTab = () => {
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
             </div>
           ) : myTickets.length === 0 ? (
-            <div className="text-center py-10">
-              <Ticket className="h-10 w-10 text-muted-foreground mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">
-                You haven't raised any tickets yet.
+            <div className="flex flex-col items-center justify-center text-center py-12 px-4 border border-dashed rounded-xl bg-slate-50/50">
+              <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+                <Ticket className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <h3 className="text-base font-semibold text-foreground mb-1">
+                No tickets raised yet
+              </h3>
+              <p className="text-sm text-muted-foreground max-w-xs mb-5">
+                Need help or found a bug? Raise a ticket and our support team will resolve it.
               </p>
+              <Button
+                onClick={() => setIsTicketModalOpen(true)}
+                className="gap-2"
+                size="sm"
+              >
+                <Plus className="h-4 w-4" /> Raise Support Ticket
+              </Button>
             </div>
           ) : (
             <div className="space-y-2">

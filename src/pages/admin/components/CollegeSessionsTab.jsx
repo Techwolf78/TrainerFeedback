@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAdminData } from "@/contexts/AdminDataContext";
 
 import SessionAnalytics from "../../superadmin/components/SessionAnalytics";
@@ -36,6 +37,8 @@ import {
   BarChart3,
   Calendar,
   Activity,
+  Search,
+  X,
 } from "lucide-react";
 import {
   format,
@@ -97,16 +100,54 @@ const CollegeSessionsTab = () => {
 
   // State
   const [selectedSession, setSelectedSession] = useState(null);
-  const [activeTab, setActiveTab] = useState("all"); // 'all', 'active', 'inactive'
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filters, setFilters] = useState({
-    course: "all",
-    department: "all",
-    year: "all",
-    batch: "all",
-    trainer: "all",
-    dateRange: "all",
-  });
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const activeTab = searchParams.get("tab") || "all";
+  const searchQuery = searchParams.get("q") || "";
+  const filters = {
+    course: searchParams.get("course") || "all",
+    department: searchParams.get("department") || "all",
+    year: searchParams.get("year") || "all",
+    batch: searchParams.get("batch") || "all",
+    trainer: searchParams.get("trainer") || "all",
+    dateRange: searchParams.get("dateRange") || "all",
+  };
+
+  const setActiveTab = (val) => {
+    const params = new URLSearchParams(searchParams);
+    if (val && val !== "all") {
+      params.set("tab", val);
+    } else {
+      params.delete("tab");
+    }
+    setSearchParams(params, { replace: true });
+  };
+
+  const setSearchQuery = (val) => {
+    const params = new URLSearchParams(searchParams);
+    if (val) {
+      params.set("q", val);
+    } else {
+      params.delete("q");
+    }
+    setSearchParams(params, { replace: true });
+  };
+
+  const setFilters = (newFilters) => {
+    const params = new URLSearchParams(searchParams);
+    const nextFilters = typeof newFilters === "function" ? newFilters(filters) : newFilters;
+
+    const keys = ["course", "department", "year", "batch", "trainer", "dateRange"];
+    keys.forEach((key) => {
+      if (nextFilters[key] && nextFilters[key] !== "all") {
+        params.set(key, nextFilters[key]);
+      } else {
+        params.delete(key);
+      }
+    });
+
+    setSearchParams(params, { replace: true });
+  };
 
   // Ensure sessions and trainers are loaded on mount
   useEffect(() => {
@@ -296,7 +337,31 @@ const CollegeSessionsTab = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Search</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Topic, course..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 pr-9 h-9"
+                />
+                {searchQuery && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+
             <div className="space-y-1">
               <Label className="text-xs">Course</Label>
               <Select

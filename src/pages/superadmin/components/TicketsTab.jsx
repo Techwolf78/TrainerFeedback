@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   getAllTickets,
   updateTicketStatus,
@@ -74,7 +75,50 @@ const TicketsTab = () => {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Get values from URL or fallback to default
+  const searchQuery = searchParams.get("q") || "";
+  const filters = {
+    status: searchParams.get("status") || "all",
+    category: searchParams.get("category") || "all",
+    priority: searchParams.get("priority") || "all",
+  };
+
+  const setSearchQuery = (val) => {
+    const params = new URLSearchParams(searchParams);
+    if (val) {
+      params.set("q", val);
+    } else {
+      params.delete("q");
+    }
+    setSearchParams(params, { replace: true });
+  };
+
+  const setFilters = (newFilters) => {
+    const params = new URLSearchParams(searchParams);
+    const nextFilters = typeof newFilters === "function" ? newFilters(filters) : newFilters;
+
+    if (nextFilters.status && nextFilters.status !== "all") {
+      params.set("status", nextFilters.status);
+    } else {
+      params.delete("status");
+    }
+
+    if (nextFilters.category && nextFilters.category !== "all") {
+      params.set("category", nextFilters.category);
+    } else {
+      params.delete("category");
+    }
+
+    if (nextFilters.priority && nextFilters.priority !== "all") {
+      params.set("priority", nextFilters.priority);
+    } else {
+      params.delete("priority");
+    }
+
+    setSearchParams(params, { replace: true });
+  };
 
   // Modal State
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
@@ -83,16 +127,8 @@ const TicketsTab = () => {
   const [resolutionNotes, setResolutionNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Filter state
-  const [filters, setFilters] = useState({
-    status: "all",
-    category: "all",
-    priority: "all",
-  });
-
   const resetFilters = () => {
-    setFilters({ status: "all", category: "all", priority: "all" });
-    setSearchQuery("");
+    setSearchParams({}, { replace: true });
   };
 
   useEffect(() => {
@@ -236,8 +272,19 @@ const TicketsTab = () => {
                   placeholder="Subject, name..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9"
+                  className="pl-9 pr-9"
                 />
+                {searchQuery && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -322,19 +369,30 @@ const TicketsTab = () => {
 
       {/* Tickets List */}
       {filteredTickets.length === 0 ? (
-        <div className="text-center py-16 bg-card rounded-xl border">
-          <Ticket className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+        <div className="flex flex-col items-center justify-center text-center py-16 px-4 bg-card rounded-xl border border-dashed">
+          <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+            <Ticket className="h-6 w-6 text-muted-foreground" />
+          </div>
           <h3 className="text-lg font-semibold text-foreground mb-1">
-            No tickets found
+            {searchQuery || filters.status !== "all" || filters.category !== "all" || filters.priority !== "all"
+              ? "No matching tickets found"
+              : "No tickets raised yet"}
           </h3>
-          <p className="text-sm text-muted-foreground">
-            {filters.status !== "all" ||
-            filters.category !== "all" ||
-            filters.priority !== "all" ||
-            searchQuery
-              ? "Try changing your filters."
-              : "No tickets have been raised yet."}
+          <p className="text-sm text-muted-foreground max-w-sm mb-5">
+            {searchQuery || filters.status !== "all" || filters.category !== "all" || filters.priority !== "all"
+              ? "We couldn't find any tickets that match your current search or filter configuration. Try resetting them."
+              : "There are currently no support request tickets or bug reports raised in the system."}
           </p>
+          {(searchQuery || filters.status !== "all" || filters.category !== "all" || filters.priority !== "all") && (
+            <Button
+              onClick={resetFilters}
+              variant="outline"
+              className="gap-2"
+              size="sm"
+            >
+              <RotateCcw className="h-4 w-4" /> Reset Filters
+            </Button>
+          )}
         </div>
       ) : (
         <div className="space-y-2">

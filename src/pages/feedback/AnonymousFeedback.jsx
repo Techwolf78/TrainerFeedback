@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Star, CheckCircle, AlertCircle, XCircle, Loader2 } from "lucide-react";
+import { Star, CheckCircle, AlertCircle, XCircle, Loader2, Sun, Moon } from "lucide-react";
 import Loader from "@/components/ui/Loader";
 
 // Generate a unique device ID for localStorage tracking
@@ -132,6 +132,26 @@ export const AnonymousFeedback = () => {
   const queryParams = new URLSearchParams(location.search);
   const urlPhaseId = queryParams.get("ph");
   const urlVersion = queryParams.get("v");
+
+  const [mounted, setMounted] = useState(false);
+  const [isLocalDark, setIsLocalDark] = useState(() => {
+    const saved = localStorage.getItem("feedback_theme");
+    if (saved) return saved === "dark";
+    if (typeof window !== "undefined" && window.matchMedia) {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const toggleTheme = () => {
+    const nextDark = !isLocalDark;
+    setIsLocalDark(nextDark);
+    localStorage.setItem("feedback_theme", nextDark ? "dark" : "light");
+  };
 
   const [session, setSession] = useState(null);
   const [responses, setResponses] = useState({});
@@ -454,24 +474,30 @@ export const AnonymousFeedback = () => {
 
   // Loading State
   if (isLoading) {
-    return <Loader />;
+    return (
+      <div className={isLocalDark ? "dark" : ""}>
+        <Loader />
+      </div>
+    );
   }
 
   // Session Closed State
   if (isClosed) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-6">
-        <Card className="max-w-md w-full">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <XCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h2 className="text-xl font-semibold mb-2">Session Closed</h2>
-              <p className="text-muted-foreground">
-                This feedback session is no longer accepting responses.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+      <div className={isLocalDark ? "dark" : ""}>
+        <div className="min-h-screen flex items-center justify-center bg-background dark:bg-background p-6 transition-colors duration-200">
+          <Card className="max-w-md w-full shadow-sm">
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <XCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h2 className="text-xl font-semibold mb-2">Session Closed</h2>
+                <p className="text-muted-foreground">
+                  This feedback session is no longer accepting responses.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -479,18 +505,20 @@ export const AnonymousFeedback = () => {
   // Error State
   if (error && !session) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-6">
-        <Card className="max-w-md w-full">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
-              <h2 className="text-xl font-semibold mb-2">
-                Unable to Load Form
-              </h2>
-              <p className="text-muted-foreground">{error}</p>
-            </div>
-          </CardContent>
-        </Card>
+      <div className={isLocalDark ? "dark" : ""}>
+        <div className="min-h-screen flex items-center justify-center bg-background dark:bg-background p-6 transition-colors duration-200">
+          <Card className="max-w-md w-full shadow-sm">
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
+                <h2 className="text-xl font-semibold mb-2">
+                  Unable to Load Form
+                </h2>
+                <p className="text-muted-foreground">{error}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -498,21 +526,23 @@ export const AnonymousFeedback = () => {
   // Already Submitted State
   if (isSubmitted) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-6">
-        <Card className="max-w-md w-full">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
-              <h2 className="text-2xl font-bold mb-2">Thank You!</h2>
-              <p className="text-muted-foreground mb-4">
-                Your feedback has been submitted successfully.
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Your response helps improve the quality of training.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+      <div className={isLocalDark ? "dark" : ""}>
+        <div className="min-h-screen flex items-center justify-center bg-background dark:bg-background p-6 transition-colors duration-200">
+          <Card className="max-w-md w-full shadow-sm">
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
+                <h2 className="text-2xl font-bold mb-2">Thank You!</h2>
+                <p className="text-muted-foreground mb-4">
+                  Your feedback has been submitted successfully.
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Your response helps improve the quality of training.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -683,28 +713,48 @@ export const AnonymousFeedback = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-background to-purple-50 dark:from-background dark:via-background dark:to-background">
-      {/* Bulk Submitter Button (hidden for production) */}
-      {false && (
-        <Button
-          className="fixed bottom-4 right-4 z-50 bg-orange-600 hover:bg-orange-700 shadow-lg text-white font-bold"
-          onClick={handleBulkSubmit}
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? "Submitting..." : "DEBUG: Submit 50 Responses"}
-        </Button>
-      )}
+    <div className={isLocalDark ? "dark" : ""}>
+      <div className="min-h-screen bg-gradient-to-br from-violet-50 via-background to-purple-50 dark:from-background dark:via-background dark:to-background text-foreground transition-colors duration-200">
+        {/* Bulk Submitter Button (hidden for production) */}
+        {false && (
+          <Button
+            className="fixed bottom-4 right-4 z-50 bg-orange-600 hover:bg-orange-700 shadow-lg text-white font-bold"
+            onClick={handleBulkSubmit}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? "Submitting..." : "DEBUG: Submit 50 Responses"}
+          </Button>
+        )}
 
-      {/* Navbar */}
-      <nav className="sticky top-0 z-50 bg-primary shadow-sm">
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center">
-          <img
-            src="/logo.png"
-            alt="Gryphon Academy"
-            className="h-12 md:h-16 w-auto object-contain"
-          />
-        </div>
-      </nav>
+        {/* Navbar */}
+        <nav className="sticky top-0 z-50 bg-primary dark:bg-card text-primary-foreground dark:text-foreground border-b dark:border-border/50 shadow-sm transition-colors duration-200">
+          <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+            <img
+              src="/logo.png"
+              alt="Gryphon Academy"
+              className="h-12 md:h-16 w-auto object-contain"
+            />
+            <div className="w-10 h-10 flex items-center justify-center">
+              {mounted ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleTheme}
+                  className="text-primary-foreground dark:text-foreground hover:bg-white/10 dark:hover:bg-slate-800 rounded-full"
+                  title="Toggle Theme"
+                >
+                  {isLocalDark ? (
+                    <Sun className="h-5 w-5 text-amber-400" />
+                  ) : (
+                    <Moon className="h-5 w-5" />
+                  )}
+                </Button>
+              ) : (
+                <div className="w-5 h-5" />
+              )}
+            </div>
+          </div>
+        </nav>
 
       <div className="max-w-lg mx-auto py-6 px-4">
         {/* Session Info Card */}
@@ -770,7 +820,7 @@ export const AnonymousFeedback = () => {
             <Card className="mb-5 shadow-sm border-blue-200">
               <CardContent className="pt-6">
                 <Label className="text-base font-medium mb-3 block">
-                  Which department/branch are you in? <span className="text-destructive">*</span>
+                  Which department/branch are you in? <span className="text-destructive dark:text-red-400">*</span>
                 </Label>
                 <RadioGroup
                   value={selectedBranch || ""}
@@ -803,7 +853,7 @@ export const AnonymousFeedback = () => {
             <Card className="mb-5 shadow-sm border-blue-200">
               <CardContent className="pt-6">
                 <Label className="text-base font-medium mb-3 block">
-                  Which batch are you in? <span className="text-destructive">*</span>
+                  Which batch are you in? <span className="text-destructive dark:text-red-400">*</span>
                 </Label>
                 <RadioGroup
                   value={selectedBatch || ""}
@@ -834,7 +884,7 @@ export const AnonymousFeedback = () => {
           <Card className="mb-5 shadow-sm border-primary/20">
             <CardContent className="pt-6">
               <Label className="text-base font-medium mb-3 block">
-                Which trainer are you providing feedback for? <span className="text-destructive">*</span>
+                Which trainer are you providing feedback for? <span className="text-destructive dark:text-red-400">*</span>
               </Label>
               <RadioGroup
                 value={selectedTrainerId || ""}
@@ -865,14 +915,14 @@ export const AnonymousFeedback = () => {
 
         {/* Required Fields Notice */}
         <p className="text-sm text-muted-foreground mb-6 flex items-center gap-1">
-          <span className="text-destructive">*</span> Indicates required
+          <span className="text-destructive dark:text-red-400">*</span> Indicates required
           question
         </p>
 
         {/* Feedback Form */}
         <form onSubmit={handleSubmit}>
           {error && (
-            <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm flex items-center gap-2">
+            <div className="mb-4 p-3 rounded-lg bg-destructive/10 dark:bg-red-950/40 border dark:border-red-900/30 text-destructive dark:text-red-400 text-sm flex items-center gap-2">
               <AlertCircle className="h-4 w-4" />
               {error}
             </div>
@@ -883,7 +933,7 @@ export const AnonymousFeedback = () => {
               <Card
                 id={`question-card-${index}`}
                 key={question.id || index}
-                className={fieldErrors[index] ? "border-destructive ring-1 ring-destructive transition-all duration-300" : "transition-all duration-300"}
+                className={fieldErrors[index] ? "border-destructive dark:border-red-400 ring-1 ring-destructive dark:ring-red-400 transition-all duration-300" : "transition-all duration-300"}
               >
                 <CardContent className="pt-6">
                   <div className="space-y-4">
@@ -891,7 +941,7 @@ export const AnonymousFeedback = () => {
                       <Label className="text-base font-medium">
                         {index + 1}. {question.text || question.question}
                         {question.required && (
-                          <span className="text-destructive ml-1">*</span>
+                          <span className="text-destructive dark:text-red-400 ml-1">*</span>
                         )}
                       </Label>
                     </div>
@@ -1019,13 +1069,25 @@ export const AnonymousFeedback = () => {
                             )
                           }
                           rows={3}
-                          className={fieldErrors[index] ? "border-destructive focus-visible:ring-destructive" : ""}
+                          maxLength={1000}
+                          className={fieldErrors[index] ? "border-destructive dark:border-red-400 focus-visible:ring-destructive dark:focus-visible:ring-red-400" : ""}
                         />
-                        {fieldErrors[index] && (
-                          <p className="text-sm font-medium text-destructive mt-1">
-                            {fieldErrors[index]}
-                          </p>
-                        )}
+                        <div className="flex justify-between items-start mt-1 text-xs">
+                          <div className="flex-1">
+                            {fieldErrors[index] && (
+                              <p className="font-medium text-destructive dark:text-red-400">
+                                {fieldErrors[index]}
+                              </p>
+                            )}
+                          </div>
+                          <span className={`flex-shrink-0 font-medium ml-2 ${
+                            (responses[index]?.value?.length || 0) >= 900
+                              ? "text-amber-500 dark:text-amber-400"
+                              : "text-muted-foreground"
+                          }`}>
+                            {responses[index]?.value?.length || 0} / 1000
+                          </span>
+                        </div>
                       </div>
                     )}
 
@@ -1039,13 +1101,25 @@ export const AnonymousFeedback = () => {
                             handleTextChange(index, e.target.value, "futureSession")
                           }
                           rows={3}
-                          className={fieldErrors[index] ? "border-destructive focus-visible:ring-destructive" : ""}
+                          maxLength={1000}
+                          className={fieldErrors[index] ? "border-destructive dark:border-red-400 focus-visible:ring-destructive dark:focus-visible:ring-red-400" : ""}
                         />
-                        {fieldErrors[index] && (
-                          <p className="text-sm font-medium text-destructive mt-1">
-                            {fieldErrors[index]}
-                          </p>
-                        )}
+                        <div className="flex justify-between items-start mt-1 text-xs">
+                          <div className="flex-1">
+                            {fieldErrors[index] && (
+                              <p className="font-medium text-destructive dark:text-red-400">
+                                {fieldErrors[index]}
+                              </p>
+                            )}
+                          </div>
+                          <span className={`flex-shrink-0 font-medium ml-2 ${
+                            (responses[index]?.value?.length || 0) >= 900
+                              ? "text-amber-500 dark:text-amber-400"
+                              : "text-muted-foreground"
+                          }`}>
+                            {responses[index]?.value?.length || 0} / 1000
+                          </span>
+                        </div>
                       </div>
                     )}
 
@@ -1063,13 +1137,25 @@ export const AnonymousFeedback = () => {
                             handleTextChange(index, e.target.value, "topicslearned")
                           }
                           rows={3}
-                          className={fieldErrors[index] ? "border-destructive focus-visible:ring-destructive" : ""}
+                          maxLength={1000}
+                          className={fieldErrors[index] ? "border-destructive dark:border-red-400 focus-visible:ring-destructive dark:focus-visible:ring-red-400" : ""}
                         />
-                        {fieldErrors[index] && (
-                          <p className="text-sm font-medium text-destructive mt-1">
-                            {fieldErrors[index]}
-                          </p>
-                        )}
+                        <div className="flex justify-between items-start mt-1 text-xs">
+                          <div className="flex-1">
+                            {fieldErrors[index] && (
+                              <p className="font-medium text-destructive dark:text-red-400">
+                                {fieldErrors[index]}
+                              </p>
+                            )}
+                          </div>
+                          <span className={`flex-shrink-0 font-medium ml-2 ${
+                            (responses[index]?.value?.length || 0) >= 900
+                              ? "text-amber-500 dark:text-amber-400"
+                              : "text-muted-foreground"
+                          }`}>
+                            {responses[index]?.value?.length || 0} / 1000
+                          </span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1083,7 +1169,7 @@ export const AnonymousFeedback = () => {
             <Button
               type="submit"
               size="lg"
-              className="w-full max-w-md gradient-hero text-primary-foreground"
+              className="w-full max-w-md gradient-hero text-white"
               disabled={isSubmitting || questions.length === 0}
             >
               {isSubmitting ? (
@@ -1103,5 +1189,6 @@ export const AnonymousFeedback = () => {
         </form>
       </div>
     </div>
+  </div>
   );
 };

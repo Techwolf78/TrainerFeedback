@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useSuperAdminData } from "@/contexts/SuperAdminDataContext";
 import { updateSession } from "@/services/superadmin/sessionService";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ import {
   HardDrive,
   Info,
   Trash2,
+  X,
 } from "lucide-react";
 
 // Firestore Billing Rules-based Document Size Estimator
@@ -89,9 +91,42 @@ const deduplicateQuestions = (questions) => {
 
 const DatabaseMonitorTab = () => {
   const { sessions, isInitialLoading, refreshAll } = useSuperAdminData();
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filterBadge, setFilterBadge] = useState("all");
-  const [filterAttentionOnly, setFilterAttentionOnly] = useState("all"); // 'all' or 'attention'
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const searchQuery = searchParams.get("q") || "";
+  const filterBadge = searchParams.get("size") || "all";
+  const filterAttentionOnly = searchParams.get("health") || "all";
+
+  const setSearchQuery = (val) => {
+    const params = new URLSearchParams(searchParams);
+    if (val) {
+      params.set("q", val);
+    } else {
+      params.delete("q");
+    }
+    setSearchParams(params, { replace: true });
+  };
+
+  const setFilterBadge = (val) => {
+    const params = new URLSearchParams(searchParams);
+    if (val && val !== "all") {
+      params.set("size", val);
+    } else {
+      params.delete("size");
+    }
+    setSearchParams(params, { replace: true });
+  };
+
+  const setFilterAttentionOnly = (val) => {
+    const params = new URLSearchParams(searchParams);
+    if (val && val !== "all") {
+      params.set("health", val);
+    } else {
+      params.delete("health");
+    }
+    setSearchParams(params, { replace: true });
+  };
+
   const [optimizingId, setOptimizingId] = useState(null);
 
   // Estimate size and analyze each session document
@@ -108,8 +143,8 @@ const DatabaseMonitorTab = () => {
     // Medium: 20 KB - 50 KB (Moderate)
     // High: > 50 KB (Needs Attention)
     let badge = "low";
-    if (sizeKB > 50) badge = "high";
-    else if (sizeKB > 20) badge = "medium";
+    if (sizeKB > 600) badge = "high";
+    else if (sizeKB > 200) badge = "medium";
 
     // Attention condition
     const needsAttention = badge === "high" || hasDuplicates;
@@ -268,8 +303,8 @@ const DatabaseMonitorTab = () => {
             <p className="text-sm text-blue-800 leading-relaxed">
               Google Cloud Firestore enforces a strict **1 MB document limit** (1,024 KB). 
               Our optimized database stores individual student feedback safely inside a subcollection (allowing billions of entries), but session dashboards read from the session document itself. 
-              **Low (&lt; 20 KB)** and **Medium (20 - 50 KB)** levels are extremely healthy. 
-              If a session contains **duplicate questions** from prior updates, it will display an "Optimize Now" button to consolidate them. If a session document exceeds **50 KB**, it will trigger a "Needs Attention" size warning for developer review (no manual actions required for non-technical users).
+              **Low (&lt; 200 KB)** and **Medium (200 - 600 KB)** levels are extremely healthy. 
+              If a session contains **duplicate questions** from prior updates, it will display an "Optimize Now" button to consolidate them. If a session document exceeds **600 KB**, it will trigger a "Needs Attention" size warning for developer review (no manual actions required for non-technical users).
             </p>
           </div>
         </CardContent>
@@ -294,8 +329,19 @@ const DatabaseMonitorTab = () => {
                   placeholder="Search by ID, Topic, College..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 text-sm"
+                  className="pl-9 pr-9 text-sm"
                 />
+                {searchQuery && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -308,9 +354,9 @@ const DatabaseMonitorTab = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Sizes</SelectItem>
-                  <SelectItem value="low">Low (&lt; 20 KB)</SelectItem>
-                  <SelectItem value="medium">Medium (20 - 50 KB)</SelectItem>
-                  <SelectItem value="high">High (&gt; 50 KB)</SelectItem>
+                  <SelectItem value="low">Low (&lt; 200 KB)</SelectItem>
+                  <SelectItem value="medium">Medium (200 - 600 KB)</SelectItem>
+                  <SelectItem value="high">High (&gt; 600 KB)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

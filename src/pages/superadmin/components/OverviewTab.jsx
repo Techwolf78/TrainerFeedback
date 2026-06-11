@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { format } from "date-fns";
+import Loader from "@/components/ui/Loader";
 import {
   Building2,
   Users,
@@ -17,6 +18,8 @@ import {
   AlertTriangle,
   Search,
   Frown,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -66,9 +69,14 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSuperAdminData } from "@/contexts/SuperAdminDataContext";
 import { getAcademicConfig } from "@/services/superadmin/academicService";
-import { getAnalyticsSessions } from "@/services/superadmin/sessionService";
-import { getResponseTrendData, getResponses, compileSessionStatsFromResponses, getSessionStats, processQualitativeComments, isValidTopicOrInterest } from "@/services/superadmin/responseService";
+import { getAnalyticsSessions, getSessionById } from "@/services/superadmin/sessionService";
+import { getResponseTrendData, getResponses, getFeedbacksByDateRange, compileSessionStatsFromResponses, getSessionStats, processQualitativeComments, isValidTopicOrInterest } from "@/services/superadmin/responseService";
 import { cn } from "@/lib/utils";
+
+import { toast } from "sonner";
+
+// Global cache to store query results and avoid redundant network queries
+const globalAnalyticsCache = new Map();
 
 // Helper to render session ID in two lines to save width
 const renderSessionId = (id) => {
@@ -152,12 +160,18 @@ const OverviewTab = ({
   }, []);
 
   const [analyticsData, setAnalyticsData] = useState(null);
-  const [analyticsCache, setAnalyticsCache] = useState({});
   const [isFetchingAnalytics, setIsFetchingAnalytics] = useState(false);
+  const [isFetchingAcademicConfig, setIsFetchingAcademicConfig] = useState(false);
+  const [isFetchingResponses, setIsFetchingResponses] = useState(false);
+  const [isFetchingTrendData, setIsFetchingTrendData] = useState(false);
   const [fetchedFilteredSessions, setFetchedFilteredSessions] = useState([]);
   const [filteredResponses, setFilteredResponses] = useState([]);
 
-  // Filter state
+  // Navigated month state (defaults to today)
+  const [navigatedMonth, setNavigatedMonth] = useState(() => new Date());
+
+  const isGlobalLoading = isFetchingAnalytics || isFetchingResponses || isFetchingAcademicConfig || isFetchingTrendData;
+
   const [filters, setFilters] = useState({
     projectCode: "all",
     collegeId: "all",
@@ -165,7 +179,7 @@ const OverviewTab = ({
     course: "all",
     year: "all",
     batch: "all",
-    dateRange: "all",
+    dateRange: "current_month",
     customStartDate: null,
     customEndDate: null,
   });
@@ -342,20 +356,10 @@ const OverviewTab = ({
     };
   };
 
-  // Helper to check if filters are at default (all)
-  const isDefaultView = useMemo(() => {
-    return (
-      filters.projectCode === "all" &&
-      filters.collegeId === "all" &&
-      filters.trainerId === "all" &&
-      filters.course === "all" &&
-      filters.year === "all" &&
-      filters.batch === "all" &&
-      filters.dateRange === "all"
-    );
-  }, [filters]);
+  const isDefaultView = false;
 
   const resetFilters = () => {
+    setNavigatedMonth(new Date());
     setFilters({
       projectCode: "all",
       collegeId: "all",
@@ -363,7 +367,7 @@ const OverviewTab = ({
       course: "all",
       year: "all",
       batch: "all",
-      dateRange: "all",
+      dateRange: "current_month",
       customStartDate: null,
       customEndDate: null,
     });
@@ -379,50 +383,83 @@ const OverviewTab = ({
   };
 
   // Calculate date range boundaries
-  const getDateRange = (range, customStart, customEnd) => {
-    if (range === "custom" && customStart && customEnd) {
-      const startDate = new Date(customStart);
-      startDate.setHours(0, 0, 0, 0);
-      const endDate = new Date(customEnd);
-      endDate.setHours(23, 59, 59, 999);
-      return { startDate, endDate };
+  const getDateRange = (range, customStart, customEnd, navigatedDate) => {
+    const today = new Date();
+    
+    if (range === "custom") {
+      if (customStart && customEnd) {
+        const startDate = new Date(customStart);
+        startDate.setHours(0, 0, 0, 0);
+        const endDate = new Date(customEnd);
+        endDate.setHours(23, 59, 59, 999);
+        return { startDate, endDate };
+      }
+      return { startDate: null, endDate: null };
     }
     
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
     let startDate = null;
+    let endDate = null;
+    const refDate = navigatedDate || today;
 
     switch (range) {
+      case "current_month":
+        startDate = new Date(refDate.getFullYear(), refDate.getMonth(), 1, 0, 0, 0, 0);
+        endDate = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0, 23, 59, 59, 999);
+        break;
+      case "previous_month":
+        startDate = new Date(refDate.getFullYear(), refDate.getMonth(), 1, 0, 0, 0, 0);
+        endDate = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0, 23, 59, 59, 999);
+        break;
       case "7days":
-        startDate = new Date(today);
-        startDate.setDate(startDate.getDate() - 7);
+        endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+        startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6, 0, 0, 0, 0);
         break;
       case "30days":
-        startDate = new Date(today);
-        startDate.setDate(startDate.getDate() - 30);
-        break;
-      case "90days":
-        startDate = new Date(today);
-        startDate.setDate(startDate.getDate() - 90);
+        endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+        startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29, 0, 0, 0, 0);
         break;
       default:
         return { startDate: null, endDate: null };
     }
 
-    startDate.setHours(0, 0, 0, 0);
-    return { startDate, endDate: today };
+    return { startDate, endDate };
   };
+
+  // Month navigation helpers
+  const handleNavigateMonth = (direction) => {
+    setNavigatedMonth((prev) => {
+      const nextMonth = new Date(prev.getFullYear(), prev.getMonth() + direction, 1);
+      const today = new Date();
+      // Disable future months
+      if (direction > 0 && (nextMonth.getFullYear() > today.getFullYear() || (nextMonth.getFullYear() === today.getFullYear() && nextMonth.getMonth() > today.getMonth()))) {
+        return prev;
+      }
+      return nextMonth;
+    });
+  };
+
+  const isNextMonthDisabled = useMemo(() => {
+    const today = new Date();
+    return (
+      navigatedMonth.getFullYear() > today.getFullYear() ||
+      (navigatedMonth.getFullYear() === today.getFullYear() &&
+        navigatedMonth.getMonth() >= today.getMonth())
+    );
+  }, [navigatedMonth]);
 
   // Load academic config when college changes
   useEffect(() => {
     const loadAcademicConfig = async () => {
       if (filters.collegeId && filters.collegeId !== "all") {
+        setIsFetchingAcademicConfig(true);
         try {
           const config = await getAcademicConfig(filters.collegeId);
           setAcademicOptions(config || {});
         } catch (err) {
           console.error("Failed to load academic config:", err);
           setAcademicOptions({});
+        } finally {
+          setIsFetchingAcademicConfig(false);
         }
       } else {
         setAcademicOptions(null);
@@ -431,32 +468,51 @@ const OverviewTab = ({
     loadAcademicConfig();
   }, [filters.collegeId]);
 
-  // Load analytics when filters change
+  // Load analytics and responses when filters/dateRange change
   useEffect(() => {
-    if (isDefaultView) {
+    const { startDate, endDate } = getDateRange(
+      filters.dateRange,
+      filters.customStartDate,
+      filters.customEndDate,
+      navigatedMonth
+    );
+
+    if (!startDate || !endDate) {
       setAnalyticsData(null);
       setFetchedFilteredSessions([]);
+      setFilteredResponses([]);
       return;
     }
 
-    const fetchAnalytics = async () => {
-      const cacheKey = JSON.stringify(filters);
-      if (analyticsCache[cacheKey]) {
-        setAnalyticsData(analyticsCache[cacheKey].stats);
-        setFetchedFilteredSessions(analyticsCache[cacheKey].sessions || []);
+    // Custom date range validation (max 31 days)
+    if (filters.dateRange === "custom") {
+      const diffTime = Math.abs(endDate - startDate);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      if (diffDays > 31) {
+        // Do not query if validation fails
+        return;
+      }
+    }
+
+    const fetchDashboardData = async () => {
+      const cacheKey = JSON.stringify({
+        ...filters,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+      });
+
+      if (globalAnalyticsCache.has(cacheKey)) {
+        const cached = globalAnalyticsCache.get(cacheKey);
+        setAnalyticsData(cached.analyticsData);
+        setFetchedFilteredSessions(cached.sessions);
+        setFilteredResponses(cached.responses);
         return;
       }
 
       setIsFetchingAnalytics(true);
+      setIsFetchingResponses(true);
+
       try {
-        // Don't pass date filters to getAnalyticsSessions when filtering by response submission date
-        // Instead, load all sessions and filter responses by submission date separately
-        const { startDate: sdObj, endDate: edObj } = getDateRange(
-          filters.dateRange,
-          filters.customStartDate,
-          filters.customEndDate
-        );
-        
         const formatDate = (d) => {
           if (!d) return null;
           const year = d.getFullYear();
@@ -465,23 +521,93 @@ const OverviewTab = ({
           return `${year}-${month}-${day}`;
         };
 
-        // If date range filter is active, don't pass dates to getAnalyticsSessions
-        // We'll filter by response submission date instead
-        const shouldFilterByResponseDate = sdObj && edObj && filters.dateRange !== "all";
-        
-        const fetchedSessionsRaw = await getAnalyticsSessions({
-          ...filters,
-          ...(shouldFilterByResponseDate ? {} : {
-            startDate: formatDate(sdObj),
-            endDate: formatDate(edObj),
-          }),
-          limitCount: 50,
-          includeActive: true, // Show live analytics in filtered view
-        });
+        const sessionStartDate = new Date(startDate);
+        sessionStartDate.setDate(sessionStartDate.getDate() - 30); // 30-day lookback for sessions to catch delayed feedback
 
-        // Resolve full stats from subcollections for sessions with lightweight compiledStats
+        const [fetchedSessionsRaw, flatFeedbacks] = await Promise.all([
+          getAnalyticsSessions({
+            ...filters,
+            startDate: formatDate(sessionStartDate),
+            endDate: formatDate(endDate),
+            limitCount: 500, // Fetch up to 500 sessions in this range
+            includeActive: true,
+          }),
+          getFeedbacksByDateRange(startDate, endDate)
+        ]);
+
+        let allFeedbacksRaw = [];
+        if (flatFeedbacks && flatFeedbacks.length > 0) {
+          allFeedbacksRaw = flatFeedbacks;
+        } else {
+          // Fallback: If root feedbacks collection is empty (legacy data),
+          // fetch responses from the subcollections of sessions in the lookback window.
+          const { getResponses } = await import("@/services/superadmin/responseService");
+          const responsePromises = fetchedSessionsRaw.map(session =>
+            getResponses(session.id)
+              .then(responses => responses.map(r => ({ ...r, sessionId: session.id })))
+              .catch(err => {
+                console.error(`Failed to fetch responses for session ${session.id}:`, err);
+                return [];
+              })
+          );
+          const allResolvedResponses = await Promise.all(responsePromises);
+          const legacyResponses = allResolvedResponses.flat();
+          
+          // Filter these legacy responses client-side by their submission date (submittedAt)
+          allFeedbacksRaw = legacyResponses.filter(response => {
+            let responseDate;
+            if (response.submittedAt?.toDate) {
+              responseDate = response.submittedAt.toDate();
+            } else if (typeof response.submittedAt === "string") {
+              responseDate = new Date(response.submittedAt);
+            } else if (response.submittedAt instanceof Date) {
+              responseDate = response.submittedAt;
+            }
+            if (!responseDate) return false;
+            return responseDate >= startDate && responseDate <= endDate;
+          });
+        }
+
+        // Find sessionIds from feedbacks that are not in fetchedSessionsRaw
+        const existingSessionIds = new Set(fetchedSessionsRaw.map(s => s.id));
+        const missingSessionIds = Array.from(
+          new Set(allFeedbacksRaw.map(f => f.sessionId).filter(id => id && !existingSessionIds.has(id)))
+        );
+
+        let fetchedMissingSessions = [];
+        if (missingSessionIds.length > 0) {
+          const sessionPromises = missingSessionIds.map(id => 
+            getSessionById(id).catch(err => {
+              console.error(`Failed to fetch missing session ${id}:`, err);
+              return null;
+            })
+          );
+          const resolvedMissing = await Promise.all(sessionPromises);
+          fetchedMissingSessions = resolvedMissing.filter(Boolean).filter(session => {
+            // Apply other active filters to the missing session to ensure database alignment
+            if (filters.collegeId && filters.collegeId !== "all" && session.collegeId !== filters.collegeId) return false;
+            if (filters.projectCode && filters.projectCode !== "all" && session.projectCode !== filters.projectCode) return false;
+            if (filters.course && filters.course !== "all" && session.course !== filters.course) return false;
+            if (filters.year && filters.year !== "all" && session.year !== filters.year) return false;
+            if (filters.batch && filters.batch !== "all") {
+              const bFilter = filters.batch.toLowerCase();
+              const sBatch = (session.batch || "").toLowerCase();
+              const sBatches = (session.batches || []).map(b => b.toLowerCase());
+              if (sBatch !== bFilter && !sBatches.includes(bFilter)) return false;
+            }
+            if (filters.trainerId && filters.trainerId !== "all") {
+              const tFilter = filters.trainerId;
+              const sessionTrainers = session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : []);
+              if (!sessionTrainers.some(t => t.id === tFilter)) return false;
+            }
+            return true;
+          });
+        }
+
+        const combinedSessionsRaw = [...fetchedSessionsRaw, ...fetchedMissingSessions];
+
         const fetchedSessions = await Promise.all(
-          fetchedSessionsRaw.map(async (session) => {
+          combinedSessionsRaw.map(async (session) => {
             if (session.status === "active") return session;
             if (!session.compiledStats || !session.compiledStats.ratingDistribution) {
               try {
@@ -497,89 +623,20 @@ const OverviewTab = ({
           })
         );
 
-        console.log("📊 Sessions fetched for analytics:", fetchedSessions.length, "shouldFilterByResponseDate:", shouldFilterByResponseDate);
-        const computedStats = aggregateStatsFromSessions(fetchedSessions);
-        const cacheEntry = { stats: computedStats, sessions: fetchedSessions };
-
-        setAnalyticsCache((prev) => ({ ...prev, [cacheKey]: cacheEntry }));
-        setAnalyticsData(computedStats);
-        setFetchedFilteredSessions(fetchedSessions);
-      } catch (err) {
-        console.error("Failed to fetch analytics:", err);
-        setAnalyticsData(null);
-      } finally {
-        setIsFetchingAnalytics(false);
-      }
-    };
-
-    const timer = setTimeout(fetchAnalytics, 300);
-    return () => clearTimeout(timer);
-  }, [filters, isDefaultView]);
-
-  // Load and filter responses by submission date and other active filters
-  useEffect(() => {
-    const loadFilteredResponses = async () => {
-      const shouldLoad = !isDefaultView && fetchedFilteredSessions.length > 0;
-      if (!shouldLoad) {
-        setFilteredResponses([]);
-        return;
-      }
-
-      try {
-        // Load all responses for filtered sessions with sessionId attached
-        const allResponsesToLoad = await Promise.all(
-          fetchedFilteredSessions.map((session) => {
-            // Live responses shouldn't load for active sessions unless manually compiled
-            if (session.status === "active" && !session.compiledStats) {
-              return Promise.resolve([]);
-            }
-            return getResponses(session.id)
-              .then((responses) =>
-                responses.map((r) => ({ ...r, sessionId: session.id }))
-              )
-              .catch(() => []);
-          })
-        );
-
-        let allResponses = allResponsesToLoad.flat();
-
-        // Create a session lookup map to check fallback values from the session
         const sessionMap = {};
-        fetchedFilteredSessions.forEach((s) => {
+        fetchedSessions.forEach((s) => {
           sessionMap[s.id] = s;
         });
+        const sessionIds = new Set(fetchedSessions.map(s => s.id));
 
-        // Filter by response submission date
-        const { startDate, endDate } = getDateRange(
-          filters.dateRange,
-          filters.customStartDate,
-          filters.customEndDate
-        );
+        let processedFeedbacks = allFeedbacksRaw.filter(f => sessionIds.has(f.sessionId));
 
-        if (startDate && endDate) {
-          allResponses = allResponses.filter((response) => {
-            let responseDate;
-            if (response.submittedAt?.toDate) {
-              responseDate = response.submittedAt.toDate();
-            } else if (typeof response.submittedAt === "string") {
-              responseDate = new Date(response.submittedAt);
-            } else if (response.submittedAt instanceof Date) {
-              responseDate = response.submittedAt;
-            }
-
-            const isInRange = responseDate >= startDate && responseDate <= endDate;
-            return isInRange;
-          });
-        }
-
-        // Filter by trainerId if trainer filter is active (case-insensitive with fallback)
         if (filters.trainerId !== "all") {
           const trainerIdFilter = filters.trainerId;
-          allResponses = allResponses.filter((response) => {
+          processedFeedbacks = processedFeedbacks.filter((response) => {
             if (response.selectedTrainerId) {
               return response.selectedTrainerId === trainerIdFilter;
             }
-            // Fallback to session trainers
             const session = sessionMap[response.sessionId];
             if (!session) return false;
             const sessionTrainers = session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : []);
@@ -587,15 +644,13 @@ const OverviewTab = ({
           });
         }
 
-        // Filter by batch if batch filter is active (case-insensitive with fallback)
         if (filters.batch !== "all") {
           const batchFilter = filters.batch.toLowerCase();
-          allResponses = allResponses.filter((response) => {
+          processedFeedbacks = processedFeedbacks.filter((response) => {
             const rBatch = (response.selectedBatch || response.batch || "").toLowerCase();
             if (rBatch) {
               return rBatch === batchFilter;
             }
-            // Fallback to session batch/batches
             const session = sessionMap[response.sessionId];
             if (!session) return false;
             const sBatch = (session.batch || "").toLowerCase();
@@ -604,22 +659,60 @@ const OverviewTab = ({
           });
         }
 
-        setFilteredResponses(allResponses);
-      } catch (error) {
-        console.error("Error loading filtered responses:", error);
+        // For fallback aggregation, filter sessions strictly within the active date range
+        const sessionsInActiveRange = fetchedSessions.filter(session => {
+          if (!session.sessionDate) return false;
+          const sDate = new Date(session.sessionDate);
+          sDate.setHours(0, 0, 0, 0);
+          const sStart = new Date(startDate);
+          sStart.setHours(0, 0, 0, 0);
+          const sEnd = new Date(endDate);
+          sEnd.setHours(23, 59, 59, 999);
+          return sDate >= sStart && sDate <= sEnd;
+        });
+        const computedStats = aggregateStatsFromSessions(sessionsInActiveRange);
+
+        globalAnalyticsCache.set(cacheKey, {
+          analyticsData: computedStats,
+          sessions: fetchedSessions,
+          responses: processedFeedbacks
+        });
+
+        setAnalyticsData(computedStats);
+        setFetchedFilteredSessions(fetchedSessions);
+        setFilteredResponses(processedFeedbacks);
+      } catch (err) {
+        console.error("Failed to fetch dashboard data:", err);
+        setAnalyticsData(null);
+        setFetchedFilteredSessions([]);
         setFilteredResponses([]);
+      } finally {
+        setIsFetchingAnalytics(false);
+        setIsFetchingResponses(false);
       }
     };
 
-    loadFilteredResponses();
-  }, [fetchedFilteredSessions, filters.dateRange, filters.customStartDate, filters.customEndDate, filters.trainerId, filters.batch, isDefaultView]);
+    const timer = setTimeout(fetchDashboardData, 300);
+    return () => clearTimeout(timer);
+  }, [
+    filters.dateRange,
+    filters.customStartDate,
+    filters.customEndDate,
+    filters.projectCode,
+    filters.collegeId,
+    filters.trainerId,
+    filters.course,
+    filters.year,
+    filters.batch,
+    navigatedMonth
+  ]);
 
   // Calculate aggregated stats from sessions
   const aggregatedStats = useMemo(() => {
     let result = null;
 
     // If we have filtered responses, recalculate from responses to ensure accurate filtering
-    const shouldRecalculateFromResponses = !isDefaultView && filteredResponses.length > 0;
+    const shouldRecalculateFromResponses = filteredResponses.length > 0;
     if (shouldRecalculateFromResponses) {
       const compiledStats = compileSessionStatsFromResponses(filteredResponses);
 
@@ -678,22 +771,12 @@ const OverviewTab = ({
         },
         topicsLearned: (compiledStats.topicsLearned || []).filter(isValidTopicOrInterest),
       };
-    } else if (!isDefaultView && analyticsData) {
-      // Fallback: If we have filtered sessions but no filtered responses were successfully loaded,
-      // return a default zero state for filtered view so we don't display overall/stale cached data.
-      result = {
-        totalSessions: fetchedFilteredSessions.length,
-        totalResponses: 0,
-        totalRatingsCount: 0,
-        totalHours: (Number(fetchedFilteredSessions.reduce((sum, s) => sum + (Number(s.sessionDuration) || 60), 0)) || 0) / 60,
-        avgRating: 0,
-        ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
-        categoryAverages: {},
-        qualitative: { high: [], low: [], future: [] },
-        topicsLearned: [],
-      };
-    } else if (isDefaultView && sessions.length > 0) {
-      result = aggregateStatsFromSessions(sessions);
+    } else if (analyticsData) {
+      // Fallback: If we have filtered sessions but no filtered responses (e.g. legacy data),
+      // use the pre-aggregated stats derived from sessions in fetchDashboardData
+      result = analyticsData;
+    } else if (fetchedFilteredSessions.length > 0) {
+      result = aggregateStatsFromSessions(fetchedFilteredSessions);
     } else {
       result = {
         totalSessions: 0,
@@ -715,11 +798,10 @@ const OverviewTab = ({
   const allCollegesPerformance = useMemo(() => {
     if (!colleges || colleges.length === 0) return [];
 
-    // Use filtered responses when any filter is active
-    const shouldUseFilteredResponses = !isDefaultView;
+    // Use filtered responses when we have individual responses loaded
+    const shouldUseFilteredResponses = filteredResponses.length > 0;
     
     if (shouldUseFilteredResponses) {
-      if (filteredResponses.length === 0) return [];
       // Group responses by college
       const collegeStats = {};
       colleges.forEach((college) => {
@@ -824,79 +906,108 @@ const OverviewTab = ({
   
   useEffect(() => {
     const calculateTrendData = async () => {
-      // When filters are active, use filteredResponses (even if empty)
-      const shouldUseFilteredResponses = !isDefaultView;
+      // When we have individual responses loaded, calculate trend from them
+      const shouldUseFilteredResponses = filteredResponses.length > 0;
       
-      if (shouldUseFilteredResponses) {
-        if (filteredResponses.length === 0) {
-          setTrendData([]);
-          return;
-        }
-        // Calculate trend from filtered responses
-        const dateMap = {};
-        filteredResponses.forEach((response) => {
-          let responseDate;
-          if (response.submittedAt?.toDate) {
-            responseDate = response.submittedAt.toDate();
-          } else if (typeof response.submittedAt === "string") {
-            responseDate = new Date(response.submittedAt);
-          } else if (response.submittedAt instanceof Date) {
-            responseDate = response.submittedAt;
+      const { startDate, endDate } = getDateRange(
+        filters.dateRange,
+        filters.customStartDate,
+        filters.customEndDate,
+        navigatedMonth
+      );
+
+      if (!startDate || !endDate) {
+        setTrendData([]);
+        return;
+      }
+
+      const formatDate = (d) => {
+        if (!d) return null;
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+      };
+
+      const startStr = formatDate(startDate);
+      const endStr = formatDate(endDate);
+
+      setIsFetchingTrendData(true);
+      try {
+        if (shouldUseFilteredResponses) {
+          if (filteredResponses.length === 0) {
+            setTrendData([]);
+            return;
           }
+          // Calculate trend from filtered responses
+          const dateMap = {};
+          filteredResponses.forEach((response) => {
+            let responseDate;
+            if (response.submittedAt?.toDate) {
+              responseDate = response.submittedAt.toDate();
+            } else if (typeof response.submittedAt === "string") {
+              responseDate = new Date(response.submittedAt);
+            } else if (response.submittedAt instanceof Date) {
+              responseDate = response.submittedAt;
+            }
 
-          if (responseDate) {
-            const dateStr = `${responseDate.getFullYear()}-${String(responseDate.getMonth() + 1).padStart(2, "0")}-${String(responseDate.getDate()).padStart(2, "0")}`;
-            dateMap[dateStr] = (dateMap[dateStr] || 0) + 1;
-          }
-        });
+            if (responseDate) {
+              const dateStr = `${responseDate.getFullYear()}-${String(responseDate.getMonth() + 1).padStart(2, "0")}-${String(responseDate.getDate()).padStart(2, "0")}`;
+              dateMap[dateStr] = (dateMap[dateStr] || 0) + 1;
+            }
+          });
 
-        const chartData = Object.entries(dateMap)
-          .map(([dateStr, responseCount]) => ({
-            day: parseInt(dateStr.split("-")[2]),
-            responses: responseCount,
-            sessions: 0,
-            fullDate: dateStr,
-          }))
-          .sort((a, b) => a.fullDate.localeCompare(b.fullDate));
-
-        setTrendData(chartData);
-      } else {
-        // Use session-based trend data for non-filtered view
-        const sessionList = isDefaultView ? sessions : fetchedFilteredSessions;
-        if (!sessionList || sessionList.length === 0) {
-          setTrendData([]);
-          return;
-        }
-
-        const sessionIds = sessionList.map((s) => s.id).filter(Boolean);
-        if (sessionIds.length === 0) {
-          setTrendData([]);
-          return;
-        }
-
-        try {
-          const responseTrendMap = await getResponseTrendData(sessionIds);
-
-          const chartData = Object.entries(responseTrendMap)
+          const chartData = Object.entries(dateMap)
+            .filter(([dateStr]) => dateStr >= startStr && dateStr <= endStr)
             .map(([dateStr, responseCount]) => ({
               day: parseInt(dateStr.split("-")[2]),
               responses: responseCount,
               sessions: 0,
               fullDate: dateStr,
             }))
-            .sort((a, b) => a.fullDate.localeCompare(b.fullDate))
-            .slice(-30);
+            .sort((a, b) => a.fullDate.localeCompare(b.fullDate));
 
           setTrendData(chartData);
-        } catch (error) {
-          console.error("Error calculating trend data:", error);
-          setTrendData([]);
+        } else {
+          // Use session-based trend data for non-filtered view
+          const sessionList = isDefaultView ? sessions : fetchedFilteredSessions;
+          if (!sessionList || sessionList.length === 0) {
+            setTrendData([]);
+            return;
+          }
+
+          const sessionIds = sessionList.map((s) => s.id).filter(Boolean);
+          if (sessionIds.length === 0) {
+            setTrendData([]);
+            return;
+          }
+
+          try {
+            const responseTrendMap = await getResponseTrendData(sessionIds);
+
+            const chartData = Object.entries(responseTrendMap)
+              .filter(([dateStr]) => dateStr >= startStr && dateStr <= endStr)
+              .map(([dateStr, responseCount]) => ({
+                day: parseInt(dateStr.split("-")[2]),
+                responses: responseCount,
+                sessions: 0,
+                fullDate: dateStr,
+              }))
+              .sort((a, b) => a.fullDate.localeCompare(b.fullDate));
+
+            setTrendData(chartData);
+          } catch (error) {
+            console.error("Error calculating trend data:", error);
+            setTrendData([]);
+          }
         }
+      } finally {
+        setIsFetchingTrendData(false);
       }
     };
 
     calculateTrendData();
-  }, [sessions, fetchedFilteredSessions, isDefaultView, filters.dateRange, filters.trainerId, filteredResponses]);
+  }, [sessions, fetchedFilteredSessions, isDefaultView, filters.dateRange, filters.customStartDate, filters.customEndDate, navigatedMonth, filters.trainerId, filteredResponses]);
 
   const ratingDistributionData = useMemo(() => {
     const distribution = aggregatedStats.ratingDistribution || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
@@ -953,7 +1064,9 @@ const OverviewTab = ({
   }, [academicOptions, filters.course, filters.year]);
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-500 pb-8">
+    <>
+      {isGlobalLoading && <Loader fullScreen={true} />}
+      <div className="space-y-4 animate-in fade-in duration-500 pb-8">
       {/* Search & Filter Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2">
         <div>
@@ -1263,25 +1376,63 @@ const OverviewTab = ({
               <Label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Period</Label>
               <Select
                 value={filters.dateRange}
-                onValueChange={(v) =>
+                onValueChange={(v) => {
+                  let navigated = navigatedMonth;
+                  if (v === "current_month") {
+                    navigated = new Date();
+                  } else if (v === "previous_month") {
+                    const today = new Date();
+                    navigated = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                  }
+                  setNavigatedMonth(navigated);
                   setFilters({
                     ...filters,
                     dateRange: v,
-                  })
-                }
+                    customStartDate: null,
+                    customEndDate: null,
+                  });
+                }}
               >
                 <SelectTrigger className="h-8 text-xs bg-white border-slate-200">
-                  <SelectValue placeholder="All Time" />
+                  <SelectValue placeholder="Current Month" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Time</SelectItem>
+                  <SelectItem value="current_month">Current Month</SelectItem>
+                  <SelectItem value="previous_month">Previous Month</SelectItem>
                   <SelectItem value="7days">Last 7 Days</SelectItem>
                   <SelectItem value="30days">Last 30 Days</SelectItem>
-                  <SelectItem value="90days">Last 90 Days</SelectItem>
                   <SelectItem value="custom">Custom Range</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {(filters.dateRange === "current_month" || filters.dateRange === "previous_month") && (
+              <div className="space-y-1 self-end mb-0">
+                <Label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 block text-center">Month Navigation</Label>
+                <div className="flex items-center gap-2 h-8 bg-white border border-slate-200 rounded-md px-1.5 shadow-sm">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-slate-500 hover:text-slate-900 bg-transparent"
+                    onClick={() => handleNavigateMonth(-1)}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-xs font-semibold px-2 min-w-[90px] text-center text-slate-700">
+                    {format(navigatedMonth, "MMMM yyyy")}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-slate-500 hover:text-slate-900 bg-transparent"
+                    disabled={isNextMonthDisabled}
+                    onClick={() => handleNavigateMonth(1)}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {filters.dateRange === "custom" && (
               <div className="space-y-1 self-end mb-0">
@@ -1314,12 +1465,20 @@ const OverviewTab = ({
                     <Calendar
                       initialFocus
                       mode="range"
-                      defaultMonth={filters.customStartDate}
+                      defaultMonth={filters.customStartDate || new Date()}
                       selected={{
                         from: filters.customStartDate,
                         to: filters.customEndDate,
                       }}
                       onSelect={(range) => {
+                        if (range?.from && range?.to) {
+                          const diffTime = Math.abs(range.to - range.from);
+                          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                          if (diffDays > 31) {
+                            toast.error("Please select a date range of 31 days or less.");
+                            return;
+                          }
+                        }
                         setFilters({
                           ...filters,
                           customStartDate: range?.from,
@@ -1693,6 +1852,7 @@ const OverviewTab = ({
         </div>
       </div>
     </div>
+    </>
   );
 };
 

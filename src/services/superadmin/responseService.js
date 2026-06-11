@@ -11,6 +11,8 @@ import {
   getCountFromServer,
   deleteDoc,
   doc,
+  where,
+  Timestamp,
 } from "firebase/firestore";
 
 /**
@@ -24,20 +26,29 @@ const getResponsesCollection = (sessionId) => {
 };
 
 /**
- * Add a new response to a session's responses subcollection
+ * Add a new response to a session's responses subcollection and root feedbacks collection
  * @param {string} sessionId - The session document ID
  * @param {Object} responseData - The response data
- * @param {string} responseData.deviceId - Unique device identifier
- * @param {Array} responseData.answers - Array of answer objects
  * @returns {Promise<Object>} - Created response with ID
  */
 export const addResponse = async (sessionId, responseData) => {
   try {
     const responsesRef = getResponsesCollection(sessionId);
+    const time = serverTimestamp();
 
-    const docRef = await addDoc(responsesRef, {
+    const fullResponseData = {
       ...responseData,
-      submittedAt: serverTimestamp(),
+      sessionId,
+      submittedAt: time,
+    };
+
+    const docRef = await addDoc(responsesRef, fullResponseData);
+
+    // Also write to the root feedbacks collection for flat queries
+    const feedbackDocRef = doc(db, "feedbacks", docRef.id);
+    await setDoc(feedbackDocRef, {
+      ...fullResponseData,
+      id: docRef.id,
     });
 
     return { id: docRef.id, ...responseData };
@@ -48,14 +59,27 @@ export const addResponse = async (sessionId, responseData) => {
 };
 
 /**
- * Get all responses for a session
+ * Get all responses for a session (with optional date range)
  * @param {string} sessionId - The session document ID
+ * @param {Date} startDate - Start of range
+ * @param {Date} endDate - End of range
  * @returns {Promise<Array>} - Array of response objects
  */
-export const getResponses = async (sessionId) => {
+export const getResponses = async (sessionId, startDate = null, endDate = null) => {
   try {
     const responsesRef = getResponsesCollection(sessionId);
-    const q = query(responsesRef, orderBy("submittedAt", "desc"));
+    const constraints = [];
+
+    if (startDate) {
+      constraints.push(where("submittedAt", ">=", startDate instanceof Date ? Timestamp.fromDate(startDate) : startDate));
+    }
+    if (endDate) {
+      constraints.push(where("submittedAt", "<=", endDate instanceof Date ? Timestamp.fromDate(endDate) : endDate));
+    }
+
+    constraints.push(orderBy("submittedAt", "desc"));
+
+    const q = query(responsesRef, ...constraints);
     const querySnapshot = await getDocs(q);
 
     return querySnapshot.docs.map((doc) => ({
@@ -64,6 +88,39 @@ export const getResponses = async (sessionId) => {
     }));
   } catch (error) {
     console.error("Error getting responses:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all responses (feedbacks) from the root feedbacks collection within a date range
+ * @param {Date} startDate - Start of range
+ * @param {Date} endDate - End of range
+ * @returns {Promise<Array>} - List of feedbacks
+ */
+export const getFeedbacksByDateRange = async (startDate, endDate) => {
+  try {
+    const feedbacksRef = collection(db, "feedbacks");
+    const constraints = [];
+
+    if (startDate) {
+      constraints.push(where("submittedAt", ">=", startDate instanceof Date ? Timestamp.fromDate(startDate) : startDate));
+    }
+    if (endDate) {
+      constraints.push(where("submittedAt", "<=", endDate instanceof Date ? Timestamp.fromDate(endDate) : endDate));
+    }
+
+    constraints.push(orderBy("submittedAt", "desc"));
+
+    const q = query(feedbacksRef, ...constraints);
+    const querySnapshot = await getDocs(q);
+
+    return querySnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  } catch (error) {
+    console.error("Error getting feedbacks by date range:", error);
     throw error;
   }
 };

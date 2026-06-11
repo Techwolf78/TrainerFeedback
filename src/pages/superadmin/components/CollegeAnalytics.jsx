@@ -310,17 +310,30 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
     return [...allBatches].sort();
   }, [academicOptions, filters.course, filters.department, filters.year]);
 
+  const selectedTrainer = useMemo(() => {
+    if (filters.trainerId === "all" || !trainers.length) return null;
+    return trainers.find(t => t.id === filters.trainerId);
+  }, [filters.trainerId, trainers]);
+
   const filteredSessions = useMemo(() => {
     if (sessions.length === 0) return [];
 
     return sessions.filter((session) => {
       if (!session.compiledStats) return false;
 
-      if (
-        filters.trainerId !== "all" &&
-        !(session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : [])).some(t => t.id === filters.trainerId)
-      )
-        return false;
+      if (filters.trainerId !== "all") {
+        const sessionTrainers = session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : []);
+        const isMatched = sessionTrainers.some(t => {
+          if (t.id === filters.trainerId) return true;
+          if (selectedTrainer) {
+            if (t.name && selectedTrainer.name && t.name.trim().toLowerCase() === selectedTrainer.name.trim().toLowerCase()) return true;
+            if (t.trainer_id && selectedTrainer.trainer_id && t.trainer_id === selectedTrainer.trainer_id) return true;
+            if (t.email && selectedTrainer.email && t.email.trim().toLowerCase() === selectedTrainer.email.trim().toLowerCase()) return true;
+          }
+          return false;
+        });
+        if (!isMatched) return false;
+      }
       if (filters.course !== "all" && session.course !== filters.course)
         return false;
       if (filters.department !== "all" && 
@@ -456,7 +469,21 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
       // Priority: trainer filter -> batch filter -> department filter -> overall
       let statsToUse = cs;
       if (isTrainerFilterApplied) {
-        statsToUse = cs.byTrainer?.[filters.trainerId] || blankSegmentStats;
+        statsToUse = cs.byTrainer?.[filters.trainerId];
+        if (!statsToUse && cs.byTrainer && selectedTrainer) {
+          // Find by matching trainer details in the keys of byTrainer
+          const matchingKey = Object.keys(cs.byTrainer).find(key => {
+            const trainerNameInStats = cs.byTrainer[key]?.trainerName || cs.byTrainer[key]?.name || "";
+            if (trainerNameInStats && selectedTrainer.name && trainerNameInStats.trim().toLowerCase() === selectedTrainer.name.trim().toLowerCase()) return true;
+            return false;
+          });
+          if (matchingKey) {
+            statsToUse = cs.byTrainer[matchingKey];
+          }
+        }
+        if (!statsToUse) {
+          statsToUse = blankSegmentStats;
+        }
       } else if (filters.batch !== "all") {
         statsToUse = cs.byBatch?.[filters.batch] || blankSegmentStats;
       } else if (filters.department !== "all") {
@@ -852,9 +879,22 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
         if (!session) return;
 
         // Use response.selectedTrainerId if available, else fall back to session trainers
-        const trainerId = response.selectedTrainerId || session.assignedTrainer?.id;
-        const trainerName = response.selectedTrainerName || session.assignedTrainer?.name || "Unknown";
+        let trainerId = response.selectedTrainerId || session.assignedTrainer?.id;
+        let trainerName = response.selectedTrainerName || session.assignedTrainer?.name || "Unknown";
         if (!trainerId) return;
+
+        // Map legacy/duplicate trainer ID to the current active trainer ID if a name/id match is found
+        if (trainers && trainers.length > 0) {
+          const matchedActiveTrainer = trainers.find(t => 
+            t.id === trainerId || 
+            (t.name && trainerName && t.name.trim().toLowerCase() === trainerName.trim().toLowerCase()) ||
+            (t.email && response.selectedTrainerEmail && t.email.trim().toLowerCase() === response.selectedTrainerEmail.trim().toLowerCase())
+          );
+          if (matchedActiveTrainer) {
+            trainerId = matchedActiveTrainer.id;
+            trainerName = matchedActiveTrainer.name;
+          }
+        }
 
         // Filter trainer if a specific trainer is selected
         if (filters.trainerId !== "all" && trainerId !== filters.trainerId) return;
@@ -940,14 +980,29 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
 
       // Iterate all trainers in session for proper multi-trainer attribution
       const sessionTrainers = session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : []);
-      sessionTrainers.forEach(({ id: trainerId, name: trainerName }) => {
-        if (!trainerId) return;
+      sessionTrainers.forEach(({ id: rawTrainerId, name: rawTrainerName }) => {
+        if (!rawTrainerId) return;
+
+        let trainerId = rawTrainerId;
+        let trainerName = rawTrainerName;
+
+        // Map legacy/duplicate trainer ID to the current active trainer ID if a name/id match is found
+        if (trainers && trainers.length > 0) {
+          const matchedActiveTrainer = trainers.find(t => 
+            t.id === rawTrainerId || 
+            (t.name && rawTrainerName && t.name.trim().toLowerCase() === rawTrainerName.trim().toLowerCase())
+          );
+          if (matchedActiveTrainer) {
+            trainerId = matchedActiveTrainer.id;
+            trainerName = matchedActiveTrainer.name;
+          }
+        }
 
         // Filter trainer if a specific trainer is selected
         if (filters.trainerId !== "all" && trainerId !== filters.trainerId) return;
 
         // Use byTrainer stats if available for accurate per-trainer data
-        const tStats = cs.byTrainer?.[trainerId];
+        const tStats = cs.byTrainer?.[trainerId] || cs.byTrainer?.[rawTrainerId];
         const useTrainerStats = !!tStats;
 
         if (!trainerStats[trainerId]) {
