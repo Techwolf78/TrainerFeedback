@@ -536,11 +536,13 @@ const OverviewTab = ({
         ]);
 
         let allFeedbacksRaw = [];
-        if (flatFeedbacks && flatFeedbacks.length > 0) {
-          allFeedbacksRaw = flatFeedbacks;
+        const cutoffDate = new Date("2026-06-12T00:00:00Z");
+
+        if (startDate >= cutoffDate) {
+          // For dates after the flat feedbacks collection release, load directly from root feedbacks
+          allFeedbacksRaw = flatFeedbacks || [];
         } else {
-          // Fallback: If root feedbacks collection is empty (legacy data),
-          // fetch responses from the subcollections of sessions in the lookback window.
+          // For legacy range containing dates before June 12, 2026, merge root and subcollections to guarantee completeness
           const { getResponses } = await import("@/services/superadmin/responseService");
           const responsePromises = fetchedSessionsRaw.map(session =>
             getResponses(session.id)
@@ -551,21 +553,34 @@ const OverviewTab = ({
               })
           );
           const allResolvedResponses = await Promise.all(responsePromises);
-          const legacyResponses = allResolvedResponses.flat();
-          
-          // Filter these legacy responses client-side by their submission date (submittedAt)
-          allFeedbacksRaw = legacyResponses.filter(response => {
-            let responseDate;
-            if (response.submittedAt?.toDate) {
-              responseDate = response.submittedAt.toDate();
-            } else if (typeof response.submittedAt === "string") {
-              responseDate = new Date(response.submittedAt);
-            } else if (response.submittedAt instanceof Date) {
-              responseDate = response.submittedAt;
-            }
-            if (!responseDate) return false;
-            return responseDate >= startDate && responseDate <= endDate;
+          const subcollectionResponses = allResolvedResponses.flat();
+
+          const feedbackMap = new Map();
+
+          // Populate with root feedbacks first
+          (flatFeedbacks || []).forEach(f => {
+            feedbackMap.set(f.id, f);
           });
+
+          // Merge subcollection responses if not already present, filtering by date range
+          subcollectionResponses.forEach(response => {
+            if (!feedbackMap.has(response.id)) {
+              let responseDate;
+              if (response.submittedAt?.toDate) {
+                responseDate = response.submittedAt.toDate();
+              } else if (typeof response.submittedAt === "string") {
+                responseDate = new Date(response.submittedAt);
+              } else if (response.submittedAt instanceof Date) {
+                responseDate = response.submittedAt;
+              }
+
+              if (responseDate && responseDate >= startDate && responseDate <= endDate) {
+                feedbackMap.set(response.id, response);
+              }
+            }
+          });
+
+          allFeedbacksRaw = Array.from(feedbackMap.values());
         }
 
         // Find sessionIds from feedbacks that are not in fetchedSessionsRaw

@@ -640,10 +640,10 @@ const CollegeOverviewTab = () => {
           }
           
           const responseTrendMap = await getResponseTrendData(sessionIds);
-          const chartData = Object.entries(responseTrendMap)
+           const chartData = Object.entries(responseTrendMap)
             .map(([date, responses]) => ({
               fullDate: date,
-              day: new Date(date).getDate(),
+              day: parseInt(date.split("-")[2]),
               responses,
             }))
             .sort((a, b) => a.fullDate.localeCompare(b.fullDate));
@@ -656,14 +656,21 @@ const CollegeOverviewTab = () => {
         const trendMap = {};
         responsesToProcess.forEach((response) => {
           let date;
+          let dateObj = null;
 
           if (response.submittedAt?.toDate) {
-            const dateObj = response.submittedAt.toDate();
-            date = dateObj.toISOString().split("T")[0];
+            dateObj = response.submittedAt.toDate();
           } else if (typeof response.submittedAt === "string") {
-            date = response.submittedAt.split("T")[0];
+            dateObj = new Date(response.submittedAt);
           } else if (response.submittedAt instanceof Date) {
-            date = response.submittedAt.toISOString().split("T")[0];
+            dateObj = response.submittedAt;
+          }
+
+          if (dateObj && !isNaN(dateObj.getTime())) {
+            const year = dateObj.getFullYear();
+            const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+            const day = String(dateObj.getDate()).padStart(2, "0");
+            date = `${year}-${month}-${day}`;
           }
 
           if (date) {
@@ -674,7 +681,7 @@ const CollegeOverviewTab = () => {
         const chartData = Object.entries(trendMap)
           .map(([date, responses]) => ({
             fullDate: date,
-            day: new Date(date).getDate(),
+            day: parseInt(date.split("-")[2]),
             responses,
           }))
           .sort((a, b) => a.fullDate.localeCompare(b.fullDate));

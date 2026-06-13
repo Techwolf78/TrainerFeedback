@@ -171,14 +171,21 @@ export const getResponseTrendData = async (sessionIds) => {
       responses.forEach((response) => {
         let date;
 
-        // Extract date from Firestore Timestamp or ISO string
+        // Extract date from Firestore Timestamp or ISO string using local timezone
+        let dateObj = null;
         if (response.submittedAt?.toDate) {
-          const dateObj = response.submittedAt.toDate();
-          date = dateObj.toISOString().split("T")[0];
+          dateObj = response.submittedAt.toDate();
         } else if (typeof response.submittedAt === "string") {
-          date = response.submittedAt.split("T")[0];
+          dateObj = new Date(response.submittedAt);
         } else if (response.submittedAt instanceof Date) {
-          date = response.submittedAt.toISOString().split("T")[0];
+          dateObj = response.submittedAt;
+        }
+
+        if (dateObj && !isNaN(dateObj.getTime())) {
+          const year = dateObj.getFullYear();
+          const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+          const day = String(dateObj.getDate()).padStart(2, "0");
+          date = `${year}-${month}-${day}`;
         }
 
         if (date) {
