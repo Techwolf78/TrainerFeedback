@@ -15,6 +15,7 @@ import {
   BarChart3,
   AlertTriangle,
   Calendar,
+  Clock,
   CheckCircle2,
   XCircle,
   Filter,
@@ -115,7 +116,9 @@ const renderSessionId = (id) => {
       </div>
     );
   }
-  return <span className="font-mono text-[10px] text-muted-foreground">{id}</span>;
+  return (
+    <span className="font-mono text-[10px] text-muted-foreground">{id}</span>
+  );
 };
 
 const SessionsTab = ({
@@ -137,6 +140,10 @@ const SessionsTab = ({
   } = useSuperAdminData();
   const [loading, setLoading] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
+  const [isBatchCompiling, setIsBatchCompiling] = useState(false);
+  const [batchModalOpen, setBatchModalOpen] = useState(false);
+  const [batchSessions, setBatchSessions] = useState([]);
+  const [currentBatchIndex, setCurrentBatchIndex] = useState(-1);
 
   // Session Tab State (All, Active, Past)
   const [sessionTab, setSessionTab] = useState("all");
@@ -337,6 +344,94 @@ const SessionsTab = ({
       toast.error("Failed to compile statistics");
       console.error(error);
     }
+  };
+
+  const handleBatchCompile = async () => {
+    const activeSessions = sessions.filter(
+      (s) => s.status === "active" && s.archived !== true,
+    );
+    if (activeSessions.length === 0) {
+      toast.info("No active sessions found to compile.");
+      return;
+    }
+    const initialBatch = activeSessions.map((s) => ({
+      id: s.id,
+      topic: s.topic,
+      collegeName: s.collegeName,
+      status: "pending",
+      responsesCount: 0,
+      avgRating: 0,
+      reactivationCount: s.reactivationCount || 0,
+    }));
+
+    setBatchSessions(initialBatch);
+    setCurrentBatchIndex(0);
+    setBatchModalOpen(true);
+    setIsBatchCompiling(true);
+
+    let compiledCount = 0;
+    let failedCount = 0;
+
+    for (let i = 0; i < initialBatch.length; i++) {
+      setCurrentBatchIndex(i);
+      setBatchSessions((prev) =>
+        prev.map((s, idx) => (idx === i ? { ...s, status: "compiling" } : s)),
+      );
+
+      try {
+        const session = initialBatch[i];
+        const stats = await compileSessionStats(
+          session.id,
+          session.reactivationCount,
+        );
+
+        await updateSession(session.id, {
+          compiledStats: stats,
+          lastCompiledAt: serverTimestamp(),
+        });
+
+        setBatchSessions((prev) =>
+          prev.map((s, idx) =>
+            idx === i
+              ? {
+                  ...s,
+                  status: "success",
+                  responsesCount: stats.totalResponses || 0,
+                  avgRating: stats.avgRating || 0,
+                }
+              : s,
+          ),
+        );
+        compiledCount++;
+      } catch (error) {
+        console.error(
+          `Error compiling batch session ${initialBatch[i].id}:`,
+          error,
+        );
+        setBatchSessions((prev) =>
+          prev.map((s, idx) =>
+            idx === i
+              ? {
+                  ...s,
+                  status: "failed",
+                  error: error?.message || "Failed to compile stats",
+                }
+              : s,
+          ),
+        );
+        failedCount++;
+      }
+
+      if (i < initialBatch.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+    }
+
+    setIsBatchCompiling(false);
+    toast.success(
+      `Batch compilation completed: ${compiledCount} success, ${failedCount} failed.`,
+    );
+    onRefresh && onRefresh();
   };
 
   const handleArchiveSession = async (id) => {
@@ -952,20 +1047,21 @@ const SessionsTab = ({
         <p className="text-sm text-muted-foreground">
           Showing {filteredSessions.length} session(s)
         </p>
-        {/* <Button
+        <Button
           variant="outline"
           size="sm"
-          onClick={handleMigrateLegacyStats}
-          disabled={isMigrating}
-          className="gap-2 text-xs h-8"
+          onClick={handleBatchCompile}
+          disabled={isBatchCompiling}
+          className="gap-2 text-xs h-8 border-blue-200 hover:bg-blue-50 hover:text-blue-700 text-blue-700 font-semibold transition-all shadow-sm"
         >
-          {isMigrating ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <BarChart3 className="h-3 w-3" />
-          )}
-          Migrate Legacy Stats
-        </Button> */}
+          <RotateCcw
+            className={cn(
+              "h-3.5 w-3.5 text-blue-600",
+              isBatchCompiling && "animate-spin",
+            )}
+          />
+          Compile All
+        </Button>
       </div>
       <div className="border rounded-lg overflow-hidden bg-card">
         <Table>
@@ -1000,9 +1096,7 @@ const SessionsTab = ({
             ) : (
               filteredSessions.map((session) => (
                 <TableRow key={session.id}>
-                  <TableCell>
-                    {renderSessionId(session.id)}
-                  </TableCell>
+                  <TableCell>{renderSessionId(session.id)}</TableCell>
                   <TableCell className="text-sm font-medium">
                     {session.projectCode || "-"}
                   </TableCell>
@@ -1068,7 +1162,7 @@ const SessionsTab = ({
                       className={cn(
                         "capitalize font-medium block w-fit",
                         session.status === "active"
-                          ? "bg-green-100 text-green-700 border-green-200"
+                          ? "bg-green-100 text-green-700 border-green-200 hover:bg-green-100 hover:text-green-700 hover:border-green-200"
                           : "bg-gray-100 text-gray-700 border-gray-200",
                       )}
                     >
@@ -1291,6 +1385,135 @@ const SessionsTab = ({
             >
               <Download className="h-4 w-4 mr-2" />
               Export to Excel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Batch Compilation Progress Modal */}
+      <Modal
+        open={batchModalOpen}
+        onOpenChange={(open) => {
+          if (!isBatchCompiling) {
+            setBatchModalOpen(open);
+          }
+        }}
+      >
+        <div className="p-6 max-w-lg mx-auto">
+          <ModalHeader>
+            <ModalTitle className="flex items-center gap-2 text-slate-900">
+              <RotateCcw
+                className={cn(
+                  "h-5 w-5 text-blue-600",
+                  isBatchCompiling && "animate-spin",
+                )}
+              />
+              Batch Compiling Active Sessions
+            </ModalTitle>
+            <ModalDescription className="text-sm text-slate-500 mt-1">
+              {isBatchCompiling
+                ? "Compiling live statistics sequentially. Please keep this modal open."
+                : "Batch compilation completed successfully!"}
+            </ModalDescription>
+          </ModalHeader>
+
+          {/* Progress Bar & Summary */}
+          <div className="mt-4">
+            {(() => {
+              const completedCount = batchSessions.filter(
+                (s) => s.status === "success" || s.status === "failed",
+              ).length;
+              const progressPercent =
+                batchSessions.length > 0
+                  ? Math.round((completedCount / batchSessions.length) * 100)
+                  : 0;
+
+              return (
+                <>
+                  <div className="flex justify-between items-center text-xs font-semibold text-slate-700 mb-1.5">
+                    <span>
+                      Progress: {completedCount} / {batchSessions.length}{" "}
+                      sessions
+                    </span>
+                    <span>{progressPercent}%</span>
+                  </div>
+                  <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden border border-slate-200 shadow-inner mb-4">
+                    <div
+                      className="bg-blue-600 h-full rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${progressPercent}%` }}
+                    />
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+
+          {/* Sessions Queue List */}
+          <div className="border border-slate-100 rounded-lg max-h-[280px] overflow-y-auto divide-y divide-slate-100 bg-slate-50/50 p-1 custom-scrollbar">
+            {batchSessions.map((s, idx) => {
+              const isCurrent = idx === currentBatchIndex;
+              return (
+                <div
+                  key={s.id}
+                  className={cn(
+                    "flex items-center justify-between p-2.5 text-xs transition-colors rounded-md",
+                    isCurrent && "bg-blue-50/70 border-l-2 border-blue-500",
+                  )}
+                >
+                  <div className="flex-1 min-w-0 pr-2">
+                    <p className="font-bold text-slate-800 truncate">
+                      {s.topic}
+                    </p>
+                    <p className="text-[10px] text-slate-400 truncate">
+                      {s.collegeName}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {s.status === "pending" && (
+                      <span className="flex items-center gap-1 text-slate-400 font-medium">
+                        <Clock className="h-3.5 w-3.5" />
+                        Pending
+                      </span>
+                    )}
+                    {s.status === "compiling" && (
+                      <span className="flex items-center gap-1 text-blue-600 font-semibold">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Compiling
+                      </span>
+                    )}
+                    {s.status === "success" && (
+                      <span
+                        className="flex items-center gap-1 text-emerald-600 font-semibold"
+                        title={`${s.responsesCount} responses, ${s.avgRating.toFixed(2)} Rating`}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        {s.responsesCount} resp • {s.avgRating.toFixed(2)} ★
+                      </span>
+                    )}
+                    {s.status === "failed" && (
+                      <span
+                        className="flex items-center gap-1 text-red-500 font-semibold"
+                        title={s.error}
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                        Failed
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Action Footer */}
+          <div className="flex justify-end gap-3 mt-6">
+            <Button
+              variant="outline"
+              disabled={isBatchCompiling}
+              onClick={() => setBatchModalOpen(false)}
+              className="px-4 font-semibold text-slate-700 border-slate-200 hover:bg-slate-50 transition-all"
+            >
+              {isBatchCompiling ? "Compiling..." : "Close"}
             </Button>
           </div>
         </div>

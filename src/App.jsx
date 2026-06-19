@@ -55,6 +55,22 @@ const App = () => {
                   }
                 />
                 <Route
+                  path="/super-admin/weekly-analytics"
+                  element={
+                    <ProtectedRoute allowedRoles={["superAdmin"]}>
+                      <SuperAdminDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/super-admin/weekly-analytics/alerts"
+                  element={
+                    <ProtectedRoute allowedRoles={["superAdmin"]}>
+                      <SuperAdminDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
                   path="/super-admin/colleges"
                   element={
                     <ProtectedRoute allowedRoles={["superAdmin"]}>

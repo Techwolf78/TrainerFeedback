@@ -35,6 +35,8 @@ import {
   Pencil,
   Database,
   Settings,
+  Calendar,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +52,8 @@ import ProjectCodesTab from "./components/ProjectCodesTab";
 import TicketsTab from "./components/TicketsTab";
 import DatabaseMonitorTab from "./components/DatabaseMonitorTab";
 import SettingsTab from "./components/SettingsTab";
+import WeeklyAnalyticsTab from "./components/WeeklyAnalyticsTab";
+import AlertsTab from "./components/AlertsTab";
 import SessionResponses from "../admin/SessionResponses";
 import ProfilePage from "@/components/shared/ProfilePage";
 import Loader from "@/components/ui/Loader";
@@ -171,8 +175,12 @@ const SuperAdminDashboardInner = () => {
         return "db-monitor";
       case "analytics":
         return "analytics";
+      case "weekly-analytics":
+        return "weekly-analytics";
       case "profile":
         return "profile";
+      case "alerts":
+        return "alerts";
       default:
         // Check if we are in a sub-view (analytics) within colleges/trainers
         // We handle this by making the snapshot button always visible for these base tabs
@@ -186,7 +194,8 @@ const SuperAdminDashboardInner = () => {
     activeTab === "overview" ||
     activeTab === "colleges" ||
     activeTab === "trainers" ||
-    activeTab === "analytics";
+    activeTab === "analytics" ||
+    activeTab === "weekly-analytics";
 
   const handleLogout = () => {
     logout();
@@ -283,8 +292,12 @@ const SuperAdminDashboardInner = () => {
         return "Database Monitor";
       case "settings":
         return "System Settings";
+      case "weekly-analytics":
+        return "Weekly Analytics";
       case "profile":
         return "My Profile";
+      case "alerts":
+        return "Alert Center";
       default:
         return "Super Admin Dashboard";
     }
@@ -325,6 +338,7 @@ const SuperAdminDashboardInner = () => {
           <div className="space-y-1">
             {!isSidebarCollapsed && <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest px-3 mb-2">Main</p>}
             <NavItem id="overview" label="Dashboard" icon={LayoutDashboard} path="/super-admin/dashboard" />
+            <NavItem id="weekly-analytics" label="Weekly Analytics" icon={Calendar} path="/super-admin/weekly-analytics" />
           </div>
 
           <div className="pt-6 space-y-1">
@@ -442,71 +456,78 @@ const SuperAdminDashboardInner = () => {
           </div>
         </header>
 
-        {/* Content Container */}
-        <main className="flex-1 overflow-y-auto bg-[#f8fafc] p-4 scroll-smooth custom-scrollbar">
-          <div
-            ref={dashboardRef}
-            className="mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500"
-          >
-            {activeTab === "overview" && (
-              <OverviewTab
-                colleges={colleges.filter((c) => c.isDeleted !== true)}
-                admins={admins}
-                sessions={sessions.filter((s) => s.archived !== true)}
-                projectCodes={projectCodes.filter((pc) => pc.archived !== true)} // [NEW] Pass project codes
-              />
-            )}
+        {/* Alerts tab gets full bleed — its own scrollable columns */}
+        {activeTab === "alerts" ? (
+          <AlertsTab />
+        ) : (
+          /* Content Container */
+          <main className="flex-1 overflow-y-auto bg-[#f8fafc] p-4 scroll-smooth custom-scrollbar">
+            <div
+              ref={dashboardRef}
+              className="mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500"
+            >
+              {activeTab === "overview" && (
+                <OverviewTab
+                  colleges={colleges.filter((c) => c.isDeleted !== true)}
+                  admins={admins}
+                  sessions={sessions.filter((s) => s.archived !== true)}
+                  projectCodes={projectCodes.filter((pc) => pc.archived !== true)} // [NEW] Pass project codes
+                />
+              )}
 
-            {activeTab === "colleges" && (
-              <CollegesTab
-                colleges={colleges}
-                admins={admins}
-                onRefresh={refreshAll}
-                isDialogOpen={isCollegeDialogOpen}
-                setDialogOpen={setIsCollegeDialogOpen}
-              />
-            )}
+              {activeTab === "colleges" && (
+                <CollegesTab
+                  colleges={colleges}
+                  admins={admins}
+                  onRefresh={refreshAll}
+                  isDialogOpen={isCollegeDialogOpen}
+                  setDialogOpen={setIsCollegeDialogOpen}
+                />
+              )}
 
-            {activeTab === "config" && (
-              <AcademicConfigTab colleges={colleges.filter((c) => c.isDeleted !== true)} />
-            )}
+              {activeTab === "config" && (
+                <AcademicConfigTab colleges={colleges.filter((c) => c.isDeleted !== true)} />
+              )}
 
-            {activeTab === "admins" && (
-              <AdminsTab
-                colleges={colleges.filter((c) => c.isDeleted !== true)}
-                onRefresh={refreshAll}
-                isDialogOpen={isAdminDialogOpen}
-                setDialogOpen={setIsAdminDialogOpen}
-              />
-            )}
+              {activeTab === "admins" && (
+                <AdminsTab
+                  colleges={colleges.filter((c) => c.isDeleted !== true)}
+                  onRefresh={refreshAll}
+                  isDialogOpen={isAdminDialogOpen}
+                  setDialogOpen={setIsAdminDialogOpen}
+                />
+              )}
 
-            {activeTab === "trainers" && <TrainersTab />}
+              {activeTab === "trainers" && <TrainersTab />}
 
-            {activeTab === "sessions" && (
-              <SessionsTab
-                sessions={sessions}
-                colleges={colleges.filter((c) => c.isDeleted !== true)}
-                trainers={trainers}
-                academicConfig={academicConfig}
-                onRefresh={refreshAll}
-                isDialogOpen={isSessionDialogOpen}
-                setDialogOpen={setIsSessionDialogOpen}
-              />
-            )}
+              {activeTab === "sessions" && (
+                <SessionsTab
+                  sessions={sessions}
+                  colleges={colleges.filter((c) => c.isDeleted !== true)}
+                  trainers={trainers}
+                  academicConfig={academicConfig}
+                  onRefresh={refreshAll}
+                  isDialogOpen={isSessionDialogOpen}
+                  setDialogOpen={setIsSessionDialogOpen}
+                />
+              )}
 
-            {activeTab === "templates" && <TemplatesTab />}
+              {activeTab === "templates" && <TemplatesTab />}
 
-            {activeTab === "project-codes" && <ProjectCodesTab />}
+              {activeTab === "project-codes" && <ProjectCodesTab />}
 
-            {activeTab === "tickets" && <TicketsTab />}
+              {activeTab === "tickets" && <TicketsTab />}
 
-            {activeTab === "database" && <DatabaseMonitorTab />}
+              {activeTab === "database" && <DatabaseMonitorTab />}
 
-            {activeTab === "settings" && <SettingsTab />}
+              {activeTab === "settings" && <SettingsTab />}
 
-            {activeTab === "profile" && <ProfilePage />}
-          </div>
-        </main>
+              {activeTab === "weekly-analytics" && <WeeklyAnalyticsTab />}
+
+              {activeTab === "profile" && <ProfilePage />}
+            </div>
+          </main>
+        )}
       </div>
     </div>
   );

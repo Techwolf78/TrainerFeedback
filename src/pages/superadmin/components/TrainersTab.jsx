@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Users,
   Plus,
@@ -90,9 +91,39 @@ const TrainersTab = () => {
   const [batchFile, setBatchFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const trainerIdParam = searchParams.get("trainerId");
+
   // Analytics view state
   const [selectedTrainerForAnalytics, setSelectedTrainerForAnalytics] =
     useState(null);
+
+  const handleSelectTrainerForAnalytics = (trainer) => {
+    if (trainer) {
+      setSelectedTrainerForAnalytics(trainer);
+      const newParams = new URLSearchParams(searchParams);
+      newParams.set("trainerId", trainer.id);
+      setSearchParams(newParams);
+    } else {
+      setSelectedTrainerForAnalytics(null);
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete("trainerId");
+      setSearchParams(newParams);
+    }
+  };
+
+  useEffect(() => {
+    if (trainerIdParam && trainers && trainers.length > 0) {
+      const found = trainers.find(
+        (t) => t.id === trainerIdParam || t.trainer_id === trainerIdParam
+      );
+      if (found) {
+        setSelectedTrainerForAnalytics(found);
+      }
+    } else if (!trainerIdParam) {
+      setSelectedTrainerForAnalytics(null);
+    }
+  }, [trainerIdParam, trainers]);
 
   // Force refresh trainers from context
   const refreshTrainers = () => loadTrainers(true);
@@ -303,7 +334,7 @@ const TrainersTab = () => {
       <TrainerAnalytics
         trainerId={selectedTrainerForAnalytics.id}
         trainerName={selectedTrainerForAnalytics.name}
-        onBack={() => setSelectedTrainerForAnalytics(null)}
+        onBack={() => handleSelectTrainerForAnalytics(null)}
       />
     );
   }
@@ -609,7 +640,7 @@ const TrainersTab = () => {
           trainers={trainers}
           sessions={sessions}
           searchQuery={searchQuery}
-          onSelectTrainer={setSelectedTrainerForAnalytics}
+          onSelectTrainer={handleSelectTrainerForAnalytics}
         />
       ) : (
         /* Redesigned Trainers Grid */
@@ -699,7 +730,7 @@ const TrainersTab = () => {
                 <DropdownMenuContent align="end">
                   <DropdownMenuLabel>Actions</DropdownMenuLabel>
                   <DropdownMenuItem
-                    onClick={() => setSelectedTrainerForAnalytics(trainer)}
+                    onClick={() => handleSelectTrainerForAnalytics(trainer)}
                   >
                     <BarChart3 className="mr-2 h-4 w-4" /> View Analytics
                   </DropdownMenuItem>
