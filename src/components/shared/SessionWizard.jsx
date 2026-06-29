@@ -333,8 +333,16 @@ const SessionWizard = ({
     const courses = academicOptions?.courses
       ? Object.keys(academicOptions.courses)
       : [];
-    const currentCourseData = formData.course
-      ? academicOptions?.courses[formData.course]
+    const courseKey = academicOptions?.courses
+      ? Object.keys(academicOptions.courses).find(
+          (k) =>
+            k.toLowerCase() === `${formData.course?.toLowerCase()} (${formData.academicYear?.toLowerCase()})` ||
+            k.toLowerCase() === `${formData.course?.toLowerCase()} (${formData.academicYear?.replace("-", "/")?.toLowerCase()})` ||
+            k.toLowerCase() === formData.course?.toLowerCase()
+        )
+      : null;
+    const currentCourseData = courseKey
+      ? academicOptions?.courses[courseKey]
       : null;
 
     // Years are now under Course

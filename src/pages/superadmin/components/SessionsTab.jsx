@@ -141,13 +141,7 @@ const SessionsTab = ({
     loadingMoreSessions,
   } = useSuperAdminData();
   const [loading, setLoading] = useState(false);
-  const [isMigrating, setIsMigrating] = useState(false);
   // [RETIRED 2026-06-29] isRepairing was used by the one-time "Repair Stats" button.
-  // That button re-compiled stats for sessions whose branch/batch names contained a
-  // forward slash (e.g. "CS/IT"), which caused a Firebase "invalid document reference"
-  // error when used as a Firestore doc-ID segment. The root fix lives in
-  // saveDecoupledStats (responseService.js) via sanitizeDocId(). This state can be
-  // removed entirely once we are confident no old data needs repairing.
   // const [isRepairing, setIsRepairing] = useState(false);
   const [isBatchCompiling, setIsBatchCompiling] = useState(false);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
@@ -1117,40 +1111,6 @@ const SessionsTab = ({
         </p>
         <div className="flex items-center gap-2">
           {/*
-           * [RETIRED BUTTON — 2026-06-29] "Repair Stats"
-           *
-           * WHY IT EXISTED:
-           *   Branch/batch names containing a forward slash (e.g. "CS/IT") caused a
-           *   Firebase FirestoreError: "Invalid document reference. Document references
-           *   must have an even number of segments" because the slash was interpreted as
-           *   a Firestore path separator when building the stats subcollection doc ID
-           *   (e.g. `branch_CS/IT` → 5 segments instead of the required 4).
-           *
-           * WHAT IT DID:
-           *   Scanned all sessions whose `branches` or `batches` arrays contained a "/",
-           *   then called compileSessionStats() for each, which now writes doc IDs through
-           *   sanitizeDocId() (replaces "/" with "__") so Firestore accepts them.
-           *
-           * ROOT FIX (permanent, still active):
-           *   saveDecoupledStats() in responseService.js uses sanitizeDocId() on every
-           *   branch_, batch_, and trainer_ doc ID before writing. The original name is
-           *   preserved inside the document body (branchId/batchId/trainerId fields) so
-           *   reads are unaffected.
-           *
-           * PREVENTION (still active):
-           *   AcademicConfigTab.jsx blocks "/" in addDept, addBatch, renameDept, and
-           *   renameBatch with a descriptive toast error.
-           *
-           * WHEN TO DELETE THIS:
-           *   Once all affected sessions have been re-compiled (or you confirm no sessions
-           *   with "/" in branch/batch names still have broken stats subcollections), both
-           *   this button and the handleRepairSlashStats() function below can be removed.
-           *   The handler itself is harmless to keep — it is idempotent (safe to re-run).
-           *
-           * TO RE-ENABLE:
-           *   Uncomment this block and uncomment `const [isRepairing, setIsRepairing]`
-           *   in the state declarations above.
-           *
           <Button
             variant="outline"
             size="sm"

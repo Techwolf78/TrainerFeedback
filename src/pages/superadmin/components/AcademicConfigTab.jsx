@@ -122,15 +122,24 @@ const Adder = ({
 };
 
 const AcademicConfigTab = ({ colleges }) => {
-  const { loadAcademicConfig, updateAcademicConfig } = useSuperAdminData();
+  const { loadAcademicConfig, updateAcademicConfig, projectCodes } = useSuperAdminData();
+  const [selectedProjectCode, setSelectedProjectCode] = useState("");
   const [selectedCollegeId, setSelectedCollegeId] = useState("");
   const [config, setConfig] = useState({ courses: {} });
   const [loading, setLoading] = useState(false);
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [expandedCourses, setExpandedCourses] = useState({});
-  const [collegeSearchQuery, setCollegeSearchQuery] = useState("");
-  const [collegeDropdownOpen, setCollegeDropdownOpen] = useState(false);
-  const collegeDropdownRef = React.useRef(null);
+  const [projectCodeSearchQuery, setProjectCodeSearchQuery] = useState("");
+  const [projectCodeDropdownOpen, setProjectCodeDropdownOpen] = useState(false);
+  const projectCodeDropdownRef = React.useRef(null);
+
+  // Derived state from selected project code
+  const activeProjectCode = (projectCodes || []).find(
+    (p) => p.code === selectedProjectCode && p.archived !== true
+  );
+  const activeCourseName = activeProjectCode?.course || "";
+  const activeYear = activeProjectCode?.year || "";
+  const activePassingYear = activeProjectCode?.academicYear || "";
 
   // Edit modal state - replaces browser prompts with professional modal
   const [editModal, setEditModal] = useState({
@@ -170,6 +179,43 @@ const AcademicConfigTab = ({ colleges }) => {
     });
   };
 
+  /**
+   * Helper to retrieve all unique passing out years for a given course under the selected college
+   */
+  const getCoursePassingYears = (courseName) => {
+    if (!projectCodes || !selectedCollegeId) return "";
+    const matched = projectCodes.filter(
+      (p) =>
+        p.collegeId === selectedCollegeId &&
+        p.course?.toLowerCase() === courseName.toLowerCase() &&
+        p.archived !== true &&
+        p.academicYear
+    );
+    const years = [...new Set(matched.map((p) => p.academicYear))];
+    return years.length > 0 ? `(${years.join(", ")})` : "";
+  };
+
+  /**
+   * Helper to retrieve the passing out year for a specific course year under the selected college
+   */
+  const getYearPassingYear = (courseName, yearValue) => {
+    if (!projectCodes || !selectedCollegeId) return "";
+    const pc = projectCodes.find(
+      (p) =>
+        p.collegeId === selectedCollegeId &&
+        p.course?.toLowerCase() === courseName.toLowerCase() &&
+        String(p.year) === String(yearValue) &&
+        p.archived !== true
+    );
+    return pc && pc.academicYear ? `(${pc.academicYear})` : "";
+  };
+
+  /**
+   * Helper to strip the year suffix from course keys for clean UI display (e.g. "B.E. (2025-26)" -> "B.E.")
+   */
+  const getCleanCourseName = (name) =>
+    name.replace(/\s*\(\d{4}-\d{2}\)/g, "").replace(/\s*\(\d{2}-\d{2}\)/g, "");
+
   // Handle edit modal save
   const handleEditSave = () => {
     const { type, currentValue, newValue, courseName, deptName, year, batch } =
@@ -195,7 +241,16 @@ const AcademicConfigTab = ({ colleges }) => {
     closeEditModal();
   };
 
-  // Load Config when college changes
+  // Resolve collegeId from the selected project code
+  useEffect(() => {
+    if (activeProjectCode) {
+      setSelectedCollegeId(activeProjectCode.collegeId);
+    } else {
+      setSelectedCollegeId("");
+    }
+  }, [activeProjectCode]);
+
+  // Load Config when college or selected project code changes
   useEffect(() => {
     if (selectedCollegeId) {
       loadConfig(selectedCollegeId);
@@ -203,45 +258,77 @@ const AcademicConfigTab = ({ colleges }) => {
       setConfig({ courses: {} });
       setExpandedCourses({});
     }
-  }, [selectedCollegeId]);
+  }, [selectedCollegeId, selectedProjectCode]);
 
-  // Auto-select first college on mount
+  // Auto-select first active project code on mount
   useEffect(() => {
-    if (colleges.length > 0 && !selectedCollegeId) {
-      setSelectedCollegeId(colleges[0].id);
+    const activePC = (projectCodes || []).find((pc) => pc.archived !== true && pc.collegeId);
+    if (activePC && !selectedProjectCode) {
+      setSelectedProjectCode(activePC.code);
     }
-  }, [colleges]);
+  }, [projectCodes]);
 
-  const filteredColleges = colleges.filter((c) => {
-    const search = collegeSearchQuery.toLowerCase();
-    return (
-      c.name.toLowerCase().includes(search) ||
-      (c.code && c.code.toLowerCase().includes(search))
-    );
-  });
+  const filteredProjectCodes = (projectCodes || [])
+    .filter((pc) => pc.archived !== true && pc.collegeId)
+    .filter((pc) => {
+      const search = projectCodeSearchQuery.toLowerCase();
+      return (
+        pc.code.toLowerCase().includes(search) ||
+        (pc.collegeName && pc.collegeName.toLowerCase().includes(search))
+      );
+    });
 
-  // Close college dropdown on outside click
+  // Close project code dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (
-        collegeDropdownRef.current &&
-        !collegeDropdownRef.current.contains(e.target)
+        projectCodeDropdownRef.current &&
+        !projectCodeDropdownRef.current.contains(e.target)
       ) {
-        setCollegeDropdownOpen(false);
+        setProjectCodeDropdownOpen(false);
       }
     };
-    if (collegeDropdownOpen) {
+    if (projectCodeDropdownOpen) {
       document.addEventListener("mousedown", handleClickOutside);
     }
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [collegeDropdownOpen]);
+  }, [projectCodeDropdownOpen]);
 
   const loadConfig = async (collegeId) => {
     setLoading(true);
     try {
       // Use context to load (checks cache first)
       const data = await loadAcademicConfig(collegeId);
-      setConfig(data || { courses: {} });
+      let loadedConfig = data || { courses: {} };
+      if (!loadedConfig.courses) loadedConfig.courses = {};
+
+      // Auto-copy fallback: if we have an active project code (e.g. course "B.E.", passing year "2025-26")
+      // and "B.E. (2025-26)" does not exist in courses, but "B.E." does, we copy B.E. to B.E. (2025-26).
+      if (activeCourseName && activePassingYear) {
+        const suffixedName = `${activeCourseName} (${activePassingYear})`;
+        if (!loadedConfig.courses[suffixedName]) {
+          const legacyCourse = loadedConfig.courses[activeCourseName];
+          if (legacyCourse) {
+            loadedConfig = {
+              ...loadedConfig,
+              courses: {
+                ...loadedConfig.courses,
+                [suffixedName]: JSON.parse(JSON.stringify(legacyCourse))
+              }
+            };
+          } else {
+            loadedConfig = {
+              ...loadedConfig,
+              courses: {
+                ...loadedConfig.courses,
+                [suffixedName]: { years: {} }
+              }
+            };
+          }
+        }
+      }
+
+      setConfig(loadedConfig);
       // Expand all courses by default
       if (data?.courses) {
         const expanded = {};
@@ -579,7 +666,16 @@ const AcademicConfigTab = ({ colleges }) => {
 
   // Read-only view of the structure
   const renderReadOnlyView = () => {
-    const courses = config.courses || {};
+    let courses = config.courses || {};
+    if (selectedProjectCode && activeCourseName && activePassingYear) {
+      const suffixedName = `${activeCourseName} (${activePassingYear})`;
+      courses = Object.fromEntries(
+        Object.entries(courses).filter(
+          ([name]) => name.toLowerCase() === suffixedName.toLowerCase()
+        )
+      );
+    }
+
     if (Object.keys(courses).length === 0) {
       return (
         <div className="text-muted-foreground text-center py-8">
@@ -604,8 +700,13 @@ const AcademicConfigTab = ({ colleges }) => {
                 <ChevronRight className="h-4 w-4 text-primary" />
               )}
               <GraduationCap className="h-5 w-5 text-primary" />
-              <span className="font-bold text-lg text-primary">
-                {courseName}
+              <span className="font-bold text-lg text-primary flex items-center gap-2">
+                {getCleanCourseName(courseName)}
+                {getCoursePassingYears(courseName) && (
+                  <span className="text-sm font-normal text-muted-foreground">
+                    {getCoursePassingYears(courseName)}
+                  </span>
+                )}
               </span>
             </div>
 
@@ -618,8 +719,13 @@ const AcademicConfigTab = ({ colleges }) => {
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-semibold text-foreground">
+                    <span className="font-semibold text-foreground flex items-center gap-2">
                       Year {year}
+                      {getYearPassingYear(courseName, year) && (
+                        <span className="text-xs font-normal text-muted-foreground">
+                          {getYearPassingYear(courseName, year)}
+                        </span>
+                      )}
                     </span>
                   </div>
 
@@ -693,7 +799,20 @@ const AcademicConfigTab = ({ colleges }) => {
 
         {/* Course Cards */}
         <div className="space-y-6">
-          {Object.entries(config.courses || {}).map(
+          {Object.entries(
+            (() => {
+              let courses = config.courses || {};
+              if (selectedProjectCode && activeCourseName && activePassingYear) {
+                const suffixedName = `${activeCourseName} (${activePassingYear})`;
+                courses = Object.fromEntries(
+                  Object.entries(courses).filter(
+                    ([name]) => name.toLowerCase() === suffixedName.toLowerCase()
+                  )
+                );
+              }
+              return courses;
+            })()
+          ).map(
             ([courseName, courseData]) => {
               const stats = getCourseStats(courseData);
               const years = getYearsForCourse(courseData);
@@ -723,8 +842,13 @@ const AcademicConfigTab = ({ colleges }) => {
                           <GraduationCap className="h-5 w-5 text-amber-700" />
                         </div>
                         <div>
-                          <h3 className="text-xl font-bold text-[#1e3a5f]">
-                            {courseName}
+                          <h3 className="text-xl font-bold text-[#1e3a5f] flex items-center gap-2">
+                            {getCleanCourseName(courseName)}
+                            {getCoursePassingYears(courseName) && (
+                              <span className="text-xs font-normal text-muted-foreground">
+                                {getCoursePassingYears(courseName)}
+                              </span>
+                            )}
                           </h3>
                           <p className="text-sm text-muted-foreground">
                             {stats.yearCount} Years • {stats.deptCount}{" "}
@@ -765,7 +889,7 @@ const AcademicConfigTab = ({ colleges }) => {
                                   : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
                               }`}
                             >
-                              Year {year}
+                              Year {year} {getYearPassingYear(courseName, year) && ` ${getYearPassingYear(courseName, year)}`}
                             </button>
                           </div>
                         ))}
@@ -784,7 +908,7 @@ const AcademicConfigTab = ({ colleges }) => {
                           </div>
                           <div>
                             <h4 className="font-semibold text-foreground">
-                              Year {selectedYear}
+                              Year {selectedYear} {getYearPassingYear(courseName, selectedYear) && ` ${getYearPassingYear(courseName, selectedYear)}`}
                             </h4>
                             <p className="text-xs text-muted-foreground">
                               {
@@ -955,86 +1079,77 @@ const AcademicConfigTab = ({ colleges }) => {
 
   return (
     <div className="space-y-6">
-      {/* College Selection */}
+      {/* Project Code Selection */}
       <Card>
         <CardHeader>
-          <CardTitle>Select College</CardTitle>
-          <CardDescription>Choose the college to configure</CardDescription>
+          <CardTitle>Select Project Code</CardTitle>
+          <CardDescription>Choose the project code to configure its structure</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between">
-            <div className="relative max-w-md" ref={collegeDropdownRef}>
+            <div className="relative max-w-md w-full" ref={projectCodeDropdownRef}>
               <button
                 type="button"
                 onClick={() => {
-                  setCollegeDropdownOpen((prev) => !prev);
-                  setCollegeSearchQuery("");
+                  setProjectCodeDropdownOpen((prev) => !prev);
+                  setProjectCodeSearchQuery("");
                 }}
                 className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
               >
                 <span
                   className={
-                    selectedCollegeId
-                      ? "text-foreground"
+                    selectedProjectCode
+                      ? "text-foreground font-mono"
                       : "text-muted-foreground"
                   }
                 >
-                  {selectedCollegeId
-                    ? (() => {
-                        const c = colleges.find(
-                          (col) => col.id === selectedCollegeId,
-                        );
-                        return c
-                          ? `${c.name}${c.code ? ` (${c.code})` : ""}`
-                          : "Select a college...";
-                      })()
-                    : "Select a college..."}
+                  {selectedProjectCode || "Select a project code..."}
                 </span>
                 <ChevronDown className="h-4 w-4 opacity-50" />
               </button>
 
-              {collegeDropdownOpen && (
+              {projectCodeDropdownOpen && (
                 <div className="absolute z-50 mt-1 w-full rounded-md border bg-white shadow-lg animate-in fade-in-0 zoom-in-95 slide-in-from-top-2">
                   <div className="p-2 border-b border-slate-100">
                     <div className="flex items-center px-2 py-1.5 bg-slate-100 rounded-md">
                       <Search className="h-3.5 w-3.5 text-slate-400 mr-2 flex-shrink-0" />
                       <input
                         type="text"
-                        placeholder="Search colleges..."
-                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700"
-                        value={collegeSearchQuery}
-                        onChange={(e) => setCollegeSearchQuery(e.target.value)}
+                        placeholder="Search project codes..."
+                        className="bg-transparent border-none outline-none text-xs w-full text-slate-700 font-mono"
+                        value={projectCodeSearchQuery}
+                        onChange={(e) => setProjectCodeSearchQuery(e.target.value)}
                         autoFocus
                       />
                     </div>
                   </div>
                   <div className="max-h-[250px] overflow-y-auto py-1">
-                    {filteredColleges.length === 0 ? (
+                    {filteredProjectCodes.length === 0 ? (
                       <div className="p-4 text-center text-xs text-muted-foreground">
-                        No colleges found
+                        No project codes found
                       </div>
                     ) : (
-                      filteredColleges.map((c) => (
+                      filteredProjectCodes.map((pc) => (
                         <button
-                          key={c.id}
+                          key={pc.id}
                           type="button"
                           onClick={() => {
-                            setSelectedCollegeId(c.id);
-                            setCollegeDropdownOpen(false);
-                            setCollegeSearchQuery("");
+                            setSelectedProjectCode(pc.code);
+                            setProjectCodeDropdownOpen(false);
+                            setProjectCodeSearchQuery("");
                           }}
                           className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-100 transition-colors ${
-                            selectedCollegeId === c.id
-                              ? "bg-primary/5 text-primary font-medium"
-                              : "text-foreground"
+                            selectedProjectCode === pc.code
+                              ? "bg-primary/5 text-primary font-bold font-mono"
+                              : "text-foreground font-mono"
                           }`}
                         >
-                          {c.name}
-                          {c.code ? (
-                            <span className="ml-1 text-muted-foreground">
-                              ({c.code})
+                          <div className="flex flex-col">
+                            <span>{pc.code}</span>
+                            <span className="text-[10px] text-muted-foreground font-sans truncate">
+                              {pc.collegeName}
                             </span>
-                          ) : null}
+                          </div>
                         </button>
                       ))
                     )}
@@ -1046,7 +1161,7 @@ const AcademicConfigTab = ({ colleges }) => {
             {selectedCollegeId && (
               <Button
                 onClick={() => setConfigModalOpen(true)}
-                className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+                className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 ml-4 animate-pulse"
               >
                 <Edit className="h-4 w-4" />
                 Configure Structure
@@ -1074,12 +1189,12 @@ const AcademicConfigTab = ({ colleges }) => {
         </Card>
       )}
 
-      {!selectedCollegeId && (
+      {!selectedProjectCode && (
         <div className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground bg-secondary/20 rounded-xl border border-dashed">
           <AlertCircle className="h-12 w-12 mb-4 opacity-50" />
-          <h3 className="text-lg font-medium">No College Selected</h3>
+          <h3 className="text-lg font-medium">No Project Code Selected</h3>
           <p>
-            Please select a college above to view and edit its academic
+            Please select a project code above to view and edit its academic
             configuration.
           </p>
         </div>
