@@ -1028,6 +1028,13 @@ export const compileAllSegmentsFromResponses = (
  * Saves decoupled statistics into individual documents under sessions/{sessionId}/stats subcollection.
  * This replaces storing everything in the parent session doc's compiledStats field.
  */
+/**
+ * Sanitizes a string for use as a Firestore document ID by replacing
+ * forward slashes (which Firestore interprets as path separators) with
+ * a safe double-underscore sequence. E.g. "CS/IT" → "CS__IT".
+ */
+const sanitizeDocId = (id) => String(id || "").replace(/\//g, "__");
+
 export const saveDecoupledStats = async (sessionId, compiledData) => {
   const { overall, byTrainer, byBatch, byBranch } = compiledData;
   const promises = [];
@@ -1042,8 +1049,9 @@ export const saveDecoupledStats = async (sessionId, compiledData) => {
   );
 
   Object.entries(byTrainer || {}).forEach(([trainerId, data]) => {
+    const safeTrainerId = sanitizeDocId(trainerId);
     promises.push(
-      setDoc(doc(db, "sessions", sessionId, "stats", `trainer_${trainerId}`), {
+      setDoc(doc(db, "sessions", sessionId, "stats", `trainer_${safeTrainerId}`), {
         ...data,
         type: "trainer",
         trainerId,
@@ -1052,8 +1060,9 @@ export const saveDecoupledStats = async (sessionId, compiledData) => {
   });
 
   Object.entries(byBatch || {}).forEach(([batchId, data]) => {
+    const safeBatchId = sanitizeDocId(batchId);
     promises.push(
-      setDoc(doc(db, "sessions", sessionId, "stats", `batch_${batchId}`), {
+      setDoc(doc(db, "sessions", sessionId, "stats", `batch_${safeBatchId}`), {
         ...data,
         type: "batch",
         batchId,
@@ -1062,8 +1071,9 @@ export const saveDecoupledStats = async (sessionId, compiledData) => {
   });
 
   Object.entries(byBranch || {}).forEach(([branchId, data]) => {
+    const safeBranchId = sanitizeDocId(branchId);
     promises.push(
-      setDoc(doc(db, "sessions", sessionId, "stats", `branch_${branchId}`), {
+      setDoc(doc(db, "sessions", sessionId, "stats", `branch_${safeBranchId}`), {
         ...data,
         type: "branch",
         branchId,

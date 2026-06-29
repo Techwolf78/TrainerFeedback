@@ -70,6 +70,8 @@ import {
   compileSessionStats,
   getResponses,
   compileSessionStatsFromResponses,
+  compileAllSegmentsFromResponses,
+  saveDecoupledStats,
   migrateSessionStats,
 } from "@/services/superadmin/responseService";
 import { serverTimestamp, doc, updateDoc } from "firebase/firestore";
@@ -140,6 +142,13 @@ const SessionsTab = ({
   } = useSuperAdminData();
   const [loading, setLoading] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
+  // [RETIRED 2026-06-29] isRepairing was used by the one-time "Repair Stats" button.
+  // That button re-compiled stats for sessions whose branch/batch names contained a
+  // forward slash (e.g. "CS/IT"), which caused a Firebase "invalid document reference"
+  // error when used as a Firestore doc-ID segment. The root fix lives in
+  // saveDecoupledStats (responseService.js) via sanitizeDocId(). This state can be
+  // removed entirely once we are confident no old data needs repairing.
+  // const [isRepairing, setIsRepairing] = useState(false);
   const [isBatchCompiling, setIsBatchCompiling] = useState(false);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [batchSessions, setBatchSessions] = useState([]);
@@ -503,6 +512,65 @@ const SessionsTab = ({
       id: toastId,
     });
     setIsMigrating(false);
+  };
+
+  /**
+   * Re-compiles and saves stats for any session whose branch or batch names
+   * contain a forward slash — which previously caused the Firebase
+   * "invalid document reference" error. Safe to run multiple times.
+   */
+  const handleRepairSlashStats = async () => {
+    const hasSlash = (arr) =>
+      (arr || []).some((v) => typeof v === "string" && v.includes("/"));
+
+    const affectedSessions = sessions.filter((s) => {
+      const branches = s.branches || (s.branch ? [s.branch] : []);
+      const batches = s.batches || (s.batch ? [s.batch] : []);
+      return hasSlash(branches) || hasSlash(batches);
+    });
+
+    if (affectedSessions.length === 0) {
+      toast.success("No affected sessions found — all stats are clean! ✅");
+      return;
+    }
+
+    if (
+      !confirm(
+        `Found ${affectedSessions.length} session(s) with "/" in branch or batch names.\n\nThis will re-compile and repair their stats subcollections. Continue?`,
+      )
+    )
+      return;
+
+    setIsRepairing(true);
+    const toastId = toast.loading(
+      `Repairing stats for ${affectedSessions.length} session(s)...`,
+    );
+    let success = 0;
+    let failed = 0;
+
+    for (const session of affectedSessions) {
+      try {
+        const stats = await compileSessionStats(
+          session.id,
+          session.reactivationCount || 0,
+        );
+        await updateSession(session.id, {
+          compiledStats: stats,
+          lastCompiledAt: serverTimestamp(),
+        });
+        success++;
+      } catch (err) {
+        console.error(`[RepairStats] Failed for session ${session.id}:`, err);
+        failed++;
+      }
+    }
+
+    toast.success(
+      `Stats repair complete: ${success} fixed, ${failed} failed.`,
+      { id: toastId },
+    );
+    setIsRepairing(false);
+    onRefresh && onRefresh();
   };
 
   const handleExportResponses = (session) => {
@@ -1047,21 +1115,75 @@ const SessionsTab = ({
         <p className="text-sm text-muted-foreground">
           Showing {filteredSessions.length} session(s)
         </p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleBatchCompile}
-          disabled={isBatchCompiling}
-          className="gap-2 text-xs h-8 border-blue-200 hover:bg-blue-50 hover:text-blue-700 text-blue-700 font-semibold transition-all shadow-sm"
-        >
-          <RotateCcw
-            className={cn(
-              "h-3.5 w-3.5 text-blue-600",
-              isBatchCompiling && "animate-spin",
-            )}
-          />
-          Compile All
-        </Button>
+        <div className="flex items-center gap-2">
+          {/*
+           * [RETIRED BUTTON — 2026-06-29] "Repair Stats"
+           *
+           * WHY IT EXISTED:
+           *   Branch/batch names containing a forward slash (e.g. "CS/IT") caused a
+           *   Firebase FirestoreError: "Invalid document reference. Document references
+           *   must have an even number of segments" because the slash was interpreted as
+           *   a Firestore path separator when building the stats subcollection doc ID
+           *   (e.g. `branch_CS/IT` → 5 segments instead of the required 4).
+           *
+           * WHAT IT DID:
+           *   Scanned all sessions whose `branches` or `batches` arrays contained a "/",
+           *   then called compileSessionStats() for each, which now writes doc IDs through
+           *   sanitizeDocId() (replaces "/" with "__") so Firestore accepts them.
+           *
+           * ROOT FIX (permanent, still active):
+           *   saveDecoupledStats() in responseService.js uses sanitizeDocId() on every
+           *   branch_, batch_, and trainer_ doc ID before writing. The original name is
+           *   preserved inside the document body (branchId/batchId/trainerId fields) so
+           *   reads are unaffected.
+           *
+           * PREVENTION (still active):
+           *   AcademicConfigTab.jsx blocks "/" in addDept, addBatch, renameDept, and
+           *   renameBatch with a descriptive toast error.
+           *
+           * WHEN TO DELETE THIS:
+           *   Once all affected sessions have been re-compiled (or you confirm no sessions
+           *   with "/" in branch/batch names still have broken stats subcollections), both
+           *   this button and the handleRepairSlashStats() function below can be removed.
+           *   The handler itself is harmless to keep — it is idempotent (safe to re-run).
+           *
+           * TO RE-ENABLE:
+           *   Uncomment this block and uncomment `const [isRepairing, setIsRepairing]`
+           *   in the state declarations above.
+           *
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRepairSlashStats}
+            disabled={isRepairing || isBatchCompiling}
+            title="Re-compile stats for sessions with '/' in branch/batch names"
+            className="gap-2 text-xs h-8 border-amber-200 hover:bg-amber-50 hover:text-amber-700 text-amber-700 font-semibold transition-all shadow-sm"
+          >
+            <AlertTriangle
+              className={cn(
+                "h-3.5 w-3.5 text-amber-500",
+                isRepairing && "animate-pulse",
+              )}
+            />
+            {isRepairing ? "Repairing..." : "Repair Stats"}
+          </Button>
+          */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleBatchCompile}
+            disabled={isBatchCompiling}
+            className="gap-2 text-xs h-8 border-blue-200 hover:bg-blue-50 hover:text-blue-700 text-blue-700 font-semibold transition-all shadow-sm"
+          >
+            <RotateCcw
+              className={cn(
+                "h-3.5 w-3.5 text-blue-600",
+                isBatchCompiling && "animate-spin",
+              )}
+            />
+            Compile All
+          </Button>
+        </div>
       </div>
       <div className="border rounded-lg overflow-hidden bg-card">
         <Table>

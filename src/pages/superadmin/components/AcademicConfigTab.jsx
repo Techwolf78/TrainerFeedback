@@ -223,7 +223,10 @@ const AcademicConfigTab = ({ colleges }) => {
   // Close college dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (collegeDropdownRef.current && !collegeDropdownRef.current.contains(e.target)) {
+      if (
+        collegeDropdownRef.current &&
+        !collegeDropdownRef.current.contains(e.target)
+      ) {
         setCollegeDropdownOpen(false);
       }
     };
@@ -328,6 +331,13 @@ const AcademicConfigTab = ({ colleges }) => {
   // Department: Level 3 (Under Year)
   const addDept = (courseName, year, deptName) => {
     if (!deptName.trim()) return;
+    if (deptName.includes("/")) {
+      toast.error(
+        `Department name "${deptName}" contains a "/" which is not allowed. Use a dash (-) or plus (+) instead, e.g. "CS-IT" or "CS+IT".`,
+        { duration: 6000 }
+      );
+      return;
+    }
     setConfig((prev) => ({
       ...prev,
       courses: {
@@ -373,6 +383,13 @@ const AcademicConfigTab = ({ colleges }) => {
   // Batch: Level 4 (Under Department)
   const addBatch = (courseName, year, deptName, batch) => {
     if (!batch.trim()) return;
+    if (batch.includes("/")) {
+      toast.error(
+        `Batch name "${batch}" contains a "/" which is not allowed. Use a dash (-) or plus (+) instead.`,
+        { duration: 6000 }
+      );
+      return;
+    }
     const currentBatches =
       config.courses[courseName].years[year].departments[deptName].batches ||
       [];
@@ -468,6 +485,13 @@ const AcademicConfigTab = ({ colleges }) => {
   // Renaming Department (now nested under Year)
   const renameDept = (courseName, year, oldName, newName) => {
     if (!newName.trim() || newName === oldName) return;
+    if (newName.includes("/")) {
+      toast.error(
+        `Department name "${newName}" contains a "/" which is not allowed. Use a dash (-) or plus (+) instead, e.g. "CS-IT".`,
+        { duration: 6000 }
+      );
+      return;
+    }
     if (config.courses[courseName].years[year].departments[newName]) {
       toast.error("A department with this name already exists");
       return;
@@ -504,6 +528,13 @@ const AcademicConfigTab = ({ colleges }) => {
   // Renaming Batch (now nested under Dept)
   const renameBatch = (courseName, year, deptName, oldBatch, newBatch) => {
     if (!newBatch.trim() || newBatch === oldBatch) return;
+    if (newBatch.includes("/")) {
+      toast.error(
+        `Batch name "${newBatch}" contains a "/" which is not allowed. Use a dash (-) or plus (+) instead.`,
+        { duration: 6000 }
+      );
+      return;
+    }
     const currentBatches =
       config.courses[courseName].years[year].departments[deptName].batches ||
       [];
@@ -941,11 +972,21 @@ const AcademicConfigTab = ({ colleges }) => {
                 }}
                 className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
               >
-                <span className={selectedCollegeId ? "text-foreground" : "text-muted-foreground"}>
+                <span
+                  className={
+                    selectedCollegeId
+                      ? "text-foreground"
+                      : "text-muted-foreground"
+                  }
+                >
                   {selectedCollegeId
                     ? (() => {
-                        const c = colleges.find((col) => col.id === selectedCollegeId);
-                        return c ? `${c.name}${c.code ? ` (${c.code})` : ""}` : "Select a college...";
+                        const c = colleges.find(
+                          (col) => col.id === selectedCollegeId,
+                        );
+                        return c
+                          ? `${c.name}${c.code ? ` (${c.code})` : ""}`
+                          : "Select a college...";
                       })()
                     : "Select a college..."}
                 </span>
@@ -983,12 +1024,16 @@ const AcademicConfigTab = ({ colleges }) => {
                             setCollegeSearchQuery("");
                           }}
                           className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-100 transition-colors ${
-                            selectedCollegeId === c.id ? "bg-primary/5 text-primary font-medium" : "text-foreground"
+                            selectedCollegeId === c.id
+                              ? "bg-primary/5 text-primary font-medium"
+                              : "text-foreground"
                           }`}
                         >
                           {c.name}
                           {c.code ? (
-                            <span className="ml-1 text-muted-foreground">({c.code})</span>
+                            <span className="ml-1 text-muted-foreground">
+                              ({c.code})
+                            </span>
                           ) : null}
                         </button>
                       ))

@@ -96,9 +96,7 @@ const SessionWizard = ({
     trainerIds:
       session?.trainerIds ||
       (session?.assignedTrainer ? [session.assignedTrainer.id] : null) ||
-      (defaultTrainerId && trainers.length > 0
-        ? [trainers[0].id]
-        : []),
+      (defaultTrainerId && trainers.length > 0 ? [trainers[0].id] : []),
     sessionDate: session?.sessionDate || "",
     sessionTime: session?.sessionTime || "Morning",
     sessionDuration: session?.sessionDuration || 60,
@@ -124,7 +122,7 @@ const SessionWizard = ({
   // Load Config when College Changes
   useEffect(() => {
     const loadConfig = async () => {
-      if (formData.collegeId) { 
+      if (formData.collegeId) {
         try {
           const config = await getAcademicConfig(formData.collegeId);
           setAcademicOptions(config || {});
@@ -162,7 +160,10 @@ const SessionWizard = ({
   // Outside click for Project Code dropdown
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (projectCodeDropdownRef.current && !projectCodeDropdownRef.current.contains(e.target)) {
+      if (
+        projectCodeDropdownRef.current &&
+        !projectCodeDropdownRef.current.contains(e.target)
+      ) {
         setProjectCodeDropdownOpen(false);
       }
     };
@@ -177,7 +178,7 @@ const SessionWizard = ({
   useEffect(() => {
     if (step === 2) {
       // ALWAYS exclude soft-deleted trainers for NEW sessions
-      let filtered = trainers.filter(t => !t.isDeleted);
+      let filtered = trainers.filter((t) => !t.isDeleted);
 
       if (trainerSearch.trim()) {
         const searchLower = trainerSearch.toLowerCase();
@@ -283,12 +284,11 @@ const SessionWizard = ({
             (t) => t.id === formData.templateId,
           );
           if (selectedTemplate && selectedTemplate.sections) {
-            sessionQuestions = selectedTemplate.sections.flatMap(
-              (section) =>
-                (section.questions || []).map((q) => ({
-                  ...q,
-                  id: `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${q.id || "new"}`,
-                })),
+            sessionQuestions = selectedTemplate.sections.flatMap((section) =>
+              (section.questions || []).map((q) => ({
+                ...q,
+                id: `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${q.id || "new"}`,
+              })),
             );
           }
         }
@@ -298,7 +298,7 @@ const SessionWizard = ({
         ...formData,
         // Multi-trainer: write all three fields for compat
         assignedTrainers: formData.assignedTrainers,
-        trainerIds: formData.assignedTrainers.map(t => t.id),
+        trainerIds: formData.assignedTrainers.map((t) => t.id),
         assignedTrainer: formData.assignedTrainers[0] || null, // legacy compat
         // Multi-branch/batch: write arrays + legacy single fields for backward compat
         branches: formData.branches || [],
@@ -380,10 +380,13 @@ const SessionWizard = ({
       if (currentYearData?.departments) {
         updated.forEach((br) => {
           const deptData = currentYearData.departments[br];
-          if (deptData?.batches) deptData.batches.forEach((b) => validBatches.add(b));
+          if (deptData?.batches)
+            deptData.batches.forEach((b) => validBatches.add(b));
         });
       }
-      const prunedBatches = (formData.batches || []).filter((b) => validBatches.has(b));
+      const prunedBatches = (formData.batches || []).filter((b) =>
+        validBatches.has(b),
+      );
       setFormData({
         ...formData,
         branches: updated,
@@ -410,14 +413,21 @@ const SessionWizard = ({
 
     const selectAllBranches = () => {
       if ((formData.branches || []).length === departments.length) {
-        setFormData({ ...formData, branches: [], branch: "", batches: [], batch: "" });
+        setFormData({
+          ...formData,
+          branches: [],
+          branch: "",
+          batches: [],
+          batch: "",
+        });
       } else {
         // Gather all batches from all departments
         const allBatches = new Set();
         if (currentYearData?.departments) {
           departments.forEach((br) => {
             const deptData = currentYearData.departments[br];
-            if (deptData?.batches) deptData.batches.forEach((b) => allBatches.add(b));
+            if (deptData?.batches)
+              deptData.batches.forEach((b) => allBatches.add(b));
           });
         }
         setFormData({
@@ -457,7 +467,13 @@ const SessionWizard = ({
               disabled={!projectCodes.length}
               className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <span className={selectedProjectCode ? "text-foreground font-mono" : "text-muted-foreground"}>
+              <span
+                className={
+                  selectedProjectCode
+                    ? "text-foreground font-mono"
+                    : "text-muted-foreground"
+                }
+              >
                 {selectedProjectCode || "Select Project Code"}
               </span>
               <ChevronDown className="h-4 w-4 opacity-50" />
@@ -481,20 +497,25 @@ const SessionWizard = ({
                 <div className="max-h-[250px] overflow-y-auto py-1">
                   {projectCodes
                     .filter((pc) => pc.collegeId && pc.archived !== true)
-                    .filter((pc) => 
-                      !projectCodeSearch || 
-                      pc.code.toLowerCase().includes(projectCodeSearch.toLowerCase())
-                    )
-                    .length === 0 ? (
+                    .filter(
+                      (pc) =>
+                        !projectCodeSearch ||
+                        pc.code
+                          .toLowerCase()
+                          .includes(projectCodeSearch.toLowerCase()),
+                    ).length === 0 ? (
                     <div className="p-4 text-center text-xs text-muted-foreground">
                       No project codes found
                     </div>
                   ) : (
                     projectCodes
                       .filter((pc) => pc.collegeId && pc.archived !== true)
-                      .filter((pc) => 
-                        !projectCodeSearch || 
-                        pc.code.toLowerCase().includes(projectCodeSearch.toLowerCase())
+                      .filter(
+                        (pc) =>
+                          !projectCodeSearch ||
+                          pc.code
+                            .toLowerCase()
+                            .includes(projectCodeSearch.toLowerCase()),
                       )
                       .map((pc) => (
                         <button
@@ -506,7 +527,9 @@ const SessionWizard = ({
                             setProjectCodeSearch("");
                           }}
                           className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-100 transition-colors font-mono ${
-                            selectedProjectCode === pc.code ? "bg-primary/5 text-primary font-bold" : "text-foreground"
+                            selectedProjectCode === pc.code
+                              ? "bg-primary/5 text-primary font-bold"
+                              : "text-foreground"
                           }`}
                         >
                           {pc.code}
@@ -615,17 +638,32 @@ const SessionWizard = ({
           {/* Multi-Select Branches/Departments */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label>Branch/Dept * <span className="text-xs text-muted-foreground font-normal">({selectedBranches.length} selected)</span></Label>
+              <Label>
+                Branch/Dept *{" "}
+                <span className="text-xs text-muted-foreground font-normal">
+                  ({selectedBranches.length} selected)
+                </span>
+              </Label>
               {departments.length > 0 && (
-                <button type="button" onClick={selectAllBranches} className="text-xs text-primary hover:underline">
-                  {selectedBranches.length === departments.length ? "Deselect All" : "Select All"}
+                <button
+                  type="button"
+                  onClick={selectAllBranches}
+                  className="text-xs text-primary hover:underline"
+                >
+                  {selectedBranches.length === departments.length
+                    ? "Deselect All"
+                    : "Select All"}
                 </button>
               )}
             </div>
             {!formData.year ? (
-              <p className="text-xs text-muted-foreground py-2">Select a year first</p>
+              <p className="text-xs text-muted-foreground py-2">
+                Select a year first
+              </p>
             ) : departments.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-2">No departments configured</p>
+              <p className="text-xs text-muted-foreground py-2">
+                No departments configured
+              </p>
             ) : (
               <div className="grid grid-cols-2 gap-1.5 max-h-[140px] overflow-y-auto border rounded-md p-2">
                 {departments.map((dept) => {
@@ -641,9 +679,13 @@ const SessionWizard = ({
                           : "bg-muted/50 text-muted-foreground border border-transparent hover:border-primary/20 hover:bg-muted"
                       }`}
                     >
-                      <div className={`h-3.5 w-3.5 rounded-sm border flex items-center justify-center flex-shrink-0 ${
-                        isSelected ? "border-primary bg-primary text-white" : "border-muted-foreground/40"
-                      }`}>
+                      <div
+                        className={`h-3.5 w-3.5 rounded-sm border flex items-center justify-center flex-shrink-0 ${
+                          isSelected
+                            ? "border-primary bg-primary text-white"
+                            : "border-muted-foreground/40"
+                        }`}
+                      >
                         {isSelected && <Check className="h-2.5 w-2.5" />}
                       </div>
                       <span className="truncate">{dept}</span>
@@ -657,17 +699,33 @@ const SessionWizard = ({
           {/* Multi-Select Batches */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label>Batch * <span className="text-xs text-muted-foreground font-normal">({(formData.batches || []).length} selected)</span></Label>
+              <Label>
+                Batch *{" "}
+                <span className="text-xs text-muted-foreground font-normal">
+                  ({(formData.batches || []).length} selected)
+                </span>
+              </Label>
               {allAvailableBatches.length > 0 && (
-                <button type="button" onClick={selectAllBatches} className="text-xs text-primary hover:underline">
-                  {(formData.batches || []).length === allAvailableBatches.length ? "Deselect All" : "Select All"}
+                <button
+                  type="button"
+                  onClick={selectAllBatches}
+                  className="text-xs text-primary hover:underline"
+                >
+                  {(formData.batches || []).length ===
+                  allAvailableBatches.length
+                    ? "Deselect All"
+                    : "Select All"}
                 </button>
               )}
             </div>
             {selectedBranches.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-2">Select branch(es) first</p>
+              <p className="text-xs text-muted-foreground py-2">
+                Select branch(es) first
+              </p>
             ) : allAvailableBatches.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-2">No batches configured for selected branches</p>
+              <p className="text-xs text-muted-foreground py-2">
+                No batches configured for selected branches
+              </p>
             ) : (
               <div className="grid grid-cols-3 gap-1.5 max-h-[140px] overflow-y-auto border rounded-md p-2">
                 {allAvailableBatches.map((batch) => {
@@ -683,9 +741,13 @@ const SessionWizard = ({
                           : "bg-muted/50 text-muted-foreground border border-transparent hover:border-primary/20 hover:bg-muted"
                       }`}
                     >
-                      <div className={`h-3.5 w-3.5 rounded-sm border flex items-center justify-center flex-shrink-0 ${
-                        isSelected ? "border-primary bg-primary text-white" : "border-muted-foreground/40"
-                      }`}>
+                      <div
+                        className={`h-3.5 w-3.5 rounded-sm border flex items-center justify-center flex-shrink-0 ${
+                          isSelected
+                            ? "border-primary bg-primary text-white"
+                            : "border-muted-foreground/40"
+                        }`}
+                      >
                         {isSelected && <Check className="h-2.5 w-2.5" />}
                       </div>
                       <span className="truncate">{batch}</span>
@@ -754,10 +816,10 @@ const SessionWizard = ({
                         setFormData({
                           ...formData,
                           assignedTrainers: formData.assignedTrainers.filter(
-                            (tr) => tr.id !== t.id
+                            (tr) => tr.id !== t.id,
                           ),
                           trainerIds: formData.trainerIds.filter(
-                            (id) => id !== t.id
+                            (id) => id !== t.id,
                           ),
                         });
                       }}
@@ -807,7 +869,7 @@ const SessionWizard = ({
                     <div className="space-y-1">
                       {filteredTrainers.map((t) => {
                         const isSelected = formData.assignedTrainers?.some(
-                          (tr) => tr.id === t.id
+                          (tr) => tr.id === t.id,
                         );
                         return (
                           <div
@@ -819,10 +881,10 @@ const SessionWizard = ({
                                   ...formData,
                                   assignedTrainers:
                                     formData.assignedTrainers.filter(
-                                      (tr) => tr.id !== t.id
+                                      (tr) => tr.id !== t.id,
                                     ),
                                   trainerIds: formData.trainerIds.filter(
-                                    (id) => id !== t.id
+                                    (id) => id !== t.id,
                                   ),
                                 });
                               } else {
