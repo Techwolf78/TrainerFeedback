@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Plus,
+  Copy,
   PlayCircle,
   MoreHorizontal,
   Pencil,
@@ -192,6 +193,7 @@ const SessionsTab = ({
   const setSessionDialogOpen = setDialogOpen || setLocalSessionDialogOpen;
 
   const [editingSessionId, setEditingSessionId] = useState(null); // null = create mode, id = edit mode
+  const [duplicatingSession, setDuplicatingSession] = useState(null); // Holds session configuration being duplicated
 
   // Export Confirmation Dialog
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
@@ -204,6 +206,14 @@ const SessionsTab = ({
   // Inline Analytics View
   const [selectedSessionForAnalytics, setSelectedSessionForAnalytics] =
     useState(null);
+
+  // Clean up dialog states when modal is closed
+  useEffect(() => {
+    if (!sessionDialogOpen) {
+      setEditingSessionId(null);
+      setDuplicatingSession(null);
+    }
+  }, [sessionDialogOpen]);
 
   // Form Data
 
@@ -800,6 +810,12 @@ const SessionsTab = ({
     }
   };
 
+  const handleDuplicateSession = (session) => {
+    setEditingSessionId(null);
+    setDuplicatingSession(session);
+    setSessionDialogOpen(true);
+  };
+
   const uniqueCourses = [...new Set(sessions.map((s) => s.course))].filter(
     Boolean,
   );
@@ -831,22 +847,36 @@ const SessionsTab = ({
           onClose={() => {
             setSessionDialogOpen(false);
             setEditingSessionId(null);
+            setDuplicatingSession(null);
           }}
         />
         <div className="p-6 max-h-[90vh] overflow-y-auto">
           <ModalHeader className="mb-4">
             <ModalTitle>
-              {editingSessionId ? "Edit" : "Create"} Feedback Session
+              {editingSessionId ? "Edit" : duplicatingSession ? "Duplicate" : "Create"} Feedback Session
             </ModalTitle>
             <ModalDescription>
               Complete the batch selection and session details.
             </ModalDescription>
           </ModalHeader>
           <SessionWizard
-            key={editingSessionId || "new"}
+            key={editingSessionId || (duplicatingSession ? `dup-${duplicatingSession.id}` : "new")}
             session={
               editingSessionId
                 ? sessions.find((s) => s.id === editingSessionId)
+                : duplicatingSession
+                ? {
+                    ...duplicatingSession,
+                    id: undefined,
+                    status: undefined,
+                    sessionDate: "", // Clear date so they pick a new one
+                    compiledStats: undefined,
+                    questions: undefined, // Let the wizard pull clean questions from template
+                    createdAt: undefined,
+                    updatedAt: undefined,
+                    phaseId: undefined,
+                    reactivationCount: 0,
+                  }
                 : null
             }
             colleges={colleges}
@@ -855,11 +885,13 @@ const SessionsTab = ({
             onSuccess={() => {
               setSessionDialogOpen(false);
               setEditingSessionId(null);
+              setDuplicatingSession(null);
               onRefresh && onRefresh();
             }}
             onCancel={() => {
               setSessionDialogOpen(false);
               setEditingSessionId(null);
+              setDuplicatingSession(null);
             }}
           />
         </div>
@@ -1317,6 +1349,11 @@ const SessionsTab = ({
                               }}
                             >
                               <Pencil className="mr-2 h-4 w-4" /> Update
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleDuplicateSession(session)}
+                            >
+                              <Copy className="mr-2 h-4 w-4" /> Duplicate
                             </DropdownMenuItem>
                             {session.status === "active" && (
                               <DropdownMenuItem

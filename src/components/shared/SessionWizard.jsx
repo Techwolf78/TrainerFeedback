@@ -98,7 +98,7 @@ const SessionWizard = ({
       (session?.assignedTrainer ? [session.assignedTrainer.id] : null) ||
       (defaultTrainerId && trainers.length > 0 ? [trainers[0].id] : []),
     sessionDate: session?.sessionDate || "",
-    sessionTime: session?.sessionTime || "Morning",
+    sessionTime: session?.sessionTime || "AM",
     sessionDuration: session?.sessionDuration || 60,
     questions: session?.questions || [],
     templateId: session?.templateId || "",
@@ -173,12 +173,22 @@ const SessionWizard = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [projectCodeDropdownOpen]);
 
-  // Filter Trainers based on Domain (Step 2) OR Search
-  // If searching, ignore domain filter. If not searching, use domain filter.
+  // Filter Trainers based on Domain (Step 2) and Search
+  // Enforce domain filter if a domain is selected. Search within the filtered domain.
   useEffect(() => {
     if (step === 2) {
       // ALWAYS exclude soft-deleted trainers for NEW sessions
       let filtered = trainers.filter((t) => !t.isDeleted);
+
+      if (formData.domain) {
+        filtered = filtered.filter(
+          (t) =>
+            t.domain?.toLowerCase().includes(formData.domain.toLowerCase()) ||
+            t.specialisation
+              ?.toLowerCase()
+              .includes(formData.domain.toLowerCase()),
+        );
+      }
 
       if (trainerSearch.trim()) {
         const searchLower = trainerSearch.toLowerCase();
@@ -186,14 +196,6 @@ const SessionWizard = ({
           (t) =>
             t.name.toLowerCase().includes(searchLower) ||
             t.specialisation?.toLowerCase().includes(searchLower),
-        );
-      } else if (formData.domain) {
-        filtered = filtered.filter(
-          (t) =>
-            t.domain?.toLowerCase().includes(formData.domain.toLowerCase()) ||
-            t.specialisation
-              ?.toLowerCase()
-              .includes(formData.domain.toLowerCase()),
         );
       }
       setFilteredTrainers(filtered);
@@ -781,7 +783,14 @@ const SessionWizard = ({
               <Label>Domain (Filter)</Label>
               <Select
                 value={formData.domain}
-                onValueChange={(v) => setFormData({ ...formData, domain: v })}
+                onValueChange={(v) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    domain: v,
+                    assignedTrainers: [],
+                    trainerIds: [],
+                  }))
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Domain" />
@@ -955,9 +964,16 @@ const SessionWizard = ({
                   <SelectValue placeholder="Select Time" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Morning">Morning</SelectItem>
-                  <SelectItem value="Afternoon">Afternoon</SelectItem>
-                  <SelectItem value="Evening">Evening</SelectItem>
+                  <SelectItem value="AM">AM</SelectItem>
+                  <SelectItem value="PM">PM</SelectItem>
+                  <SelectItem value="AM & PM">AM & PM</SelectItem>
+                  {/* Preserve legacy value if present in old data */}
+                  {formData.sessionTime &&
+                    !["AM", "PM", "AM & PM"].includes(formData.sessionTime) && (
+                      <SelectItem value={formData.sessionTime}>
+                        {formData.sessionTime}
+                      </SelectItem>
+                    )}
                 </SelectContent>
               </Select>
             </div>
@@ -965,23 +981,19 @@ const SessionWizard = ({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Duration (Hours)</Label>
-              <Select
-                value={String(formData.sessionDuration / 60 || 1)}
-                onValueChange={(v) =>
-                  setFormData({ ...formData, sessionDuration: Number(v) * 60 })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Duration" />
-                </SelectTrigger>
-                <SelectContent>
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((h) => (
-                    <SelectItem key={h} value={String(h)}>
-                      {h} Hour{h > 1 ? "s" : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Input
+                type="number"
+                min="1"
+                value={formData.sessionDuration / 60 || ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setFormData({
+                    ...formData,
+                    sessionDuration: val ? Number(val) * 60 : 0,
+                  });
+                }}
+                placeholder="e.g., 4 or 24"
+              />
             </div>
             <div className="space-y-2">
               <Label>Auto-Close (Hours)</Label>

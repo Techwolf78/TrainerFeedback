@@ -216,6 +216,39 @@ const SessionAnalytics = ({ session, onBack }) => {
     return () => unsubscribe();
   }, [session?.id, session?.status]);
 
+  const filteredTopicsLearned = useMemo(() => {
+    return (stats?.topicsLearned || []).filter(isValidTopicOrInterest);
+  }, [stats?.topicsLearned]);
+
+  const filteredFutureTopics = useMemo(() => {
+    return (stats?.futureTopics || []).filter(isValidTopicOrInterest);
+  }, [stats?.futureTopics]);
+
+  // Get active trainers who actually received responses
+  const activeTrainers = React.useMemo(() => {
+    const trainersSet = new Set();
+
+    // 1. Try to extract from live responses first (most fresh)
+    if (liveResponses.length > 0) {
+      liveResponses.forEach((r) => {
+        if (r.selectedTrainerName && r.selectedTrainerName.trim()) {
+          trainersSet.add(r.selectedTrainerName.trim());
+        }
+      });
+    }
+
+    // 2. Fallback to byTrainer compiled stats
+    if (trainersSet.size === 0 && stats?.byTrainer) {
+      Object.values(stats.byTrainer).forEach((t) => {
+        if (t.trainerName && t.trainerName.trim()) {
+          trainersSet.add(t.trainerName.trim());
+        }
+      });
+    }
+
+    return Array.from(trainersSet).sort((a, b) => a.localeCompare(b));
+  }, [liveResponses, stats?.byTrainer]);
+
   const handleExport = async () => {
     if (!stats) return;
 
@@ -471,14 +504,6 @@ const SessionAnalytics = ({ session, onBack }) => {
 
   const loadMoreStep = 25;
 
-  const filteredTopicsLearned = useMemo(() => {
-    return (stats.topicsLearned || []).filter(isValidTopicOrInterest);
-  }, [stats.topicsLearned]);
-
-  const filteredFutureTopics = useMemo(() => {
-    return (stats.futureTopics || []).filter(isValidTopicOrInterest);
-  }, [stats.futureTopics]);
-
   const learnedToShow = filteredTopicsLearned.slice(0, learnedLimit);
   const futureToShow = filteredFutureTopics.slice(0, futureLimit);
 
@@ -511,31 +536,6 @@ const SessionAnalytics = ({ session, onBack }) => {
       fullMark: 5,
     }),
   );
-
-  // Get active trainers who actually received responses
-  const activeTrainers = React.useMemo(() => {
-    const trainersSet = new Set();
-
-    // 1. Try to extract from live responses first (most fresh)
-    if (liveResponses.length > 0) {
-      liveResponses.forEach((r) => {
-        if (r.selectedTrainerName && r.selectedTrainerName.trim()) {
-          trainersSet.add(r.selectedTrainerName.trim());
-        }
-      });
-    }
-
-    // 2. Fallback to byTrainer compiled stats
-    if (trainersSet.size === 0 && stats?.byTrainer) {
-      Object.values(stats.byTrainer).forEach((t) => {
-        if (t.trainerName && t.trainerName.trim()) {
-          trainersSet.add(t.trainerName.trim());
-        }
-      });
-    }
-
-    return Array.from(trainersSet).sort((a, b) => a.localeCompare(b));
-  }, [liveResponses, stats]);
 
   return (
     <div className="space-y-4 p-2 bg-background" ref={analyticsRef}>
