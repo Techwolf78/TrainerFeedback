@@ -336,12 +336,17 @@ const SessionWizard = ({
       ? Object.keys(academicOptions.courses)
       : [];
     const courseKey = academicOptions?.courses
-      ? Object.keys(academicOptions.courses).find(
-          (k) =>
-            k.toLowerCase() === `${formData.course?.toLowerCase()} (${formData.academicYear?.toLowerCase()})` ||
-            k.toLowerCase() === `${formData.course?.toLowerCase()} (${formData.academicYear?.replace("-", "/")?.toLowerCase()})` ||
-            k.toLowerCase() === formData.course?.toLowerCase()
-        )
+      ? Object.keys(academicOptions.courses).find((k) => {
+          const kLower = k.toLowerCase().trim();
+          const courseLower = (formData.course || "").toLowerCase().trim();
+          const cleanK = kLower.replace(/\s*\([^)]*\)/g, "").trim();
+
+          if (cleanK === courseLower) return true;
+          if (kLower === courseLower) return true;
+          if (formData.academicYear && kLower === `${courseLower} (${formData.academicYear.toLowerCase()})`) return true;
+          if (formData.academicYear && kLower === `${courseLower} (${formData.academicYear.replace("-", "/").toLowerCase()})`) return true;
+          return false;
+        })
       : null;
     const currentCourseData = courseKey
       ? academicOptions?.courses[courseKey]
@@ -351,30 +356,55 @@ const SessionWizard = ({
     const years = currentCourseData?.years
       ? Object.keys(currentCourseData.years)
       : [];
-    const currentYearData =
+
+    const currentYearKey =
       formData.year && currentCourseData?.years
-        ? currentCourseData.years[formData.year]
+        ? Object.keys(currentCourseData.years).find((yKey) => {
+            const yLower = yKey.toLowerCase().trim();
+            const formYearLower = String(formData.year).toLowerCase().trim();
+
+            if (yLower === formYearLower) return true;
+            if (yLower === `year ${formYearLower}`) return true;
+            if (`year ${yLower}` === formYearLower) return true;
+
+            const yNum = yLower.replace(/[^0-9]/g, "");
+            const formNum = formYearLower.replace(/[^0-9]/g, "");
+            if (yNum && formNum && yNum === formNum) return true;
+            return false;
+          })
         : null;
 
+    const currentYearData = currentYearKey
+      ? currentCourseData.years[currentYearKey]
+      : null;
+
     // Departments are now under Year
-    const departments = currentYearData?.departments
+    const rawDepartments = currentYearData?.departments
       ? Object.keys(currentYearData.departments)
       : [];
 
+    // Ensure currently selected branches from formData are always present in the departments list
+    const departments = Array.from(
+      new Set([...rawDepartments, ...(formData.branches || [])])
+    );
+
     // Batches aggregated from ALL selected branches
     const selectedBranches = formData.branches || [];
-    const allAvailableBatches = [];
+    const rawBatches = [];
     if (currentYearData?.departments) {
       selectedBranches.forEach((br) => {
         const deptData = currentYearData.departments[br];
         if (deptData?.batches) {
           deptData.batches.forEach((b) => {
-            if (!allAvailableBatches.includes(b)) allAvailableBatches.push(b);
+            if (!rawBatches.includes(b)) rawBatches.push(b);
           });
         }
       });
     }
-    allAvailableBatches.sort();
+    // Ensure currently selected batches from formData are always present in allAvailableBatches
+    const allAvailableBatches = Array.from(
+      new Set([...rawBatches, ...(formData.batches || [])])
+    ).sort();
 
     // Toggle helpers for multi-select
     const toggleBranch = (dept) => {
