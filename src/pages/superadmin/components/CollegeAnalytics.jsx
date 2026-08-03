@@ -1102,7 +1102,7 @@ const CollegeAnalytics = ({ collegeId, collegeName, collegeLogo, onBack }) => {
           <img
             src={collegeLogo}
             alt={collegeName}
-            className="h-10 w-auto object-contain"
+            className="h-16 md:h-20 max-h-24 max-w-[220px] w-auto object-contain drop-shadow-sm"
             onError={(e) => {
               e.target.style.display = "none";
             }}
