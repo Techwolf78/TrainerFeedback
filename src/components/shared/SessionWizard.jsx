@@ -329,25 +329,86 @@ const SessionWizard = ({
     }
   };
 
+  // Helper: normalize any academic year string to a canonical set of variants
+  // so "26-27", "2026-2027", and "2026/2027" are all treated as equal
+  const normalizeAcadYear = (raw) => {
+    if (!raw) return new Set();
+    const s = raw.toLowerCase().trim();
+    const variants = new Set([s]);
+    // long (20XX-20XX) -> short (XX-XX)
+    const short = s.replace(/^20(\d\d)-20(\d\d)$/, "$1-$2");
+    // short (XX-XX) -> long (20XX-20XX)
+    const long = s.replace(/^(\d\d)-(\d\d)$/, "20$1-20$2");
+    // dash -> slash
+    const slash = s.replace(/-/g, "/");
+    variants.add(short);
+    variants.add(long);
+    variants.add(slash);
+    // also slash variants of long/short
+    variants.add(short.replace(/-/g, "/"));
+    variants.add(long.replace(/-/g, "/"));
+    return variants;
+  };
+
+  // Helper: count total departments across ALL years in a course entry
+  // Used as a tiebreaker — the key with more config wins
+  const countDepts = (courseData) => {
+    if (!courseData?.years) return 0;
+    return Object.values(courseData.years).reduce(
+      (sum, y) => sum + Object.keys(y?.departments || {}).length,
+      0
+    );
+  };
+
   // Render Step 1
   const renderStep1 = () => {
     // New Structure: Course -> Year -> Department -> Batch
     const courses = academicOptions?.courses
       ? Object.keys(academicOptions.courses)
       : [];
-    const courseKey = academicOptions?.courses
-      ? Object.keys(academicOptions.courses).find((k) => {
-          const kLower = k.toLowerCase().trim();
-          const courseLower = (formData.course || "").toLowerCase().trim();
-          const cleanK = kLower.replace(/\s*\([^)]*\)/g, "").trim();
 
-          if (cleanK === courseLower) return true;
-          if (kLower === courseLower) return true;
-          if (formData.academicYear && kLower === `${courseLower} (${formData.academicYear.toLowerCase()})`) return true;
-          if (formData.academicYear && kLower === `${courseLower} (${formData.academicYear.replace("-", "/").toLowerCase()})`) return true;
-          return false;
-        })
-      : null;
+    // Score-based course key resolution — deterministic regardless of format variants
+    const courseKey = (() => {
+      if (!academicOptions?.courses) return null;
+      const courseLower = (formData.course || "").toLowerCase().trim();
+      if (!courseLower) return null;
+
+      const acadYearVariants = normalizeAcadYear(formData.academicYear);
+
+      // Score each candidate key:
+      //   3 = exact base name + matching academic year suffix (e.g. "ENGG (2026-2027)")
+      //   2 = any suffix with base matching (e.g. "ENGG (other year)") — prefer if more depts
+      //   1 = exact base name, no suffix (e.g. "ENGG")
+      //   0 = cleaned base name match (e.g. "Engineering" stripped to "engg")
+      //  -1 = no match
+      const scored = Object.keys(academicOptions.courses).map((k) => {
+        const kLower = k.toLowerCase().trim();
+        const cleanK = kLower.replace(/\s*\([^)]*\)/g, "").trim();
+        const suffixMatch = kLower.match(/\(([^)]+)\)$/);
+        const suffix = suffixMatch ? suffixMatch[1].trim() : null;
+
+        if (cleanK !== courseLower) return { k, score: -1, depts: 0 };
+
+        let score;
+        if (suffix && acadYearVariants.has(suffix)) {
+          score = 3; // exact base + matching year suffix
+        } else if (suffix) {
+          score = 2; // exact base + some other year suffix
+        } else {
+          score = 1; // exact base, no suffix
+        }
+
+        return { k, score, depts: countDepts(academicOptions.courses[k]) };
+      });
+
+      // Filter valid candidates, then sort: highest score first, then most depts
+      const valid = scored
+        .filter((c) => c.score >= 0)
+        .sort((a, b) => b.score - a.score || b.depts - a.depts);
+
+      return valid[0]?.k || null;
+    })();
+
     const currentCourseData = courseKey
       ? academicOptions?.courses[courseKey]
       : null;
@@ -393,7 +454,11 @@ const SessionWizard = ({
     const rawBatches = [];
     if (currentYearData?.departments) {
       selectedBranches.forEach((br) => {
-        const deptData = currentYearData.departments[br];
+        const deptKey =
+          Object.keys(currentYearData.departments).find(
+            (k) => k.toLowerCase().trim() === br.toLowerCase().trim()
+          ) || br;
+        const deptData = currentYearData.departments[deptKey];
         if (deptData?.batches) {
           deptData.batches.forEach((b) => {
             if (!rawBatches.includes(b)) rawBatches.push(b);
@@ -419,7 +484,11 @@ const SessionWizard = ({
       const validBatches = new Set();
       if (currentYearData?.departments) {
         updated.forEach((br) => {
-          const deptData = currentYearData.departments[br];
+          const deptKey =
+            Object.keys(currentYearData.departments).find(
+              (k) => k.toLowerCase().trim() === br.toLowerCase().trim()
+            ) || br;
+          const deptData = currentYearData.departments[deptKey];
           if (deptData?.batches)
             deptData.batches.forEach((b) => validBatches.add(b));
         });
@@ -465,7 +534,11 @@ const SessionWizard = ({
         const allBatches = new Set();
         if (currentYearData?.departments) {
           departments.forEach((br) => {
-            const deptData = currentYearData.departments[br];
+            const deptKey =
+              Object.keys(currentYearData.departments).find(
+                (k) => k.toLowerCase().trim() === br.toLowerCase().trim()
+              ) || br;
+            const deptData = currentYearData.departments[deptKey];
             if (deptData?.batches)
               deptData.batches.forEach((b) => allBatches.add(b));
           });
