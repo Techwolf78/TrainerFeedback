@@ -28,6 +28,7 @@ import {
   addTrainersBatch,
   getTrainerIdCounter,
 } from "@/services/superadmin/trainerService";
+import { getAllSessions } from "@/services/superadmin/sessionService";
 import { useSuperAdminData } from "@/contexts/SuperAdminDataContext";
 import TrainerAnalytics from "./TrainerAnalytics";
 import TrainerLeaderboard from "./TrainerLeaderboard";
@@ -70,6 +71,53 @@ const TrainersTab = () => {
   const [viewMode, setViewMode] = useState("active");
   const showArchived = viewMode === "archived";
   const showLeaderboard = viewMode === "leaderboard";
+
+  // Dedicated one-time on-demand state for complete historical sessions for Leaderboard
+  const [leaderboardSessions, setLeaderboardSessions] = useState([]);
+  const [loadingLeaderboardSessions, setLoadingLeaderboardSessions] = useState(false);
+
+  const handleSwitchToLeaderboard = () => {
+    setViewMode("leaderboard");
+    if (leaderboardSessions.length === 0 && !loadingLeaderboardSessions) {
+      setLoadingLeaderboardSessions(true);
+      getAllSessions()
+        .then((fetchedSessions) => {
+          setLeaderboardSessions(fetchedSessions || []);
+        })
+        .catch((err) => {
+          console.error("Failed to load all sessions for leaderboard:", err);
+        })
+        .finally(() => {
+          setLoadingLeaderboardSessions(false);
+        });
+    }
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    if (showLeaderboard && leaderboardSessions.length === 0 && !loadingLeaderboardSessions) {
+      setLoadingLeaderboardSessions(true);
+      getAllSessions()
+        .then((fetchedSessions) => {
+          if (isMounted) {
+            setLeaderboardSessions(fetchedSessions || []);
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to load all sessions for leaderboard:", err);
+        })
+        .finally(() => {
+          if (isMounted) setLoadingLeaderboardSessions(false);
+        });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [showLeaderboard, leaderboardSessions.length, loadingLeaderboardSessions]);
+
+  const isLeaderboardLoading =
+    showLeaderboard &&
+    (loadingLeaderboardSessions || leaderboardSessions.length === 0);
 
   // Dialog states
   const [trainerDialogOpen, setTrainerDialogOpen] = useState(false);
@@ -126,7 +174,22 @@ const TrainersTab = () => {
   }, [trainerIdParam, trainers]);
 
   // Force refresh trainers from context
-  const refreshTrainers = () => loadTrainers(true);
+  const refreshTrainers = () => {
+    loadTrainers(true);
+    if (showLeaderboard) {
+      setLoadingLeaderboardSessions(true);
+      getAllSessions()
+        .then((fetchedSessions) => {
+          setLeaderboardSessions(fetchedSessions || []);
+        })
+        .catch((err) => {
+          console.error("Failed to refresh leaderboard sessions:", err);
+        })
+        .finally(() => {
+          setLoadingLeaderboardSessions(false);
+        });
+    }
+  };
   
   // Filter Logic
   const allFilteredTrainers = trainers
@@ -332,49 +395,54 @@ const TrainersTab = () => {
   if (selectedTrainerForAnalytics) {
     return (
       <TrainerAnalytics
+        trainer={selectedTrainerForAnalytics}
         trainerId={selectedTrainerForAnalytics.id}
         trainerName={selectedTrainerForAnalytics.name}
+        allSessions={leaderboardSessions.length > 0 ? leaderboardSessions : null}
         onBack={() => handleSelectTrainerForAnalytics(null)}
       />
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header Section - All items on same line */}
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center gap-4">
-           <Button 
-            variant={viewMode === "active" ? "default" : "ghost"} 
-            size="sm" 
-            onClick={() => setViewMode("active")}
-            className="rounded-full shadow-sm"
-          >
-            All Active
-          </Button>
-          <Button 
-            variant={viewMode === "archived" ? "default" : "ghost"} 
-            size="sm" 
-            onClick={() => setViewMode("archived")}
-            className="rounded-full shadow-sm gap-2"
-          >
-            <ShieldBan className="h-3.5 w-3.5" />
-            Archived/Deleted
-          </Button>
-          <Button 
-            variant={viewMode === "leaderboard" ? "default" : "ghost"} 
-            size="sm" 
-            onClick={() => setViewMode("leaderboard")}
-            className="rounded-full shadow-sm gap-2"
-          >
-            <Trophy className="h-3.5 w-3.5" />
-            Leaderboard
-          </Button>
-        </div>
+    <>
+      <div className="space-y-3.5">
+        {/* Header Controls */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Mode Switcher */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant={viewMode === "active" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("active")}
+              className="h-8 text-xs px-3.5 rounded-full shadow-xs"
+            >
+              All Active
+            </Button>
+            <Button
+              variant={viewMode === "archived" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("archived")}
+              className="h-8 text-xs px-3.5 rounded-full shadow-xs gap-1.5"
+            >
+              <ShieldBan className="h-3.5 w-3.5" />
+              Archived/Deleted
+            </Button>
+            <Button
+              variant={viewMode === "leaderboard" ? "default" : "ghost"}
+              size="sm"
+              onClick={handleSwitchToLeaderboard}
+              className="h-8 text-xs px-3.5 rounded-full shadow-xs gap-1.5"
+            >
+              <Trophy className="h-3.5 w-3.5" />
+              Leaderboard
+            </Button>
+          </div>
 
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex-1 flex max-w-md items-center gap-3">
-            <div className="relative flex-1">
+          {/* Search and Action Buttons */}
+          <div className="flex items-center gap-2.5 flex-1 sm:justify-end">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 placeholder={`Search ${
                   showLeaderboard
@@ -382,431 +450,473 @@ const TrainersTab = () => {
                     : showArchived
                       ? "archived"
                       : "active"
-                } by name, email, ID, or domain...`}
-                className="pl-10 bg-card/50 shadow-sm"
+                } by name, email, ID...`}
+                className="pl-8 h-8 text-xs bg-card/50 shadow-xs"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             </div>
-            <div className="text-sm font-medium text-muted-foreground whitespace-nowrap bg-muted/50 px-3 py-1.5 rounded-md border">
+            <div className="text-xs font-medium text-muted-foreground whitespace-nowrap bg-muted/50 px-3 h-8 flex items-center rounded-md border shadow-2xs">
               {showLeaderboard
                 ? `${trainers.filter((t) => !t.isDeleted).length} Ranked`
                 : `${filteredTrainers.length} ${
                     filteredTrainers.length === 1 ? "Trainer" : "Trainers"
                   }`}
             </div>
-          </div>
-          <div className="flex items-center gap-3 flex-shrink-0">
-            {/* Batch Import Button */}
+
+            {/* Batch Import & Add Trainer Buttons */}
             {!showArchived && !showLeaderboard && (
-              <>
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <Button
                   variant="outline"
-                  className="gap-2 shadow-sm border-dashed"
+                  size="sm"
+                  className="h-8 text-xs px-2.5 gap-1.5 shadow-xs border-dashed"
                   onClick={() => setBatchDialogOpen(true)}
                 >
-                  <Upload className="h-4 w-4" />
+                  <Upload className="h-3.5 w-3.5" />
                   <span className="hidden md:inline">Batch Import</span>
                 </Button>
 
-                {/* Add Trainer Button */}
                 <Button
-                  className="gap-2 gradient-hero text-primary-foreground shadow-md hover:shadow-lg transition-all"
+                  size="sm"
+                  className="h-8 text-xs px-3 gap-1.5 gradient-hero text-primary-foreground shadow-xs hover:shadow-sm transition-all"
                   onClick={openCreateDialog}
                 >
-                  <Plus className="h-4 w-4" />
+                  <Plus className="h-3.5 w-3.5" />
                   Add Trainer
                 </Button>
-              </>
+              </div>
             )}
           </div>
         </div>
 
-        {/* Batch Import Modal */}
-        {batchDialogOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-background rounded-xl shadow-xl w-full max-w-lg border border-border animate-in zoom-in-95 duration-200 flex flex-col">
-              <div className="flex flex-col space-y-1.5 p-6 pb-4">
-                <h2 className="text-lg font-semibold leading-none tracking-tight">
-                  Batch Import Trainers
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  Upload a JSON file containing an array of trainer objects.
-                </p>
-              </div>
-              <div className="p-6 pt-0 space-y-4">
-                <div className="flex justify-between items-center">
-                  <p className="text-sm font-medium">Select File</p>
-                  <a
-                    href="/sample-trainers.json"
-                    download="sample-trainers.json"
-                    className="text-xs text-primary hover:underline flex items-center gap-1"
-                  >
-                    Download Sample JSON
-                  </a>
-                </div>
-                <Input
-                  type="file"
-                  accept=".json"
-                  onChange={handleBatchFileChange}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Format: JSON array of objects with trainer_id, name, etc.
-                </p>
-              </div>
-              <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 p-6 pt-0">
-                <Button
-                  variant="outline"
-                  onClick={() => setBatchDialogOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleBatchUpload}
-                  disabled={!batchFile || isUploading}
-                  className="gradient-hero text-primary-foreground"
-                >
-                  {isUploading ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : null}
-                  Upload
-                </Button>
-              </div>
+        {showLeaderboard ? (
+          isLeaderboardLoading ? (
+            <div className="flex flex-col items-center justify-center py-20 min-h-[350px]">
+              <Loader fullScreen={false} />
+              <p className="mt-4 text-xs font-medium text-muted-foreground animate-pulse">
+                Calculating lifetime leaderboard rankings...
+              </p>
             </div>
-          </div>
-        )}
+          ) : (
+            <TrainerLeaderboard
+              trainers={trainers}
+              sessions={leaderboardSessions}
+              loading={loadingLeaderboardSessions}
+              searchQuery={searchQuery}
+              onSelectTrainer={handleSelectTrainerForAnalytics}
+            />
+          )
+        ) : (
+          /* Trainers Grid */
+          <div className="grid gap-3.5 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+            {filteredTrainers.map((trainer, index) => (
+              <div
+                key={trainer.id}
+                className="group relative flex flex-col bg-card border rounded-xl shadow-xs hover:shadow-sm hover:border-primary/40 transition-all duration-200 overflow-hidden"
+              >
+                <div className="p-3.5 px-4 flex items-start gap-3.5">
+                  {/* Avatar */}
+                  <div className="h-11 w-11 rounded-full flex-shrink-0 bg-gradient-to-br from-primary/5 to-primary/20 flex items-center justify-center border border-primary/10 text-primary shadow-inner mt-0.5">
+                    <User className="h-7 w-7" />
+                  </div>
 
-        {/* Add/Edit Trainer Modal */}
-        {trainerDialogOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-background rounded-xl shadow-xl w-full max-w-lg border border-border animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-              <div className="flex flex-col space-y-1.5 p-6 pb-4">
-                <h2 className="text-lg font-semibold leading-none tracking-tight">
-                  {isEditing ? "Edit Trainer" : "Add New Trainer"}
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  {isEditing
-                    ? "Update trainer details"
-                    : "Add a new trainer to the platform"}
+                  {/* Details Column */}
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3
+                        className={`font-bold text-sm leading-tight truncate ${
+                          trainer.isDeleted
+                            ? "text-muted-foreground/70"
+                            : "text-foreground"
+                        }`}
+                        title={trainer.name}
+                      >
+                        {trainer.name}
+                      </h3>
+                      <span className="text-[10px] font-mono bg-muted px-2 py-0.5 rounded-full text-muted-foreground border shrink-0">
+                        {trainer.trainer_id}
+                      </span>
+                    </div>
+
+                    <p
+                      className={`text-xs leading-none truncate ${
+                        trainer.isDeleted
+                          ? "text-muted-foreground/60"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {trainer.email}
+                    </p>
+
+                    {/* Domain & Specialisation */}
+                    {(trainer.domain || trainer.specialisation) && (
+                      <div
+                        className={`pt-1 flex flex-wrap gap-1.5 text-[10px] ${
+                          trainer.isDeleted ? "opacity-50 grayscale" : ""
+                        }`}
+                      >
+                        {trainer.domain && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded bg-primary text-primary-foreground font-medium shadow-xs">
+                            {trainer.domain}
+                          </span>
+                        )}
+                        {trainer.specialisation && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded bg-secondary text-secondary-foreground border font-medium">
+                            {trainer.specialisation}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Skills / Topics */}
+                    <div
+                      className={`pt-1 ${
+                        trainer.isDeleted ? "opacity-50" : ""
+                      }`}
+                    >
+                      <div className="flex flex-wrap gap-1">
+                        {trainer.topics && trainer.topics.length > 0 ? (
+                          <>
+                            {trainer.topics.slice(0, 3).map((topic, i) => (
+                              <span
+                                key={i}
+                                className="text-[10px] font-medium px-1.5 py-0.5 bg-muted/80 rounded border text-muted-foreground"
+                              >
+                                {topic}
+                              </span>
+                            ))}
+                            {trainer.topics.length > 3 && (
+                              <span className="text-[10px] px-1 py-0.5 text-muted-foreground">
+                                +{trainer.topics.length - 3}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-[10px] italic text-muted-foreground opacity-60">
+                            No skills listed
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Menu */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-transparent -mr-1.5 -mt-1 shrink-0"
+                      >
+                        <MoreVertical className="h-3.5 w-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                      <DropdownMenuItem
+                        onClick={() => handleSelectTrainerForAnalytics(trainer)}
+                      >
+                        <BarChart3 className="mr-2 h-4 w-4" /> View Analytics
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => openEditDialog(trainer)}>
+                        <Pencil className="mr-2 h-4 w-4" /> Edit Profile
+                      </DropdownMenuItem>
+                      {trainer.isDeleted ? (
+                        <DropdownMenuItem
+                          className="text-primary focus:text-primary focus:bg-primary/10"
+                          onClick={() => handleRestoreTrainer(trainer.id)}
+                        >
+                          <RotateCcw className="mr-2 h-4 w-4" /> Restore Trainer
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                          onClick={() => handleDeleteTrainer(trainer.id)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" /> Delete Trainer
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+            ))}
+
+            {/* Loading State */}
+            {loading && trainers.length === 0 && (
+              <div className="col-span-full flex flex-col items-center justify-center py-16 text-center">
+                <Loader fullScreen={false} />
+                <p className="text-muted-foreground text-xs mt-2 animate-pulse">
+                  Syncing trainer database...
                 </p>
               </div>
-              <div className="p-6 pt-0 overflow-y-auto space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Trainer ID * (Format: GA-TXXX)</Label>
-                    <Input
-                      value={currentTrainer.trainer_id}
-                      onChange={(e) => {
-                        const val = e.target.value.toUpperCase();
-                        setCurrentTrainer({
-                          ...currentTrainer,
-                          trainer_id: val,
-                          // If create mode, also update password if they were matched
-                          password:
-                            !isEditing &&
-                            currentTrainer.password ===
-                              currentTrainer.trainer_id
-                              ? val
-                              : currentTrainer.password,
-                        });
-                      }}
-                      disabled={isEditing}
-                      placeholder="GA-T001"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Full Name *</Label>
-                    <Input
-                      value={currentTrainer.name}
-                      onChange={(e) =>
-                        setCurrentTrainer({
-                          ...currentTrainer,
-                          name: e.target.value,
-                        })
-                      }
-                      placeholder="John Doe"
-                    />
-                  </div>
+            )}
+
+            {/* Empty State */}
+            {!loading && filteredTrainers.length === 0 && (
+              <div className="col-span-full flex flex-col items-center justify-center py-14 bg-muted/10 border-2 border-dashed border-muted rounded-2xl">
+                <div className="bg-background p-3 rounded-full shadow-2xs mb-3 border">
+                  <Users className="h-8 w-8 text-muted-foreground/40" />
                 </div>
-                <div className="space-y-2">
-                  <Label>Email *</Label>
-                  <Input
-                    type="email"
-                    value={currentTrainer.email}
-                    onChange={(e) =>
-                      setCurrentTrainer({
-                        ...currentTrainer,
-                        email: e.target.value,
-                      })
-                    }
-                    placeholder="john@example.com"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Domain</Label>
-                    <Select
-                      value={currentTrainer.domain}
-                      onValueChange={(value) =>
-                        setCurrentTrainer({
-                          ...currentTrainer,
-                          domain: value,
-                        })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select Domain" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Technical">Technical</SelectItem>
-                        <SelectItem value="Soft Skills">
-                          Soft Skills
-                        </SelectItem>
-                        <SelectItem value="Aptitude">Aptitude</SelectItem>
-                        <SelectItem value="Tools">Tools</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Specialisation</Label>
-                    <Input
-                      value={currentTrainer.specialisation}
-                      onChange={(e) =>
-                        setCurrentTrainer({
-                          ...currentTrainer,
-                          specialisation: e.target.value,
-                        })
-                      }
-                      placeholder="Core expertise"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Topics (comma separated)</Label>
-                  <Textarea
-                    value={currentTrainer.topics}
-                    onChange={(e) =>
-                      setCurrentTrainer({
-                        ...currentTrainer,
-                        topics: e.target.value,
-                      })
-                    }
-                    placeholder="Java, Python, React, System Design"
-                    rows={3}
-                  />
-                </div>
-                {!isEditing && (
-                  <div className="space-y-2">
-                    <Label>Password (Initial)</Label>
-                    <Input
-                      type="password"
-                      value={currentTrainer.password}
-                      onChange={(e) =>
-                        setCurrentTrainer({
-                          ...currentTrainer,
-                          password: e.target.value,
-                        })
-                      }
-                      placeholder="******"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Account will be created with this password.
-                    </p>
-                  </div>
+                <h3 className="text-base font-semibold text-foreground">
+                  {searchQuery
+                    ? "No trainers match your search"
+                    : "No trainers found"}
+                </h3>
+                <p className="text-xs text-muted-foreground max-w-sm text-center mt-1">
+                  {searchQuery
+                    ? "Try checking for typos or searching by a different field (ID, Domain, etc)."
+                    : "Get started by adding your first faculty member or importing a batch file."}
+                </p>
+                {searchQuery ? (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    onClick={() => setSearchQuery("")}
+                    className="mt-3 text-xs"
+                  >
+                    Clear Filters
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={openCreateDialog}
+                    className="mt-3 gap-1.5 text-xs gradient-hero text-primary-foreground"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add First Trainer
+                  </Button>
                 )}
               </div>
-              <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 p-6 pt-0">
-                <Button
-                  variant="outline"
-                  onClick={() => setTrainerDialogOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleSaveTrainer}
-                  className="gradient-hero text-primary-foreground"
-                >
-                  {isEditing ? "Update" : "Create"}
-                </Button>
-              </div>
-            </div>
+            )}
           </div>
         )}
       </div>
 
-      {showLeaderboard ? (
-        <TrainerLeaderboard
-          trainers={trainers}
-          sessions={sessions}
-          searchQuery={searchQuery}
-          onSelectTrainer={handleSelectTrainerForAnalytics}
-        />
-      ) : (
-        /* Redesigned Trainers Grid */
-        <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-          {filteredTrainers.map((trainer, index) => (
-          <div
-            key={trainer.id}
-            className="group relative flex flex-col bg-card border rounded-xl shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-300 animate-fade-up overflow-hidden"
-            style={{ animationDelay: `${index * 0.05}s` }}
-          >
-            <div className="p-5 flex items-center gap-5">
-              {/* Avatar */}
-              <div className="h-16 w-16 rounded-full flex-shrink-0 bg-gradient-to-br from-primary/5 to-primary/20 flex items-center justify-center border border-primary/10 text-primary shadow-inner">
-                <User className="h-12 w-12" />
+      {/* Batch Import Modal */}
+      {batchDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-background rounded-xl shadow-xl w-full max-w-lg border border-border animate-in zoom-in-95 duration-200 flex flex-col">
+            <div className="flex flex-col space-y-1.5 p-5 pb-3">
+              <h2 className="text-base font-semibold leading-none tracking-tight">
+                Batch Import Trainers
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Upload a JSON file containing an array of trainer objects.
+              </p>
+            </div>
+            <div className="p-5 pt-0 space-y-3">
+              <div className="flex justify-between items-center">
+                <p className="text-xs font-medium">Select File</p>
+                <a
+                  href="/sample-trainers.json"
+                  download="sample-trainers.json"
+                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                >
+                  Download Sample JSON
+                </a>
               </div>
-
-              {/* Details Column */}
-              <div className="flex-1 min-w-0 space-y-1.5">
-                <div className="flex items-center gap-3">
-                  <h3 className={`font-bold text-lg leading-none ${trainer.isDeleted ? "text-muted-foreground/70" : "text-foreground"}`}>
-                    {trainer.name}
-                  </h3>
-                  <span className="text-[10px] font-mono bg-muted px-2 py-0.5 rounded-full text-muted-foreground border shrink-0">
-                    {trainer.trainer_id}
-                  </span>
-                </div>
-
-                <p className={`text-sm leading-none ${trainer.isDeleted ? "text-muted-foreground/60" : "text-muted-foreground"}`}>
-                  {trainer.email}
-                </p>
-
-                {/* Domain & Specialisation */}
-                {(trainer.domain || trainer.specialisation) && (
-                  <div className={`pt-2 flex flex-wrap gap-2 text-xs ${trainer.isDeleted ? "opacity-50 grayscale" : ""}`}>
-                    {trainer.domain && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary text-primary-foreground font-medium shadow-sm">
-                        {trainer.domain}
-                      </span>
-                    )}
-                    {trainer.specialisation && (
-                      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-secondary text-secondary-foreground border">
-                        {trainer.specialisation}
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {/* Skills / Topics */}
-                <div className={`pt-2 ${trainer.isDeleted ? "opacity-50" : ""}`}>
-                  <div className="flex flex-wrap gap-1.5">
-                    {trainer.topics && trainer.topics.length > 0 ? (
-                      <>
-                        {trainer.topics.slice(0, 3).map((topic, i) => (
-                          <span
-                            key={i}
-                            className="text-[10px] font-medium px-1.5 py-0.5 bg-muted/80 rounded border text-muted-foreground"
-                          >
-                            {topic}
-                          </span>
-                        ))}
-                        {trainer.topics.length > 3 && (
-                          <span className="text-[10px] px-1.5 py-0.5 text-muted-foreground">
-                            +{trainer.topics.length - 3}
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-[10px] italic text-muted-foreground opacity-60">
-                        No skills listed
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Menu */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-transparent -mr-2 -mt-2 self-start"
-                  >
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                  <DropdownMenuItem
-                    onClick={() => handleSelectTrainerForAnalytics(trainer)}
-                  >
-                    <BarChart3 className="mr-2 h-4 w-4" /> View Analytics
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => openEditDialog(trainer)}>
-                    <Pencil className="mr-2 h-4 w-4" /> Edit Profile
-                  </DropdownMenuItem>
-                  {trainer.isDeleted ? (
-                    <DropdownMenuItem
-                      className="text-primary focus:text-primary focus:bg-primary/10"
-                      onClick={() => handleRestoreTrainer(trainer.id)}
-                    >
-                      <RotateCcw className="mr-2 h-4 w-4" /> Restore Trainer
-                    </DropdownMenuItem>
-                  ) : (
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                      onClick={() => handleDeleteTrainer(trainer.id)}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" /> Delete Trainer
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Input
+                type="file"
+                accept=".json"
+                onChange={handleBatchFileChange}
+                className="text-xs"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Format: JSON array of objects with trainer_id, name, etc.
+              </p>
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 p-5 pt-0">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs"
+                onClick={() => setBatchDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleBatchUpload}
+                disabled={!batchFile || isUploading}
+                className="gradient-hero text-primary-foreground text-xs"
+              >
+                {isUploading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                ) : null}
+                Upload
+              </Button>
             </div>
           </div>
-          ))}
-
-          {/* Loading State */}
-          {loading && trainers.length === 0 && (
-          <div className="col-span-full flex flex-col items-center justify-center py-24 text-center">
-            <Loader fullScreen={false} />
-            <p className="text-muted-foreground animate-pulse">
-              Syncing trainer database...
-            </p>
-          </div>
-          )}
-
-          {/* Empty State */}
-          {!loading && filteredTrainers.length === 0 && (
-          <div className="col-span-full flex flex-col items-center justify-center py-20 bg-muted/10 border-2 border-dashed border-muted rounded-2xl">
-            <div className="bg-background p-4 rounded-full shadow-sm mb-4">
-              <Users className="h-10 w-10 text-muted-foreground/40" />
-            </div>
-            <h3 className="text-xl font-semibold text-foreground">
-              {searchQuery
-                ? "No trainers match your search"
-                : "No trainers found"}
-            </h3>
-            <p className="text-muted-foreground max-w-sm text-center mt-2">
-              {searchQuery
-                ? "Try checking for typos or searching by a different field (ID, Domain, etc)."
-                : "Get started by adding your first faculty member or importing a batch file."}
-            </p>
-            {searchQuery ? (
-              <Button
-                variant="link"
-                onClick={() => setSearchQuery("")}
-                className="mt-4"
-              >
-                Clear Filters
-              </Button>
-            ) : (
-              <Button
-                variant="default"
-                onClick={openCreateDialog}
-                className="mt-4 gap-2"
-              >
-                <Plus className="h-4 w-4" /> Add First Trainer
-              </Button>
-            )}
-          </div>
-          )}
         </div>
       )}
-    </div>
+
+      {/* Add/Edit Trainer Modal */}
+      {trainerDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-background rounded-xl shadow-xl w-full max-w-lg border border-border animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            <div className="flex flex-col space-y-1.5 p-5 pb-3">
+              <h2 className="text-base font-semibold leading-none tracking-tight">
+                {isEditing ? "Edit Trainer" : "Add New Trainer"}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                {isEditing
+                  ? "Update trainer details"
+                  : "Add a new trainer to the platform"}
+              </p>
+            </div>
+            <div className="p-5 pt-0 overflow-y-auto space-y-3.5">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Trainer ID * (GA-TXXX)</Label>
+                  <Input
+                    value={currentTrainer.trainer_id}
+                    onChange={(e) => {
+                      const val = e.target.value.toUpperCase();
+                      setCurrentTrainer({
+                        ...currentTrainer,
+                        trainer_id: val,
+                        password:
+                          !isEditing &&
+                          currentTrainer.password ===
+                            currentTrainer.trainer_id
+                            ? val
+                            : currentTrainer.password,
+                      });
+                    }}
+                    disabled={isEditing}
+                    placeholder="GA-T001"
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Full Name *</Label>
+                  <Input
+                    value={currentTrainer.name}
+                    onChange={(e) =>
+                      setCurrentTrainer({
+                        ...currentTrainer,
+                        name: e.target.value,
+                      })
+                    }
+                    placeholder="John Doe"
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Email *</Label>
+                <Input
+                  type="email"
+                  value={currentTrainer.email}
+                  onChange={(e) =>
+                    setCurrentTrainer({
+                      ...currentTrainer,
+                      email: e.target.value,
+                    })
+                  }
+                  placeholder="john@example.com"
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Domain</Label>
+                  <Select
+                    value={currentTrainer.domain}
+                    onValueChange={(value) =>
+                      setCurrentTrainer({
+                        ...currentTrainer,
+                        domain: value,
+                      })
+                    }
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Select Domain" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Technical">Technical</SelectItem>
+                      <SelectItem value="Soft Skills">
+                        Soft Skills
+                      </SelectItem>
+                      <SelectItem value="Aptitude">Aptitude</SelectItem>
+                      <SelectItem value="Tools">Tools</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Specialisation</Label>
+                  <Input
+                    value={currentTrainer.specialisation}
+                    onChange={(e) =>
+                      setCurrentTrainer({
+                        ...currentTrainer,
+                        specialisation: e.target.value,
+                      })
+                    }
+                    placeholder="Core expertise"
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Topics (comma separated)</Label>
+                <Textarea
+                  value={currentTrainer.topics}
+                  onChange={(e) =>
+                    setCurrentTrainer({
+                      ...currentTrainer,
+                      topics: e.target.value,
+                    })
+                  }
+                  placeholder="Java, Python, React, System Design"
+                  rows={2}
+                  className="text-xs"
+                />
+              </div>
+              {!isEditing && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Password (Initial)</Label>
+                  <Input
+                    type="password"
+                    value={currentTrainer.password}
+                    onChange={(e) =>
+                      setCurrentTrainer({
+                        ...currentTrainer,
+                        password: e.target.value,
+                      })
+                    }
+                    placeholder="******"
+                    className="h-8 text-xs"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Account will be created with this password.
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 p-5 pt-0">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs"
+                onClick={() => setTrainerDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSaveTrainer}
+                className="gradient-hero text-primary-foreground text-xs"
+              >
+                {isEditing ? "Update" : "Create"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 

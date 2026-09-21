@@ -51,6 +51,8 @@ import {
 } from "recharts";
 import { getSessionsByTrainer } from "@/services/superadmin/sessionService";
 import { getResponseTrendData, processQualitativeComments } from "@/services/superadmin/responseService";
+import { resolveTrainerStatsFromSession } from "@/services/superadmin/trainerService";
+import { useSuperAdminData } from "@/contexts/SuperAdminDataContext";
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
 
@@ -66,7 +68,19 @@ const blankSegmentStats = {
   futureTopics: [],
 };
 
-const TrainerAnalytics = ({ trainerId, trainerName, onBack }) => {
+const TrainerAnalytics = ({ trainer, trainerId, trainerName, allSessions = null, onBack }) => {
+  const { trainers } = useSuperAdminData();
+  const currentTrainer = useMemo(() => {
+    if (trainer) return trainer;
+    if (trainers && trainers.length > 0) {
+      const found = trainers.find(
+        (t) => t.id === trainerId || t.trainer_id === trainerId,
+      );
+      if (found) return found;
+    }
+    return { id: trainerId, name: trainerName };
+  }, [trainer, trainerId, trainerName, trainers]);
+
   // Data state
   const [sessions, setSessions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -84,11 +98,23 @@ const TrainerAnalytics = ({ trainerId, trainerName, onBack }) => {
   // Load Data
   useEffect(() => {
     const loadData = async () => {
-      if (!trainerId) return;
+      const tid = currentTrainer?.id || trainerId;
+      const tcode = currentTrainer?.trainer_id || null;
+      if (!tid && !tcode && !currentTrainer?.name) return;
+
+      if (allSessions && allSessions.length > 0) {
+        const matched = allSessions.filter((s) => {
+          const st = resolveTrainerStatsFromSession(s, currentTrainer);
+          return !!st;
+        });
+        setSessions(matched);
+        setIsLoading(false);
+        return;
+      }
 
       setIsLoading(true);
       try {
-        const results = await getSessionsByTrainer(trainerId);
+        const results = await getSessionsByTrainer(currentTrainer || tid, tcode);
         setSessions(results || []);
       } catch (error) {
         console.error("Failed to load trainer analytics:", error);
@@ -98,7 +124,7 @@ const TrainerAnalytics = ({ trainerId, trainerName, onBack }) => {
     };
 
     loadData();
-  }, [trainerId]);
+  }, [currentTrainer, trainerId, allSessions]);
 
   // Reset Filters
   const resetFilters = () => {
@@ -271,16 +297,17 @@ const TrainerAnalytics = ({ trainerId, trainerName, onBack }) => {
       qualitative: { high: [], low: [], future: [] },
     };
 
+    let validSessionsCount = 0;
     filteredSessions.forEach((session) => {
-      const cs = session.compiledStats;
+      const cs = session.compiledStats || session.stats;
       if (!cs) return;
 
-      // Priority: trainer filter -> batch filter -> department filter -> overall
-      let statsToUse = cs;
-      const trainerStats = cs.byTrainer?.[trainerId];
-      if (trainerStats) {
-        statsToUse = trainerStats;
-      }
+      // Extract specific trainer stats for this session
+      const trainerStats = resolveTrainerStatsFromSession(session, currentTrainer);
+      if (!trainerStats) return;
+
+      validSessionsCount += 1;
+      let statsToUse = trainerStats;
 
       if (filters.batch !== "all") {
         statsToUse = cs.byBatch?.[filters.batch] || blankSegmentStats;
@@ -288,7 +315,17 @@ const TrainerAnalytics = ({ trainerId, trainerName, onBack }) => {
         statsToUse = cs.byBranch?.[filters.department] || blankSegmentStats;
       }
 
-      stats.totalResponses += statsToUse.totalResponses || 0;
+      const distCount = Object.values(statsToUse.ratingDistribution || {}).reduce(
+        (sum, count) => sum + (Number(count) || 0),
+        0
+      );
+      const responses =
+        Number(statsToUse.totalResponses) ||
+        Number(statsToUse.responseCount) ||
+        distCount ||
+        0;
+
+      stats.totalResponses += responses;
       stats.totalHours += (Number(session.sessionDuration) || 60) / 60;
 
       // Qualitative Feedback
@@ -318,11 +355,23 @@ const TrainerAnalytics = ({ trainerId, trainerName, onBack }) => {
         }
       }
 
+      let ratingsInDist = 0;
       Object.entries(statsToUse.ratingDistribution || {}).forEach(([rating, count]) => {
-        stats.ratingDistribution[rating] = (stats.ratingDistribution[rating] || 0) + count;
-        stats.ratingSum += Number(rating) * count;
-        stats.totalRatingsCount += count;
+        const numRating = Number(rating);
+        const numCount = Number(count) || 0;
+        if (numRating > 0 && numCount > 0) {
+          stats.ratingDistribution[numRating] = (stats.ratingDistribution[numRating] || 0) + numCount;
+          stats.ratingSum += numRating * numCount;
+          stats.totalRatingsCount += numCount;
+          ratingsInDist += numCount;
+        }
       });
+
+      if (ratingsInDist === 0 && statsToUse.avgRating && responses > 0) {
+        const avg = Number(statsToUse.avgRating) || 0;
+        stats.ratingSum += avg * responses;
+        stats.totalRatingsCount += responses;
+      }
 
       // Categories
       const catData = statsToUse.categoryAverages || statsToUse.categoryData || {};
@@ -353,7 +402,7 @@ const TrainerAnalytics = ({ trainerId, trainerName, onBack }) => {
     });
 
     return {
-      totalSessions: filteredSessions.length,
+      totalSessions: validSessionsCount,
       totalResponses: stats.totalResponses,
       totalRatingsCount: stats.totalRatingsCount,
       totalHours: stats.totalHours,

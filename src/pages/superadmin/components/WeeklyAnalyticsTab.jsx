@@ -495,7 +495,7 @@ export default function WeeklyAnalyticsTab() {
                   className="h-8 text-xs gap-1.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold border-0 shadow-sm"
                 >
                   <AlertTriangle className="h-3.5 w-3.5" />
-                  Calculated Alerts
+                  Alerts & Notifications
                 </Button>
                 {unresolvedAlertsCount > 0 && (
                   <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[9px] font-bold h-4 min-w-[16px] px-1 rounded-full flex items-center justify-center border border-white shadow animate-bounce">

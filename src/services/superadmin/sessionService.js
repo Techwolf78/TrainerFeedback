@@ -252,46 +252,157 @@ export const getAllSessions = async (collegeId = null) => {
     }
 
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map((doc) => ({
+    const rawSessions = querySnapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
+
+    // Resolve stats from subcollections for sessions with missing or lightweight compiledStats
+    const resolvedSessions = await Promise.all(
+      rawSessions.map(async (session) => {
+        if (session.status === "active") return session;
+        if (!session.compiledStats || !session.compiledStats.ratingDistribution) {
+          try {
+            const { getSessionStats } = await import("./responseService");
+            const fullStats = await getSessionStats(session.id, session);
+            if (fullStats) {
+              return { ...session, compiledStats: fullStats };
+            }
+          } catch (e) {
+            console.error("Failed to resolve stats for session in getAllSessions:", session.id, e);
+          }
+        }
+        return session;
+      })
+    );
+
+    return resolvedSessions;
   } catch (error) {
     console.error("Error getting sessions:", error);
     throw error;
   }
 };
 
-// Get sessions by Trainer ID (supports both old and new format)
-export const getSessionsByTrainer = async (trainerId) => {
+// Get sessions by Trainer ID (supports doc ID, trainer_id code, trainer object, and legacy format)
+export const getSessionsByTrainer = async (trainerIdOrTrainer, trainerCode = null) => {
   try {
-    // Query 1: New format (trainerIds array)
-    const q1 = query(
-      collection(db, COLLECTION_NAME),
-      where("trainerIds", "array-contains", trainerId),
-      orderBy("createdAt", "desc"),
-    );
+    let trainerId = null;
+    let tCode = trainerCode;
+    let tEmail = null;
+    let tName = null;
 
-    // Query 2: Legacy format (assignedTrainer.id)
-    const q2 = query(
-      collection(db, COLLECTION_NAME),
-      where("assignedTrainer.id", "==", trainerId),
-      orderBy("createdAt", "desc"),
-    );
+    if (typeof trainerIdOrTrainer === "object" && trainerIdOrTrainer !== null) {
+      trainerId = trainerIdOrTrainer.id;
+      tCode = trainerIdOrTrainer.trainer_id || trainerCode;
+      tEmail = trainerIdOrTrainer.email;
+      tName = trainerIdOrTrainer.name;
+    } else {
+      trainerId = trainerIdOrTrainer;
+    }
 
-    const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+    const queries = [];
+
+    if (trainerId) {
+      queries.push(
+        query(
+          collection(db, COLLECTION_NAME),
+          where("trainerIds", "array-contains", trainerId),
+          orderBy("createdAt", "desc"),
+        ),
+        query(
+          collection(db, COLLECTION_NAME),
+          where("assignedTrainer.id", "==", trainerId),
+          orderBy("createdAt", "desc"),
+        ),
+        query(
+          collection(db, COLLECTION_NAME),
+          where("trainerId", "==", trainerId),
+          orderBy("createdAt", "desc"),
+        ),
+      );
+    }
+
+    if (tCode && tCode !== trainerId) {
+      queries.push(
+        query(
+          collection(db, COLLECTION_NAME),
+          where("trainerIds", "array-contains", tCode),
+          orderBy("createdAt", "desc"),
+        ),
+        query(
+          collection(db, COLLECTION_NAME),
+          where("assignedTrainer.trainer_id", "==", tCode),
+          orderBy("createdAt", "desc"),
+        ),
+        query(
+          collection(db, COLLECTION_NAME),
+          where("assignedTrainer.id", "==", tCode),
+          orderBy("createdAt", "desc"),
+        ),
+      );
+    }
+
+    if (tEmail) {
+      queries.push(
+        query(
+          collection(db, COLLECTION_NAME),
+          where("assignedTrainer.email", "==", tEmail.trim().toLowerCase()),
+          orderBy("createdAt", "desc"),
+        ),
+      );
+    }
+
+    if (tName) {
+      queries.push(
+        query(
+          collection(db, COLLECTION_NAME),
+          where("assignedTrainer.name", "==", tName.trim()),
+          orderBy("createdAt", "desc"),
+        ),
+        query(
+          collection(db, COLLECTION_NAME),
+          where("trainerName", "==", tName.trim()),
+          orderBy("createdAt", "desc"),
+        ),
+      );
+    }
+
+    const snapshots = await Promise.all(queries.map((q) => getDocs(q)));
 
     // Merge and deduplicate by doc ID
     const seen = new Set();
     const results = [];
-    [...snap1.docs, ...snap2.docs].forEach((doc) => {
-      if (!seen.has(doc.id)) {
-        seen.add(doc.id);
-        results.push({ id: doc.id, ...doc.data() });
+    snapshots.forEach((snap) => {
+      if (snap?.docs) {
+        snap.docs.forEach((doc) => {
+          if (!seen.has(doc.id)) {
+            seen.add(doc.id);
+            results.push({ id: doc.id, ...doc.data() });
+          }
+        });
       }
     });
 
-    return results;
+    // Also resolve stats if missing from subcollections
+    const resolvedResults = await Promise.all(
+      results.map(async (session) => {
+        if (session.status === "active") return session;
+        if (!session.compiledStats || !session.compiledStats.ratingDistribution) {
+          try {
+            const { getSessionStats } = await import("./responseService");
+            const fullStats = await getSessionStats(session.id, session);
+            if (fullStats) {
+              return { ...session, compiledStats: fullStats };
+            }
+          } catch (e) {
+            console.error("Failed to resolve stats for session in getSessionsByTrainer:", session.id, e);
+          }
+        }
+        return session;
+      })
+    );
+
+    return resolvedResults;
   } catch (error) {
     console.error("Error getting trainer sessions:", error);
     throw error;

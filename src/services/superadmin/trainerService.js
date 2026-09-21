@@ -438,6 +438,126 @@ export const addTrainersBatch = async (trainers) => {
   return results;
 };
 
+const cleanTrainerName = (name = "") =>
+  name
+    .toLowerCase()
+    .replace(/\b(mr|dr|mrs|ms|prof|trainer)\.?\b/gi, "")
+    .replace(/[^a-z0-9]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const isTrainerNameMatch = (nameA = "", nameB = "") => {
+  const a = cleanTrainerName(nameA);
+  const b = cleanTrainerName(nameB);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.includes(b) || b.includes(a)) return true;
+
+  const wordsA = a.split(" ").filter((w) => w.length > 2);
+  const wordsB = b.split(" ").filter((w) => w.length > 2);
+  if (wordsA.length > 0 && wordsB.length > 0) {
+    const commonWords = wordsA.filter((w) => wordsB.includes(w));
+    if (
+      commonWords.length >= 2 ||
+      (wordsA.length === 1 && commonWords.length === 1 && wordsB.length === 1)
+    ) {
+      return true;
+    }
+  }
+  return false;
+};
+
+/**
+ * Accurately extracts a specific trainer's compiled stats from a session document.
+ * Handles single-trainer, multi-trainer (byTrainer mapping), and legacy format sessions.
+ * Prevents multi-trainer whole-session data leaking into a single trainer's metrics.
+ */
+export const resolveTrainerStatsFromSession = (session, trainer) => {
+  if (!session || !trainer) return null;
+  const cs = session.compiledStats || session.stats;
+  if (!cs) return null;
+
+  const tId = trainer.id;
+  const tTrainerId = trainer.trainer_id;
+  const tName = trainer.name || "";
+  const tEmail = trainer.email ? trainer.email.trim().toLowerCase() : "";
+
+  // Check if trainer was assigned to this session
+  const assigned = session.assignedTrainers || (session.assignedTrainer ? [session.assignedTrainer] : []);
+  const isAssigned =
+    assigned.some((t) => {
+      if (!t) return false;
+      if (typeof t === "string") {
+        if (tId && t === tId) return true;
+        if (tTrainerId && t.trim().toUpperCase() === tTrainerId.trim().toUpperCase()) return true;
+        if (tName && isTrainerNameMatch(t, tName)) return true;
+        return false;
+      }
+      if (tId && (t.id === tId || t.trainer_id === tId || t.uid === tId)) return true;
+      if (tTrainerId && (t.trainer_id === tTrainerId || t.id === tTrainerId)) return true;
+      if (tEmail && t.email && t.email.trim().toLowerCase() === tEmail) return true;
+      if (tName && t.name && isTrainerNameMatch(t.name, tName)) return true;
+      return false;
+    }) ||
+    (session.trainerIds && Array.isArray(session.trainerIds) && (
+      (tId && session.trainerIds.includes(tId)) ||
+      (tTrainerId && session.trainerIds.includes(tTrainerId))
+    )) ||
+    (session.trainerId && (session.trainerId === tId || session.trainerId === tTrainerId)) ||
+    (session.trainerName && isTrainerNameMatch(session.trainerName, tName));
+
+  const hasByTrainer =
+    cs.byTrainer &&
+    typeof cs.byTrainer === "object" &&
+    Object.keys(cs.byTrainer).length > 0;
+
+  // 1. If per-trainer breakdown (byTrainer) exists, check if this trainer is matched
+  if (hasByTrainer) {
+    if (tId && cs.byTrainer[tId]) {
+      return cs.byTrainer[tId];
+    }
+    if (tTrainerId && cs.byTrainer[tTrainerId]) {
+      return cs.byTrainer[tTrainerId];
+    }
+    const matchedKey = Object.keys(cs.byTrainer).find((key) => {
+      const entry = cs.byTrainer[key];
+      if (!entry) return false;
+      const entryName = entry.trainerName || entry.name || "";
+      const entryEmail = (entry.email || entry.trainerEmail || "").trim().toLowerCase();
+      if (tEmail && entryEmail && tEmail === entryEmail) return true;
+      if (tName && entryName && isTrainerNameMatch(entryName, tName)) return true;
+      if (tTrainerId && key.trim().toUpperCase() === tTrainerId.trim().toUpperCase()) return true;
+      if (tId && key === tId) return true;
+      if (tName && isTrainerNameMatch(key, tName)) return true;
+      return false;
+    });
+
+    if (matchedKey && cs.byTrainer[matchedKey]) {
+      return cs.byTrainer[matchedKey];
+    }
+
+    // If byTrainer only has 1 key and trainer was assigned or only 1 trainer assigned to session
+    const byTrainerKeys = Object.keys(cs.byTrainer);
+    if (byTrainerKeys.length === 1 && (isAssigned || !session.assignedTrainers || session.assignedTrainers.length <= 1)) {
+      return cs.byTrainer[byTrainerKeys[0]];
+    }
+
+    // If trainer was assigned to the session, fallback to overall stats
+    if (isAssigned) {
+      return cs;
+    }
+
+    return null;
+  }
+
+  // 2. If NO byTrainer breakdown exists (unsegmented session):
+  if (isAssigned) {
+    return cs;
+  }
+
+  return null;
+};
+
 // One-time utility: Sync counter from existing trainers in DB
 // Run this once against prod to initialize the counters collection
 // export const syncTrainerCounter = async () => {
