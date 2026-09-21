@@ -16,13 +16,27 @@ const SettingsTab = () => {
     return saved === "true";
   });
 
-  const handleToggle = (checked) => {
+  const [showTrainerName, setShowTrainerName] = useState(() => {
+    const saved = localStorage.getItem("superadmin_settings_show_trainer_name");
+    return saved === "true";
+  });
+
+  const handleToggleSessionId = (checked) => {
     setShowSessionId(checked);
     localStorage.setItem(
       "superadmin_settings_show_session_id",
       checked ? "true" : "false",
     );
     // Dispatch a custom storage event so other components on the page know to update
+    window.dispatchEvent(new Event("storage"));
+  };
+
+  const handleToggleTrainerName = (checked) => {
+    setShowTrainerName(checked);
+    localStorage.setItem(
+      "superadmin_settings_show_trainer_name",
+      checked ? "true" : "false",
+    );
     window.dispatchEvent(new Event("storage"));
   };
 
@@ -53,7 +67,7 @@ const SettingsTab = () => {
             administrators.
           </CardDescription>
         </CardHeader>
-        <CardContent className="p-6 pt-0 space-y-6">
+        <CardContent className="p-6 pt-0 space-y-4">
           <div className="flex items-center justify-between border rounded-xl p-4 bg-slate-50/50 border-slate-100 hover:border-slate-200 transition-colors">
             <div className="space-y-1 pr-4">
               <Label
@@ -77,7 +91,38 @@ const SettingsTab = () => {
             <Switch
               id="toggle-session-id"
               checked={showSessionId}
-              onCheckedChange={handleToggle}
+              onCheckedChange={handleToggleSessionId}
+              className="data-[state=checked]:bg-blue-600"
+            />
+          </div>
+
+          <div className="flex items-center justify-between border rounded-xl p-4 bg-slate-50/50 border-slate-100 hover:border-slate-200 transition-colors">
+            <div className="space-y-1 pr-4">
+              <Label
+                htmlFor="toggle-trainer-name"
+                className="text-sm font-semibold text-slate-900 cursor-pointer"
+              >
+                Display Trainer Name in Sentiment Cards
+              </Label>
+              <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">
+                When enabled, the assigned trainer's name (e.g.,{" "}
+                <code className="bg-slate-100 px-1 py-0.5 rounded font-mono text-[10px] text-slate-800">
+                  Suraj Kumar
+                </code>
+                ) will be displayed alongside session details in the{" "}
+                <strong>Highlights</strong>, <strong>Attention</strong>,{" "}
+                <strong>Key Learning</strong>, and{" "}
+                <strong>Future Demand</strong> cards (e.g.,{" "}
+                <code className="bg-slate-100 px-1 py-0.5 rounded font-mono text-[10px] text-slate-800">
+                  SESS-IND-20260907-6CLR | Suraj Kumar
+                </code>
+                ). This helps you instantly see which trainer conducted the session.
+              </p>
+            </div>
+            <Switch
+              id="toggle-trainer-name"
+              checked={showTrainerName}
+              onCheckedChange={handleToggleTrainerName}
               className="data-[state=checked]:bg-blue-600"
             />
           </div>

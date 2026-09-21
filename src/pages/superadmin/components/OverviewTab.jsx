@@ -149,15 +149,50 @@ const OverviewTab = ({
     return localStorage.getItem("superadmin_settings_show_session_id") === "true";
   });
 
+  const [showTrainerName, setShowTrainerName] = useState(() => {
+    return localStorage.getItem("superadmin_settings_show_trainer_name") === "true";
+  });
+
   useEffect(() => {
     const handleStorageChange = () => {
       setShowSessionId(localStorage.getItem("superadmin_settings_show_session_id") === "true");
+      setShowTrainerName(localStorage.getItem("superadmin_settings_show_trainer_name") === "true");
     };
     window.addEventListener("storage", handleStorageChange);
     return () => {
       window.removeEventListener("storage", handleStorageChange);
     };
   }, []);
+
+  const getTrainerNameForItem = (item) => {
+    if (item.trainerName) return item.trainerName;
+    if (item.selectedTrainerName) return item.selectedTrainerName;
+    if (!item.sessionId) return "";
+    
+    // Support single or comma-separated session IDs
+    const sessIds = String(item.sessionId).split(",").map(id => id.trim()).filter(Boolean);
+    const names = new Set();
+    sessIds.forEach((sid) => {
+      const session = (sessions || []).find((s) => s.id === sid) || 
+                      (fetchedFilteredSessions || []).find((s) => s.id === sid);
+      if (session) {
+        let tName =
+          session.trainerName ||
+          session.assignedTrainer?.name ||
+          (session.assignedTrainers && session.assignedTrainers.map((t) => t.name).filter(Boolean).join(", "));
+        
+        // If not found on session object, check trainerIds in trainers array
+        if (!tName && session.trainerIds && session.trainerIds.length > 0 && trainers.length > 0) {
+          const matchedTrainers = trainers.filter(t => session.trainerIds.includes(t.id) || session.trainerIds.includes(t.trainer_id));
+          if (matchedTrainers.length > 0) {
+            tName = matchedTrainers.map(t => t.name).join(", ");
+          }
+        }
+        if (tName) names.add(tName);
+      }
+    });
+    return Array.from(names).join(", ");
+  };
 
   const [analyticsData, setAnalyticsData] = useState(null);
   const [isFetchingAnalytics, setIsFetchingAnalytics] = useState(false);
@@ -255,8 +290,14 @@ const OverviewTab = ({
         ...(stats.avgComments || []),
       ];
 
+      const sTrainerName = s.trainerName || s.assignedTrainer?.name || (s.assignedTrainers && s.assignedTrainers.map(t => t.name).filter(Boolean).join(", ")) || "";
+
       comments.forEach((c) => {
-        const commentWithSession = { ...c, sessionId: c.sessionId || s.id };
+        const commentWithSession = { 
+          ...c, 
+          sessionId: c.sessionId || s.id,
+          trainerName: c.trainerName || c.selectedTrainerName || sTrainerName || ""
+        };
         if (c.avgRating >= 4) agg.qualitative.high.push(commentWithSession);
         else if (c.avgRating <= 2.5) agg.qualitative.low.push(commentWithSession);
       });
@@ -1825,11 +1866,35 @@ const OverviewTab = ({
                                     {item.avgRating}
                                   </div>
                                 )}
-                                {showSessionId && item.sessionId && (
-                                  <div className="text-[9px] font-mono text-slate-500 border-l border-slate-200 pl-2 break-words select-all" title={item.sessionId}>
-                                    {item.sessionId}
-                                  </div>
-                                )}
+                                {(() => {
+                                  if (!showSessionId && !showTrainerName) return null;
+                                  const tName = getTrainerNameForItem(item);
+                                  const sId = item.sessionId;
+
+                                  let label = "";
+                                  if (showSessionId && showTrainerName) {
+                                    if (sId && tName) {
+                                      label = `${sId} | ${tName}`;
+                                    } else {
+                                      label = sId || tName || "";
+                                    }
+                                  } else if (showSessionId) {
+                                    label = sId || "";
+                                  } else if (showTrainerName) {
+                                    label = tName || "";
+                                  }
+
+                                  if (!label) return null;
+
+                                  return (
+                                    <div
+                                      className="text-[9px] font-mono text-slate-500 border-l border-slate-200 pl-2 break-words select-all"
+                                      title={label}
+                                    >
+                                      {label}
+                                    </div>
+                                  );
+                                })()}
                               </div>
                               {item.count != null && (
                                 <p className="text-[8px] font-bold text-slate-400 uppercase flex-shrink-0">
