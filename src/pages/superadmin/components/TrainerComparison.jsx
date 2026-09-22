@@ -544,37 +544,36 @@ const TrainerComparison = ({
                 </div>
               </div>
 
-              {/* Skills Tags */}
-              <div className="mt-3 pt-3 border-t flex flex-wrap gap-1 items-center">
-                <span className="text-[10px] text-muted-foreground mr-1">Skills:</span>
-                {t.trainer.topics && t.trainer.topics.length > 0 ? (
-                  t.trainer.topics.slice(0, 4).map((topic, i) => (
-                    <span
-                      key={i}
-                      className="text-[9px] font-medium px-1.5 py-0.5 bg-muted/90 rounded border text-muted-foreground"
-                    >
-                      {topic}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-[10px] text-muted-foreground italic">No topics listed</span>
-                )}
-              </div>
+              {/* Skills Tags & Action Button in one compact row */}
+              <div className="mt-3 pt-2.5 border-t flex items-center justify-between gap-2">
+                <div className="flex items-center flex-wrap gap-1 min-w-0 flex-1">
+                  <span className="text-[10px] font-medium text-muted-foreground shrink-0">Skills:</span>
+                  {t.trainer.topics && t.trainer.topics.length > 0 ? (
+                    t.trainer.topics.map((topic, i) => (
+                      <span
+                        key={i}
+                        className="text-[9px] font-medium px-1.5 py-0.5 bg-muted/90 rounded border text-muted-foreground whitespace-normal break-words"
+                      >
+                        {topic}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground italic">No topics listed</span>
+                  )}
+                </div>
 
-              {/* Action Button */}
-              {onSelectTrainerForAnalytics && (
-                <div className="mt-3.5 pt-2 border-t flex justify-end">
+                {onSelectTrainerForAnalytics && (
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => onSelectTrainerForAnalytics(t.trainer)}
-                    className="h-7 text-[11px] px-2.5 gap-1 text-primary hover:bg-primary/10"
+                    className="h-6 text-[11px] px-2 gap-1 text-primary hover:bg-primary/10 shrink-0 font-medium"
                   >
                     <span>Full Analytics</span>
                     <ArrowRight className="h-3 w-3" />
                   </Button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           );
         })}
@@ -600,17 +599,17 @@ const TrainerComparison = ({
                   leaders.avgRating && t.avgRatingNum === leaders.avgRating && computedTrainers.length > 1;
                 return (
                   <div key={idx} className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground flex items-center gap-1 truncate max-w-[80px]">
+                    <span className="text-muted-foreground flex items-center gap-1.5 truncate max-w-[85px]">
                       <span className={`h-2 w-2 rounded-full ${t.theme.dot}`} />
                       {t.trainer.name.split(" ")[0]}
                     </span>
-                    <div className="flex items-center gap-1">
-                      <span className="font-bold text-sm text-foreground">{t.avgRating}</span>
+                    <div className="flex items-center gap-1.5 justify-end">
                       {isLeader && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
                           ★ Top
                         </span>
                       )}
+                      <span className="font-bold text-sm text-foreground font-mono">{t.avgRating}</span>
                     </div>
                   </div>
                 );
@@ -633,19 +632,19 @@ const TrainerComparison = ({
                   computedTrainers.length > 1;
                 return (
                   <div key={idx} className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground flex items-center gap-1 truncate max-w-[80px]">
+                    <span className="text-muted-foreground flex items-center gap-1.5 truncate max-w-[85px]">
                       <span className={`h-2 w-2 rounded-full ${t.theme.dot}`} />
                       {t.trainer.name.split(" ")[0]}
                     </span>
-                    <div className="flex items-center gap-1">
-                      <span className="font-bold text-sm text-foreground">
-                        {t.totalResponses.toLocaleString()}
-                      </span>
+                    <div className="flex items-center gap-1.5 justify-end">
                       {isLeader && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
                           Leader
                         </span>
                       )}
+                      <span className="font-bold text-sm text-foreground font-mono">
+                        {t.totalResponses.toLocaleString()}
+                      </span>
                     </div>
                   </div>
                 );
@@ -668,17 +667,17 @@ const TrainerComparison = ({
                   computedTrainers.length > 1;
                 return (
                   <div key={idx} className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground flex items-center gap-1 truncate max-w-[80px]">
+                    <span className="text-muted-foreground flex items-center gap-1.5 truncate max-w-[85px]">
                       <span className={`h-2 w-2 rounded-full ${t.theme.dot}`} />
                       {t.trainer.name.split(" ")[0]}
                     </span>
-                    <div className="flex items-center gap-1">
-                      <span className="font-bold text-sm text-foreground">{t.sessionCount}</span>
+                    <div className="flex items-center gap-1.5 justify-end">
                       {isLeader && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
                           Max
                         </span>
                       )}
+                      <span className="font-bold text-sm text-foreground font-mono">{t.sessionCount}</span>
                     </div>
                   </div>
                 );
@@ -701,17 +700,17 @@ const TrainerComparison = ({
                   computedTrainers.length > 1;
                 return (
                   <div key={idx} className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground flex items-center gap-1 truncate max-w-[80px]">
+                    <span className="text-muted-foreground flex items-center gap-1.5 truncate max-w-[85px]">
                       <span className={`h-2 w-2 rounded-full ${t.theme.dot}`} />
                       {t.trainer.name.split(" ")[0]}
                     </span>
-                    <div className="flex items-center gap-1">
-                      <span className="font-bold text-sm text-foreground">{t.totalHours} hrs</span>
+                    <div className="flex items-center gap-1.5 justify-end">
                       {isLeader && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                           Max
                         </span>
                       )}
+                      <span className="font-bold text-sm text-foreground font-mono">{t.totalHours} hrs</span>
                     </div>
                   </div>
                 );
@@ -734,19 +733,19 @@ const TrainerComparison = ({
                   computedTrainers.length > 1;
                 return (
                   <div key={idx} className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground flex items-center gap-1 truncate max-w-[80px]">
+                    <span className="text-muted-foreground flex items-center gap-1.5 truncate max-w-[85px]">
                       <span className={`h-2 w-2 rounded-full ${t.theme.dot}`} />
                       {t.trainer.name.split(" ")[0]}
                     </span>
-                    <div className="flex items-center gap-1">
-                      <span className="font-bold text-sm text-foreground">
-                        {t.positivePercentage}%
-                      </span>
+                    <div className="flex items-center gap-1.5 justify-end">
                       {isLeader && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20">
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20">
                           Top
                         </span>
                       )}
+                      <span className="font-bold text-sm text-foreground font-mono">
+                        {t.positivePercentage}%
+                      </span>
                     </div>
                   </div>
                 );
