@@ -32,6 +32,7 @@ import { getAllSessions } from "@/services/superadmin/sessionService";
 import { useSuperAdminData } from "@/contexts/SuperAdminDataContext";
 import TrainerAnalytics from "./TrainerAnalytics";
 import TrainerLeaderboard from "./TrainerLeaderboard";
+import TrainerComparison from "./TrainerComparison";
 import Loader from "@/components/ui/Loader";
 
 // Add these ShadCN UI imports if you haven't imported them in this file yet
@@ -145,6 +146,61 @@ const TrainersTab = () => {
   // Analytics view state
   const [selectedTrainerForAnalytics, setSelectedTrainerForAnalytics] =
     useState(null);
+
+  // Comparison view state (up to 3 trainers)
+  const [selectedTrainersForComparison, setSelectedTrainersForComparison] =
+    useState([]);
+  const [isComparing, setIsComparing] = useState(false);
+
+  const handleToggleCompare = (trainer) => {
+    if (!trainer) return;
+    setSelectedTrainersForComparison((prev) => {
+      const exists = prev.some(
+        (t) => t.id === trainer.id || t.trainer_id === trainer.trainer_id
+      );
+      if (exists) {
+        return prev.filter(
+          (t) => t.id !== trainer.id && t.trainer_id !== trainer.trainer_id
+        );
+      }
+      if (prev.length >= 3) {
+        toast.info("You can compare up to 3 trainers at a time. Please deselect one first.");
+        return prev;
+      }
+      return [...prev, trainer];
+    });
+  };
+
+  const handleStartComparison = () => {
+    if (selectedTrainersForComparison.length < 2) {
+      toast.info("Please select at least 2 trainers to compare.");
+      return;
+    }
+    if (leaderboardSessions.length === 0 && !loadingLeaderboardSessions) {
+      setLoadingLeaderboardSessions(true);
+      getAllSessions()
+        .then((fetchedSessions) => {
+          setLeaderboardSessions(fetchedSessions || []);
+        })
+        .catch((err) => {
+          console.error("Failed to load all sessions for comparison:", err);
+        })
+        .finally(() => {
+          setLoadingLeaderboardSessions(false);
+        });
+    }
+    setIsComparing(true);
+  };
+
+  const handleRemoveFromComparison = (trainerId) => {
+    setSelectedTrainersForComparison((prev) =>
+      prev.filter((t) => t.id !== trainerId && t.trainer_id !== trainerId)
+    );
+  };
+
+  const handleClearComparison = () => {
+    setSelectedTrainersForComparison([]);
+  };
 
   const handleSelectTrainerForAnalytics = (trainer) => {
     if (trainer) {
@@ -391,6 +447,22 @@ const TrainersTab = () => {
     reader.readAsText(batchFile);
   };
 
+  // If comparing trainers, show comparison view
+  if (isComparing && selectedTrainersForComparison.length >= 2) {
+    return (
+      <TrainerComparison
+        trainers={selectedTrainersForComparison}
+        sessions={leaderboardSessions.length > 0 ? leaderboardSessions : sessions}
+        onClose={() => setIsComparing(false)}
+        onRemoveTrainer={handleRemoveFromComparison}
+        onSelectTrainerForAnalytics={(trainer) => {
+          setIsComparing(false);
+          handleSelectTrainerForAnalytics(trainer);
+        }}
+      />
+    );
+  }
+
   // If a trainer is selected for analytics, show analytics view
   if (selectedTrainerForAnalytics) {
     return (
@@ -505,144 +577,187 @@ const TrainersTab = () => {
               loading={loadingLeaderboardSessions}
               searchQuery={searchQuery}
               onSelectTrainer={handleSelectTrainerForAnalytics}
+              selectedForComparison={selectedTrainersForComparison}
+              onToggleCompare={handleToggleCompare}
             />
           )
         ) : (
           /* Trainers Grid */
           <div className="grid gap-3.5 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-            {filteredTrainers.map((trainer, index) => (
-              <div
-                key={trainer.id}
-                className="group relative flex flex-col bg-card border rounded-xl shadow-xs hover:shadow-sm hover:border-primary/40 transition-all duration-200 overflow-hidden"
-              >
-                <div className="p-3.5 px-4 flex items-start gap-3.5">
-                  {/* Avatar */}
-                  <div className="h-11 w-11 rounded-full flex-shrink-0 bg-gradient-to-br from-primary/5 to-primary/20 flex items-center justify-center border border-primary/10 text-primary shadow-inner mt-0.5">
-                    <User className="h-7 w-7" />
-                  </div>
+            {filteredTrainers.map((trainer, index) => {
+              const isSelectedForCompare = selectedTrainersForComparison.some(
+                (t) => t.id === trainer.id || t.trainer_id === trainer.trainer_id
+              );
+              return (
+                <div
+                  key={trainer.id}
+                  className={`group relative flex flex-col bg-card border rounded-xl shadow-xs hover:shadow-sm transition-all duration-200 overflow-hidden ${
+                    isSelectedForCompare
+                      ? "ring-2 ring-primary border-primary shadow-sm bg-primary/[0.02]"
+                      : "hover:border-primary/40"
+                  }`}
+                >
+                  <div className="p-3.5 px-4 flex items-start gap-3.5">
+                    {/* Avatar */}
+                    <div className="h-11 w-11 rounded-full flex-shrink-0 bg-gradient-to-br from-primary/5 to-primary/20 flex items-center justify-center border border-primary/10 text-primary shadow-inner mt-0.5">
+                      <User className="h-7 w-7" />
+                    </div>
 
-                  {/* Details Column */}
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3
-                        className={`font-bold text-sm leading-tight truncate ${
+                    {/* Details Column */}
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3
+                          className={`font-bold text-sm leading-tight truncate ${
+                            trainer.isDeleted
+                              ? "text-muted-foreground/70"
+                              : "text-foreground"
+                          }`}
+                          title={trainer.name}
+                        >
+                          {trainer.name}
+                        </h3>
+                        <span className="text-[10px] font-mono bg-muted px-2 py-0.5 rounded-full text-muted-foreground border shrink-0">
+                          {trainer.trainer_id}
+                        </span>
+                      </div>
+
+                      <p
+                        className={`text-xs leading-none truncate ${
                           trainer.isDeleted
-                            ? "text-muted-foreground/70"
-                            : "text-foreground"
+                            ? "text-muted-foreground/60"
+                            : "text-muted-foreground"
                         }`}
-                        title={trainer.name}
                       >
-                        {trainer.name}
-                      </h3>
-                      <span className="text-[10px] font-mono bg-muted px-2 py-0.5 rounded-full text-muted-foreground border shrink-0">
-                        {trainer.trainer_id}
-                      </span>
-                    </div>
+                        {trainer.email}
+                      </p>
 
-                    <p
-                      className={`text-xs leading-none truncate ${
-                        trainer.isDeleted
-                          ? "text-muted-foreground/60"
-                          : "text-muted-foreground"
-                      }`}
-                    >
-                      {trainer.email}
-                    </p>
+                      {/* Domain & Specialisation */}
+                      {(trainer.domain || trainer.specialisation) && (
+                        <div
+                          className={`pt-1 flex flex-wrap gap-1.5 text-[10px] ${
+                            trainer.isDeleted ? "opacity-50 grayscale" : ""
+                          }`}
+                        >
+                          {trainer.domain && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-primary text-primary-foreground font-medium shadow-xs">
+                              {trainer.domain}
+                            </span>
+                          )}
+                          {trainer.specialisation && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-secondary text-secondary-foreground border font-medium">
+                              {trainer.specialisation}
+                            </span>
+                          )}
+                        </div>
+                      )}
 
-                    {/* Domain & Specialisation */}
-                    {(trainer.domain || trainer.specialisation) && (
+                      {/* Skills / Topics */}
                       <div
-                        className={`pt-1 flex flex-wrap gap-1.5 text-[10px] ${
-                          trainer.isDeleted ? "opacity-50 grayscale" : ""
+                        className={`pt-1 ${
+                          trainer.isDeleted ? "opacity-50" : ""
                         }`}
                       >
-                        {trainer.domain && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded bg-primary text-primary-foreground font-medium shadow-xs">
-                            {trainer.domain}
-                          </span>
-                        )}
-                        {trainer.specialisation && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded bg-secondary text-secondary-foreground border font-medium">
-                            {trainer.specialisation}
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Skills / Topics */}
-                    <div
-                      className={`pt-1 ${
-                        trainer.isDeleted ? "opacity-50" : ""
-                      }`}
-                    >
-                      <div className="flex flex-wrap gap-1">
-                        {trainer.topics && trainer.topics.length > 0 ? (
-                          <>
-                            {trainer.topics.slice(0, 3).map((topic, i) => (
-                              <span
-                                key={i}
-                                className="text-[10px] font-medium px-1.5 py-0.5 bg-muted/80 rounded border text-muted-foreground"
-                              >
-                                {topic}
-                              </span>
-                            ))}
-                            {trainer.topics.length > 3 && (
-                              <span className="text-[10px] px-1 py-0.5 text-muted-foreground">
-                                +{trainer.topics.length - 3}
-                              </span>
-                            )}
-                          </>
-                        ) : (
-                          <span className="text-[10px] italic text-muted-foreground opacity-60">
-                            No skills listed
-                          </span>
-                        )}
+                        <div className="flex flex-wrap gap-1">
+                          {trainer.topics && trainer.topics.length > 0 ? (
+                            <>
+                              {trainer.topics.slice(0, 3).map((topic, i) => (
+                                <span
+                                  key={i}
+                                  className="text-[10px] font-medium px-1.5 py-0.5 bg-muted/80 rounded border text-muted-foreground"
+                                >
+                                  {topic}
+                                </span>
+                              ))}
+                              {trainer.topics.length > 3 && (
+                                <span className="text-[10px] px-1 py-0.5 text-muted-foreground">
+                                  +{trainer.topics.length - 3}
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-[10px] italic text-muted-foreground opacity-60">
+                              No skills listed
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
+
+                    {/* Action Menu */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-transparent -mr-1.5 -mt-1 shrink-0"
+                        >
+                          <MoreVertical className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        <DropdownMenuItem
+                          onClick={() => handleToggleCompare(trainer)}
+                        >
+                          <span className="mr-2">⚖️</span>
+                          {isSelectedForCompare ? "Remove from Compare" : "Add to Compare"}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleSelectTrainerForAnalytics(trainer)}
+                        >
+                          <BarChart3 className="mr-2 h-4 w-4" /> View Analytics
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => openEditDialog(trainer)}>
+                          <Pencil className="mr-2 h-4 w-4" /> Edit Profile
+                        </DropdownMenuItem>
+                        {trainer.isDeleted ? (
+                          <DropdownMenuItem
+                            className="text-primary focus:text-primary focus:bg-primary/10"
+                            onClick={() => handleRestoreTrainer(trainer.id)}
+                          >
+                            <RotateCcw className="mr-2 h-4 w-4" /> Restore Trainer
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                            onClick={() => handleDeleteTrainer(trainer.id)}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" /> Delete Trainer
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
 
-                  {/* Action Menu */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-transparent -mr-1.5 -mt-1 shrink-0"
-                      >
-                        <MoreVertical className="h-3.5 w-3.5" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                      <DropdownMenuItem
-                        onClick={() => handleSelectTrainerForAnalytics(trainer)}
-                      >
-                        <BarChart3 className="mr-2 h-4 w-4" /> View Analytics
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => openEditDialog(trainer)}>
-                        <Pencil className="mr-2 h-4 w-4" /> Edit Profile
-                      </DropdownMenuItem>
-                      {trainer.isDeleted ? (
-                        <DropdownMenuItem
-                          className="text-primary focus:text-primary focus:bg-primary/10"
-                          onClick={() => handleRestoreTrainer(trainer.id)}
-                        >
-                          <RotateCcw className="mr-2 h-4 w-4" /> Restore Trainer
-                        </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                          onClick={() => handleDeleteTrainer(trainer.id)}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" /> Delete Trainer
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {/* Card Bottom Quick Actions */}
+                  <div className="px-4 py-2 border-t border-border/40 mt-auto flex items-center justify-between bg-muted/20">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleCompare(trainer)}
+                      className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-0.5 rounded-full border transition-all ${
+                        isSelectedForCompare
+                          ? "bg-primary text-primary-foreground border-primary font-semibold shadow-2xs"
+                          : "bg-background text-muted-foreground hover:text-foreground hover:bg-muted border-border"
+                      }`}
+                      title={isSelectedForCompare ? "Remove from comparison" : "Select to compare side-by-side"}
+                    >
+                      <span>⚖️</span>
+                      <span>{isSelectedForCompare ? "Selected" : "Compare"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSelectTrainerForAnalytics(trainer)}
+                      className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline font-medium"
+                    >
+                      <BarChart3 className="h-3 w-3" />
+                      <span>Analytics</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {/* Loading State */}
             {loading && trainers.length === 0 && (
@@ -913,6 +1028,55 @@ const TrainersTab = () => {
                 {isEditing ? "Update" : "Create"}
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Bottom Comparison Action Bar */}
+      {selectedTrainersForComparison.length > 0 && !isComparing && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 bg-card/95 backdrop-blur-md border border-primary/30 shadow-2xl px-4 py-2.5 rounded-full max-w-xl w-[92vw] sm:w-auto animate-in slide-in-from-bottom-5 duration-200">
+          <div className="flex items-center gap-2">
+            <div className="flex -space-x-2 overflow-hidden">
+              {selectedTrainersForComparison.map((t, i) => (
+                <div
+                  key={t.id || i}
+                  className="h-7 w-7 rounded-full bg-primary/20 text-primary border-2 border-background flex items-center justify-center text-[10px] font-bold shadow-xs"
+                  title={t.name}
+                >
+                  {t.name?.charAt(0) || "T"}
+                </div>
+              ))}
+            </div>
+            <span className="text-xs font-semibold text-foreground whitespace-nowrap">
+              {selectedTrainersForComparison.length}/3 Selected
+            </span>
+          </div>
+
+          <div className="h-4 w-px bg-border mx-0.5" />
+
+          <div className="flex items-center gap-1.5">
+            <Button
+              size="sm"
+              disabled={selectedTrainersForComparison.length < 2}
+              onClick={handleStartComparison}
+              className="h-7 text-xs px-3.5 gap-1.5 gradient-hero text-primary-foreground shadow-xs font-semibold rounded-full disabled:opacity-50"
+            >
+              <span>⚖️</span>
+              <span>
+                {selectedTrainersForComparison.length < 2
+                  ? "Select 1 more"
+                  : `Compare Now (${selectedTrainersForComparison.length})`}
+              </span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleClearComparison}
+              className="h-7 w-7 text-muted-foreground hover:text-foreground rounded-full hover:bg-muted"
+              title="Clear selection"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
           </div>
         </div>
       )}

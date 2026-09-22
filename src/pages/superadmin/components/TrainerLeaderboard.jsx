@@ -120,6 +120,8 @@ const TrainerLeaderboard = ({
   loading = false,
   searchQuery,
   onSelectTrainer,
+  selectedForComparison = [],
+  onToggleCompare,
 }) => {
   const [sortField, setSortField] = useState("score");
   const [sortOrder, setSortOrder] = useState("desc");
@@ -234,6 +236,12 @@ const TrainerLeaderboard = ({
 
   const topThree = baseLeaderboard.slice(0, 3);
 
+  const isTrainerSelected = (trainer) => {
+    return selectedForComparison.some(
+      (t) => t.id === trainer.id || t.trainer_id === trainer.trainer_id
+    );
+  };
+
   const renderSortHeader = (label, field, align = "right") => {
     const isActive = sortField === field;
     return (
@@ -276,15 +284,20 @@ const TrainerLeaderboard = ({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {topThree.map((trainer, index) => {
           const rank = index + 1;
+          const isSelected = isTrainerSelected(trainer);
           return (
-            <button
+            <div
               key={trainer.id}
-              type="button"
-              onClick={() => onSelectTrainer(trainer)}
-              className={`text-left border rounded-xl p-3.5 shadow-xs hover:shadow-sm transition-all ${getRankTone(rank)}`}
+              className={`relative text-left border rounded-xl p-3.5 shadow-xs transition-all ${
+                isSelected ? "ring-2 ring-primary border-primary" : ""
+              } ${getRankTone(rank)}`}
             >
               <div className="flex items-start justify-between gap-2.5">
-                <div className="min-w-0">
+                <button
+                  type="button"
+                  onClick={() => onSelectTrainer(trainer)}
+                  className="min-w-0 text-left flex-1"
+                >
                   <div className="flex items-center gap-1.5">
                     {rank === 1 ? (
                       <Trophy className="h-4 w-4" />
@@ -295,18 +308,42 @@ const TrainerLeaderboard = ({
                       Rank {rank}
                     </span>
                   </div>
-                  <h3 className="mt-1.5 text-base font-bold text-foreground truncate">
+                  <h3 className="mt-1.5 text-base font-bold text-foreground truncate hover:underline">
                     {trainer.name}
                   </h3>
                   <p className="text-xs text-muted-foreground truncate">
                     {trainer.trainer_id} - {trainer.domain || "No domain"}
                   </p>
-                </div>
-                <div className="h-9 w-9 rounded-full bg-background/80 border flex items-center justify-center shrink-0">
-                  <Award className="h-4 w-4" />
+                </button>
+
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  <div className="h-8 w-8 rounded-full bg-background/80 border flex items-center justify-center shrink-0">
+                    <Award className="h-4 w-4" />
+                  </div>
+                  {onToggleCompare && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleCompare(trainer);
+                      }}
+                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-all ${
+                        isSelected
+                          ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                          : "bg-background/90 text-muted-foreground hover:text-foreground border-border"
+                      }`}
+                      title="Toggle compare"
+                    >
+                      {isSelected ? "✓ Compare" : "+ Compare"}
+                    </button>
+                  )}
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-3 gap-1.5 text-center">
+
+              <div
+                onClick={() => onSelectTrainer(trainer)}
+                className="mt-3 grid grid-cols-3 gap-1.5 text-center cursor-pointer"
+              >
                 <div className="rounded-md bg-background/70 border px-1.5 py-1.5">
                   <p className="text-base font-bold text-foreground">
                     {trainer.rankScore}
@@ -326,13 +363,14 @@ const TrainerLeaderboard = ({
                   <p className="text-[9px] text-muted-foreground">Responses</p>
                 </div>
               </div>
-            </button>
+            </div>
           );
         })}
       </div>
 
       <div className="overflow-hidden rounded-xl border bg-card shadow-xs">
-        <div className="grid grid-cols-[60px_1.5fr_1fr_100px_100px_100px_90px] gap-3 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/40 border-b min-w-[850px] items-center">
+        <div className="grid grid-cols-[40px_50px_1.5fr_1fr_90px_90px_90px_80px] gap-2.5 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/40 border-b min-w-[880px] items-center">
+          <span className="text-center">⚖️</span>
           {renderSortHeader("Rank", "rank", "left")}
           {renderSortHeader("Trainer", "trainer", "left")}
           <span>Domain</span>
@@ -342,16 +380,32 @@ const TrainerLeaderboard = ({
           {renderSortHeader("Sessions", "sessions", "right")}
         </div>
         <div className="overflow-x-auto">
-          <div className="min-w-[850px] divide-y">
+          <div className="min-w-[880px] divide-y">
             {visibleRows.map((trainer) => {
+              const isSelected = isTrainerSelected(trainer);
               return (
-                <button
+                <div
                   key={trainer.id}
-                  type="button"
-                  onClick={() => onSelectTrainer(trainer)}
-                  className="grid w-full grid-cols-[60px_1.5fr_1fr_100px_100px_100px_90px] gap-3 px-4 py-2.5 text-left hover:bg-muted/40 transition-colors items-center"
+                  className={`grid w-full grid-cols-[40px_50px_1.5fr_1fr_90px_90px_90px_80px] gap-2.5 px-4 py-2.5 text-left hover:bg-muted/40 transition-colors items-center ${
+                    isSelected ? "bg-primary/[0.03]" : ""
+                  }`}
                 >
-                  <div className="flex items-center">
+                  {/* Compare Toggle Checkbox */}
+                  <div className="flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => onToggleCompare && onToggleCompare(trainer)}
+                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer accent-primary"
+                      title={isSelected ? "Remove from comparison" : "Add to comparison"}
+                    />
+                  </div>
+
+                  {/* Rank Badge */}
+                  <div
+                    onClick={() => onSelectTrainer(trainer)}
+                    className="flex items-center cursor-pointer"
+                  >
                     <span
                       className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-xs font-bold ${getRankTone(trainer.baseRank)}`}
                       title={`Overall Leaderboard Rank #${trainer.baseRank}`}
@@ -359,18 +413,30 @@ const TrainerLeaderboard = ({
                       {trainer.baseRank}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2.5 min-w-0">
+
+                  {/* Trainer Info */}
+                  <div
+                    onClick={() => onSelectTrainer(trainer)}
+                    className="flex items-center gap-2.5 min-w-0 cursor-pointer group"
+                  >
                     <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
                       <User className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-semibold truncate">{trainer.name}</p>
+                      <p className="text-xs font-semibold truncate group-hover:text-primary transition-colors">
+                        {trainer.name}
+                      </p>
                       <p className="text-[11px] text-muted-foreground truncate">
                         {trainer.trainer_id} - {trainer.email}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center min-w-0">
+
+                  {/* Domain & Specialisation */}
+                  <div
+                    onClick={() => onSelectTrainer(trainer)}
+                    className="flex items-center min-w-0 cursor-pointer"
+                  >
                     <div className="min-w-0">
                       <p className="text-xs font-medium truncate">
                         {trainer.domain || "No domain"}
@@ -380,24 +446,44 @@ const TrainerLeaderboard = ({
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center justify-end">
+
+                  {/* Score */}
+                  <div
+                    onClick={() => onSelectTrainer(trainer)}
+                    className="flex items-center justify-end cursor-pointer"
+                  >
                     <span className="text-sm font-bold">{trainer.rankScore}</span>
                   </div>
-                  <div className="flex items-center justify-end gap-1">
+
+                  {/* Rating */}
+                  <div
+                    onClick={() => onSelectTrainer(trainer)}
+                    className="flex items-center justify-end gap-1 cursor-pointer"
+                  >
                     <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
                     <span className="text-xs font-semibold">
                       {trainer.avgRating ? trainer.avgRating.toFixed(2) : "0.00"}
                     </span>
                   </div>
-                  <div className="flex items-center justify-end gap-1">
+
+                  {/* Responses */}
+                  <div
+                    onClick={() => onSelectTrainer(trainer)}
+                    className="flex items-center justify-end gap-1 cursor-pointer"
+                  >
                     <Users className="h-3.5 w-3.5 text-muted-foreground" />
                     <span className="text-xs">{trainer.totalResponses}</span>
                   </div>
-                  <div className="flex items-center justify-end gap-1">
+
+                  {/* Sessions */}
+                  <div
+                    onClick={() => onSelectTrainer(trainer)}
+                    className="flex items-center justify-end gap-1 cursor-pointer"
+                  >
                     <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
                     <span className="text-xs">{trainer.sessionCount}</span>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
