@@ -307,18 +307,18 @@ export const getSessionsByTrainer = async (trainerIdOrTrainer, trainerCode = nul
         query(
           collection(db, COLLECTION_NAME),
           where("trainerIds", "array-contains", trainerId),
-          orderBy("createdAt", "desc"),
+          orderBy("createdAt", "desc")
         ),
         query(
           collection(db, COLLECTION_NAME),
           where("assignedTrainer.id", "==", trainerId),
-          orderBy("createdAt", "desc"),
+          orderBy("createdAt", "desc")
         ),
         query(
           collection(db, COLLECTION_NAME),
           where("trainerId", "==", trainerId),
-          orderBy("createdAt", "desc"),
-        ),
+          orderBy("createdAt", "desc")
+        )
       );
     }
 
@@ -327,18 +327,18 @@ export const getSessionsByTrainer = async (trainerIdOrTrainer, trainerCode = nul
         query(
           collection(db, COLLECTION_NAME),
           where("trainerIds", "array-contains", tCode),
-          orderBy("createdAt", "desc"),
+          orderBy("createdAt", "desc")
         ),
         query(
           collection(db, COLLECTION_NAME),
           where("assignedTrainer.trainer_id", "==", tCode),
-          orderBy("createdAt", "desc"),
+          orderBy("createdAt", "desc")
         ),
         query(
           collection(db, COLLECTION_NAME),
           where("assignedTrainer.id", "==", tCode),
-          orderBy("createdAt", "desc"),
-        ),
+          orderBy("createdAt", "desc")
+        )
       );
     }
 
@@ -347,8 +347,8 @@ export const getSessionsByTrainer = async (trainerIdOrTrainer, trainerCode = nul
         query(
           collection(db, COLLECTION_NAME),
           where("assignedTrainer.email", "==", tEmail.trim().toLowerCase()),
-          orderBy("createdAt", "desc"),
-        ),
+          orderBy("createdAt", "desc")
+        )
       );
     }
 
@@ -357,30 +357,57 @@ export const getSessionsByTrainer = async (trainerIdOrTrainer, trainerCode = nul
         query(
           collection(db, COLLECTION_NAME),
           where("assignedTrainer.name", "==", tName.trim()),
-          orderBy("createdAt", "desc"),
+          orderBy("createdAt", "desc")
         ),
         query(
           collection(db, COLLECTION_NAME),
           where("trainerName", "==", tName.trim()),
-          orderBy("createdAt", "desc"),
-        ),
+          orderBy("createdAt", "desc")
+        )
       );
     }
 
-    const snapshots = await Promise.all(queries.map((q) => getDocs(q)));
+    const settledSnapshots = await Promise.allSettled(queries.map((q) => getDocs(q)));
 
     // Merge and deduplicate by doc ID
     const seen = new Set();
     const results = [];
-    snapshots.forEach((snap) => {
-      if (snap?.docs) {
-        snap.docs.forEach((doc) => {
+    settledSnapshots.forEach((res) => {
+      if (res.status === "fulfilled" && res.value?.docs) {
+        res.value.docs.forEach((doc) => {
           if (!seen.has(doc.id)) {
             seen.add(doc.id);
             results.push({ id: doc.id, ...doc.data() });
           }
         });
       }
+    });
+
+    // If 0 direct query matches, fallback to full collection matching via resolveTrainerStatsFromSession
+    if (results.length === 0) {
+      try {
+        const allSnap = await getDocs(
+          query(collection(db, COLLECTION_NAME), orderBy("createdAt", "desc"))
+        );
+        const { resolveTrainerStatsFromSession } = await import("./trainerService");
+        allSnap.docs.forEach((doc) => {
+          const sessionData = { id: doc.id, ...doc.data() };
+          const resolved = resolveTrainerStatsFromSession(sessionData, trainerIdOrTrainer);
+          if (resolved && !seen.has(doc.id)) {
+            seen.add(doc.id);
+            results.push(sessionData);
+          }
+        });
+      } catch (fallbackErr) {
+        console.warn("Fallback session matching encountered an issue:", fallbackErr);
+      }
+    }
+
+    // Sort descending by createdAt in JavaScript
+    results.sort((a, b) => {
+      const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+      const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+      return dateB - dateA;
     });
 
     // Also resolve stats if missing from subcollections

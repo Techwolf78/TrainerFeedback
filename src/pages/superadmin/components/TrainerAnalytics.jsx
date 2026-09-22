@@ -20,15 +20,12 @@ import {
   User,
   ThumbsUp,
   ThumbsDown,
-  Printer,
-  Search,
   Award,
   Layers,
   GraduationCap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -61,7 +58,7 @@ import {
   PolarRadiusAxis,
   Cell,
 } from "recharts";
-import { getSessionsByTrainer } from "@/services/superadmin/sessionService";
+import { getSessionsByTrainer, getAllSessions } from "@/services/superadmin/sessionService";
 import { getResponseTrendData } from "@/services/superadmin/responseService";
 import { resolveTrainerStatsFromSession } from "@/services/superadmin/trainerService";
 import { useSuperAdminData } from "@/contexts/SuperAdminDataContext";
@@ -212,37 +209,54 @@ const TrainerAnalytics = ({
 
   // UI state for qualitative feedback
   const [praiseLimit, setPraiseLimit] = useState(4);
-  const [feedbackSearch, setFeedbackSearch] = useState("");
 
   // Load Data
   useEffect(() => {
+    let isMounted = true;
     const loadData = async () => {
       const tid = currentTrainer?.id || trainerId;
       const tcode = currentTrainer?.trainer_id || null;
-      if (!tid && !tcode && !currentTrainer?.name) return;
-
-      if (allSessions && allSessions.length > 0) {
-        const matched = allSessions.filter((s) => {
-          const st = resolveTrainerStatsFromSession(s, currentTrainer);
-          return !!st;
-        });
-        setSessions(matched);
+      if (!tid && !tcode && !currentTrainer?.name) {
         setIsLoading(false);
         return;
       }
 
       setIsLoading(true);
       try {
-        const results = await getSessionsByTrainer(currentTrainer || tid, tcode);
-        setSessions(results || []);
+        let matched = [];
+        if (allSessions && allSessions.length > 0) {
+          matched = allSessions.filter((s) => {
+            const st = resolveTrainerStatsFromSession(s, currentTrainer);
+            return !!st;
+          });
+        }
+
+        if (matched.length > 0) {
+          if (isMounted) setSessions(matched);
+        } else {
+          const results = await getSessionsByTrainer(currentTrainer || tid, tcode);
+          if (results && results.length > 0) {
+            if (isMounted) setSessions(results);
+          } else {
+            const all = await getAllSessions();
+            const fallbackMatched = (all || []).filter((s) => {
+              const st = resolveTrainerStatsFromSession(s, currentTrainer);
+              return !!st;
+            });
+            if (isMounted) setSessions(fallbackMatched);
+          }
+        }
       } catch (error) {
         console.error("Failed to load trainer analytics:", error);
       } finally {
-        setIsLoading(false);
+        if (isMounted) setIsLoading(false);
       }
     };
 
     loadData();
+    return () => {
+      isMounted = false;
+    };
   }, [currentTrainer, trainerId, allSessions]);
 
   // Active filters count
@@ -397,8 +411,11 @@ const TrainerAnalytics = ({
       if (filters.dateRange !== "all") {
         const { startDate, endDate } = getDateRange(filters.dateRange);
         if (startDate && endDate) {
-          const sessionDate = new Date(session.sessionDate);
-          if (sessionDate > endDate) return false;
+          const rawDate = session.sessionDate || session.date || session.createdAt;
+          const sessionDate = rawDate?.toDate ? rawDate.toDate() : new Date(rawDate);
+          if (isNaN(sessionDate.getTime()) || sessionDate < startDate || sessionDate > endDate) {
+            return false;
+          }
         }
       }
       return true;
@@ -711,8 +728,9 @@ const TrainerAnalytics = ({
   const [responseTrendData, setResponseTrendData] = useState([]);
 
   useEffect(() => {
+    let isCancelled = false;
     const calculateResponseTrend = async () => {
-      const validSessions = sessions.filter((s) => s.id && (s.compiledStats || s.stats));
+      const validSessions = filteredSessions.filter((s) => s.id && (s.compiledStats || s.stats));
       if (validSessions.length === 0) {
         setResponseTrendData([]);
         return;
@@ -722,13 +740,14 @@ const TrainerAnalytics = ({
 
       try {
         const responseTrendMap = await getResponseTrendData(sessionIds);
+        if (isCancelled) return;
 
-        let trendEntries = Object.entries(responseTrendMap);
+        let trendEntries = Object.entries(responseTrendMap || {});
         if (filters.dateRange !== "all") {
           const { startDate, endDate } = getDateRange(filters.dateRange);
           if (startDate && endDate) {
             trendEntries = trendEntries.filter(([dateStr]) => {
-              const responseDate = new Date(dateStr);
+              const responseDate = new Date(dateStr + "T00:00:00");
               return responseDate >= startDate && responseDate <= endDate;
             });
           }
@@ -736,7 +755,7 @@ const TrainerAnalytics = ({
 
         const chartData = trendEntries
           .map(([date, responses]) => {
-            const d = new Date(date);
+            const d = new Date(date + "T00:00:00");
             const formatted = !isNaN(d.getTime())
               ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
               : date;
@@ -745,162 +764,165 @@ const TrainerAnalytics = ({
               day: formatted,
               fullDate: date,
               responses,
+              timestamp: !isNaN(d.getTime()) ? d.getTime() : 0,
             };
           })
-          .sort((a, b) => a.fullDate.localeCompare(b.fullDate))
+          .sort((a, b) => a.timestamp - b.timestamp)
           .slice(-30);
 
-        setResponseTrendData(chartData);
+        if (!isCancelled) {
+          setResponseTrendData(chartData);
+        }
       } catch (error) {
         console.error("Error calculating response trend:", error);
-        setResponseTrendData([]);
+        if (!isCancelled) setResponseTrendData([]);
       }
     };
 
     calculateResponseTrend();
-  }, [sessions, filters]);
-
-  // Filtered comments based on search query
-  const filteredComments = useMemo(() => {
-    const query = feedbackSearch.toLowerCase().trim();
-    const filterFn = (item) => !query || item.text.toLowerCase().includes(query);
-
-    return {
-      high: aggregatedStats.qualitative.high.filter(filterFn),
-      low: aggregatedStats.qualitative.low.filter(filterFn),
-      future: aggregatedStats.qualitative.future.filter(filterFn),
+    return () => {
+      isCancelled = true;
     };
-  }, [aggregatedStats.qualitative, feedbackSearch]);
+  }, [filteredSessions, filters.dateRange]);
 
-  const handlePrint = () => {
-    window.print();
-  };
+
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center p-24 space-y-3">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-xs text-muted-foreground font-medium animate-pulse">
-          Loading trainer metrics and feedback...
-        </p>
+      <div className="space-y-6 animate-in fade-in duration-300">
+        {onBack && (
+          <div className="flex items-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onBack}
+              className="gap-1.5 text-xs rounded-xl shadow-2xs hover:bg-muted"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Back to Trainers
+            </Button>
+          </div>
+        )}
+
+        <div className="flex flex-col items-center justify-center min-h-[420px] p-8 space-y-4 bg-card border rounded-2xl shadow-xs text-center">
+          <div className="relative flex items-center justify-center">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/15 via-primary/5 to-transparent border border-primary/20 flex items-center justify-center shadow-inner">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5 max-w-sm">
+            <h3 className="text-sm sm:text-base font-bold text-foreground tracking-tight">
+              Loading Analytics for {currentTrainer?.name || trainerName || "Trainer"}...
+            </h3>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Aggregating verified sessions, rating distributions, and student feedback highlights.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 print:m-0 print:p-0">
-      {/* 1. Hero Header & Profile Banner */}
-      <div className="relative overflow-hidden bg-card border rounded-2xl p-4 sm:p-5 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+    <div className="space-y-2.5 print:m-0 print:p-0">
+      {/* 1. Hero Header & Profile Banner (Compact) */}
+      <div className="relative overflow-hidden bg-card border rounded-xl p-2.5 sm:px-3.5 sm:py-2 shadow-2xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
             {/* Back Button */}
             {onBack && (
               <Button
                 variant="outline"
                 size="icon"
                 onClick={onBack}
-                className="h-9 w-9 rounded-xl shrink-0 shadow-2xs hover:bg-muted/80"
+                className="h-8 w-8 rounded-lg shrink-0 shadow-2xs hover:bg-muted/80"
                 title="Back to Trainers Directory"
               >
-                <ArrowLeft className="h-4 w-4" />
+                <ArrowLeft className="h-3.5 w-3.5" />
               </Button>
             )}
 
             {/* Avatar */}
-            <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 text-primary flex items-center justify-center font-bold text-lg shadow-inner shrink-0">
-              <User className="h-6 w-6" />
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 text-primary flex items-center justify-center font-bold text-sm shadow-inner shrink-0">
+              <User className="h-4 w-4" />
             </div>
 
             {/* Trainer Identity & Metadata */}
-            <div className="min-w-0 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate">
+            <div className="min-w-0 space-y-0.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <h2 className="text-sm sm:text-base font-bold tracking-tight text-foreground truncate">
                   {currentTrainer.name || trainerName || "Trainer"}
                 </h2>
                 {currentTrainer.trainer_id && (
                   <Badge
                     variant="outline"
-                    className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-muted/80 text-muted-foreground border shrink-0 font-medium"
+                    className="text-[9.5px] font-mono px-1.5 py-0.2 rounded bg-muted/80 text-muted-foreground border shrink-0 font-medium"
                   >
                     {currentTrainer.trainer_id}
                   </Badge>
                 )}
-                <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Active Profile
-                </span>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                {currentTrainer.email && (
-                  <span className="truncate">{currentTrainer.email}</span>
-                )}
                 {currentTrainer.domain && (
-                  <span className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded bg-primary text-primary-foreground shadow-2xs">
+                  <span className="inline-flex items-center text-[9.5px] font-medium px-1.5 py-0.2 rounded bg-primary text-primary-foreground shadow-2xs">
                     {currentTrainer.domain}
                   </span>
                 )}
                 {currentTrainer.specialisation && (
-                  <span className="inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded bg-secondary text-secondary-foreground border">
+                  <span className="inline-flex items-center text-[9.5px] font-medium px-1.5 py-0.2 rounded bg-secondary text-secondary-foreground border">
                     {currentTrainer.specialisation}
                   </span>
                 )}
               </div>
 
-              {/* Skills / Topics */}
-              {currentTrainer.topics && currentTrainer.topics.length > 0 && (
-                <div className="pt-1 flex flex-wrap gap-1 items-center">
-                  <span className="text-[10px] font-semibold text-muted-foreground mr-1">
-                    Skills:
-                  </span>
-                  {currentTrainer.topics.map((topic, i) => (
-                    <span
-                      key={i}
-                      className="text-[9px] font-medium px-1.5 py-0.2 bg-muted/80 rounded border text-muted-foreground"
-                    >
-                      {topic}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                {currentTrainer.email && (
+                  <span className="truncate">{currentTrainer.email}</span>
+                )}
+
+                {/* Skills / Topics Inline */}
+                {currentTrainer.topics && currentTrainer.topics.length > 0 && (
+                  <div className="inline-flex flex-wrap gap-1 items-center">
+                    <span className="text-[10px] font-semibold text-muted-foreground/80">
+                      Skills:
                     </span>
-                  ))}
-                </div>
-              )}
+                    {currentTrainer.topics.map((topic, i) => (
+                      <span
+                        key={i}
+                        className="text-[9px] font-medium px-1.5 py-0.2 bg-muted/70 rounded border text-muted-foreground"
+                      >
+                        {topic}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Header Action Buttons */}
-          <div className="flex items-center gap-2 self-end md:self-center shrink-0">
-            {activeFiltersCount > 0 && (
+          {activeFiltersCount > 0 && (
+            <div className="flex items-center gap-1.5 self-end md:self-center shrink-0">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={resetFilters}
-                className="h-8 text-xs px-2.5 gap-1.5 text-muted-foreground hover:text-foreground"
+                className="h-7 text-[11px] px-2 gap-1 text-muted-foreground hover:text-foreground"
               >
-                <RotateCcw className="h-3.5 w-3.5" />
+                <RotateCcw className="h-3 w-3" />
                 <span>Reset ({activeFiltersCount})</span>
               </Button>
-            )}
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handlePrint}
-              className="h-8 text-xs px-3 gap-1.5 shadow-2xs"
-            >
-              <Printer className="h-3.5 w-3.5" />
-              <span>Snapshot</span>
-            </Button>
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* 2. Sleek Filter Studio */}
-      <Card className="shadow-xs border rounded-2xl overflow-hidden bg-card/60 backdrop-blur-xs">
-        <CardContent className="p-3.5">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+      {/* 2. Sleek Filter Studio (Compact) */}
+      <Card className="shadow-2xs border rounded-lg overflow-hidden bg-card/50 backdrop-blur-xs">
+        <CardContent className="p-1.5 sm:px-2.5 sm:py-1.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5">
             {/* College */}
-            <div className="space-y-1">
-              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                <Building2 className="h-3 w-3 text-primary/70" /> College
+            <div className="space-y-0.5">
+              <Label className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1 leading-none">
+                <Building2 className="h-2.5 w-2.5 text-primary/70" /> College
               </Label>
               <Select
                 value={filters.collegeId}
@@ -915,7 +937,7 @@ const TrainerAnalytics = ({
                   })
                 }
               >
-                <SelectTrigger className="h-8 text-xs bg-background/80 shadow-2xs">
+                <SelectTrigger className="h-6.5 text-[11px] bg-background/80 shadow-2xs px-2 rounded-md">
                   <SelectValue placeholder="All Colleges" />
                 </SelectTrigger>
                 <SelectContent>
@@ -930,9 +952,9 @@ const TrainerAnalytics = ({
             </div>
 
             {/* Course */}
-            <div className="space-y-1">
-              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                <BookOpen className="h-3 w-3 text-primary/70" /> Course
+            <div className="space-y-0.5">
+              <Label className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1 leading-none">
+                <BookOpen className="h-2.5 w-2.5 text-primary/70" /> Course
               </Label>
               <Select
                 value={filters.course}
@@ -946,7 +968,7 @@ const TrainerAnalytics = ({
                   })
                 }
               >
-                <SelectTrigger className="h-8 text-xs bg-background/80 shadow-2xs">
+                <SelectTrigger className="h-6.5 text-[11px] bg-background/80 shadow-2xs px-2 rounded-md">
                   <SelectValue placeholder="All Courses" />
                 </SelectTrigger>
                 <SelectContent>
@@ -961,9 +983,9 @@ const TrainerAnalytics = ({
             </div>
 
             {/* Department */}
-            <div className="space-y-1">
-              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                <Layers className="h-3 w-3 text-primary/70" /> Department
+            <div className="space-y-0.5">
+              <Label className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1 leading-none">
+                <Layers className="h-2.5 w-2.5 text-primary/70" /> Department
               </Label>
               <Select
                 value={filters.department}
@@ -971,7 +993,7 @@ const TrainerAnalytics = ({
                   setFilters({ ...filters, department: v, year: "all", batch: "all" })
                 }
               >
-                <SelectTrigger className="h-8 text-xs bg-background/80 shadow-2xs">
+                <SelectTrigger className="h-6.5 text-[11px] bg-background/80 shadow-2xs px-2 rounded-md">
                   <SelectValue placeholder="All Depts" />
                 </SelectTrigger>
                 <SelectContent>
@@ -986,9 +1008,9 @@ const TrainerAnalytics = ({
             </div>
 
             {/* Year */}
-            <div className="space-y-1">
-              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                <GraduationCap className="h-3 w-3 text-primary/70" /> Year
+            <div className="space-y-0.5">
+              <Label className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1 leading-none">
+                <GraduationCap className="h-2.5 w-2.5 text-primary/70" /> Year
               </Label>
               <Select
                 value={filters.year}
@@ -996,7 +1018,7 @@ const TrainerAnalytics = ({
                   setFilters({ ...filters, year: v, batch: "all" })
                 }
               >
-                <SelectTrigger className="h-8 text-xs bg-background/80 shadow-2xs">
+                <SelectTrigger className="h-6.5 text-[11px] bg-background/80 shadow-2xs px-2 rounded-md">
                   <SelectValue placeholder="All Years" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1011,15 +1033,15 @@ const TrainerAnalytics = ({
             </div>
 
             {/* Batch */}
-            <div className="space-y-1">
-              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                <Users className="h-3 w-3 text-primary/70" /> Batch
+            <div className="space-y-0.5">
+              <Label className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1 leading-none">
+                <Users className="h-2.5 w-2.5 text-primary/70" /> Batch
               </Label>
               <Select
                 value={filters.batch}
                 onValueChange={(v) => setFilters({ ...filters, batch: v })}
               >
-                <SelectTrigger className="h-8 text-xs bg-background/80 shadow-2xs">
+                <SelectTrigger className="h-6.5 text-[11px] bg-background/80 shadow-2xs px-2 rounded-md">
                   <SelectValue placeholder="All Batches" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1034,15 +1056,15 @@ const TrainerAnalytics = ({
             </div>
 
             {/* Date Range */}
-            <div className="space-y-1">
-              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                <Calendar className="h-3 w-3 text-primary/70" /> Range
+            <div className="space-y-0.5">
+              <Label className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1 leading-none">
+                <Calendar className="h-2.5 w-2.5 text-primary/70" /> Range
               </Label>
               <Select
                 value={filters.dateRange}
                 onValueChange={(v) => setFilters({ ...filters, dateRange: v })}
               >
-                <SelectTrigger className="h-8 text-xs bg-background/80 shadow-2xs">
+                <SelectTrigger className="h-6.5 text-[11px] bg-background/80 shadow-2xs px-2 rounded-md">
                   <SelectValue placeholder="All Time" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1057,24 +1079,24 @@ const TrainerAnalytics = ({
         </CardContent>
       </Card>
 
-      {/* 3. Key Performance Indicators (5 Metric Cards Grid) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+      {/* 3. Key Performance Indicators (5 Compact Metric Cards Grid) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
         {/* Total Sessions */}
-        <Card className="shadow-2xs border bg-card/80 hover:shadow-xs transition-all">
-          <CardContent className="p-3.5 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+        <Card className="shadow-2xs border rounded-lg bg-card/70 hover:shadow-xs transition-all">
+          <CardContent className="p-2 sm:p-2.5 space-y-0.5">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground truncate">
                 Sessions
               </span>
-              <div className="h-7 w-7 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                <ClipboardList className="h-4 w-4" />
+              <div className="h-4.5 w-4.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                <ClipboardList className="h-2.5 w-2.5" />
               </div>
             </div>
             <div>
-              <div className="text-xl sm:text-2xl font-bold font-mono text-foreground">
+              <div className="text-base sm:text-lg font-bold font-mono text-foreground leading-tight">
                 {aggregatedStats.totalSessions}
               </div>
-              <p className="text-[10.5px] text-muted-foreground">
+              <p className="text-[9px] text-muted-foreground truncate leading-tight">
                 Delivered Modules
               </p>
             </div>
@@ -1082,21 +1104,21 @@ const TrainerAnalytics = ({
         </Card>
 
         {/* Student Reach */}
-        <Card className="shadow-2xs border bg-card/80 hover:shadow-xs transition-all">
-          <CardContent className="p-3.5 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+        <Card className="shadow-2xs border rounded-lg bg-card/70 hover:shadow-xs transition-all">
+          <CardContent className="p-2 sm:p-2.5 space-y-0.5">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground truncate">
                 Responses
               </span>
-              <div className="h-7 w-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                <Users className="h-4 w-4" />
+              <div className="h-4.5 w-4.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                <Users className="h-2.5 w-2.5" />
               </div>
             </div>
             <div>
-              <div className="text-xl sm:text-2xl font-bold font-mono text-foreground">
+              <div className="text-base sm:text-lg font-bold font-mono text-foreground leading-tight">
                 {aggregatedStats.totalResponses.toLocaleString()}
               </div>
-              <p className="text-[10.5px] text-muted-foreground">
+              <p className="text-[9px] text-muted-foreground truncate leading-tight">
                 Student Reviews
               </p>
             </div>
@@ -1104,46 +1126,48 @@ const TrainerAnalytics = ({
         </Card>
 
         {/* Avg Rating */}
-        <Card className="shadow-2xs border bg-card/80 hover:shadow-xs transition-all">
-          <CardContent className="p-3.5 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+        <Card className="shadow-2xs border rounded-lg bg-card/70 hover:shadow-xs transition-all">
+          <CardContent className="p-2 sm:p-2.5 space-y-0.5">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground truncate">
                 Avg Rating
               </span>
-              <div className="h-7 w-7 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-                <Star className="h-4 w-4 fill-current" />
+              <div className="h-4.5 w-4.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <Star className="h-2.5 w-2.5 fill-current" />
               </div>
             </div>
             <div>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-xl sm:text-2xl font-bold font-mono text-foreground">
+              <div className="flex items-baseline gap-1">
+                <span className="text-base sm:text-lg font-bold font-mono text-foreground leading-tight">
                   {aggregatedStats.avgRating}
                 </span>
-                <span className="text-xs text-muted-foreground">/ 5.0</span>
+                <span className="text-[10px] text-muted-foreground">/ 5.0</span>
               </div>
-              <span className="inline-flex items-center text-[9.5px] font-bold text-teal-600 dark:text-teal-400 bg-teal-500/10 px-1.5 py-0.2 rounded border border-teal-500/20 mt-0.5">
-                {aggregatedStats.positivePercentage}% Positive
-              </span>
+              <div className="mt-0.5">
+                <span className="inline-flex items-center text-[8px] font-bold text-teal-600 dark:text-teal-400 bg-teal-500/10 px-1 py-0.2 rounded border border-teal-500/20">
+                  {aggregatedStats.positivePercentage}% Positive
+                </span>
+              </div>
             </div>
           </CardContent>
         </Card>
 
         {/* Training Hours */}
-        <Card className="shadow-2xs border bg-card/80 hover:shadow-xs transition-all">
-          <CardContent className="p-3.5 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+        <Card className="shadow-2xs border rounded-lg bg-card/70 hover:shadow-xs transition-all">
+          <CardContent className="p-2 sm:p-2.5 space-y-0.5">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground truncate">
                 Hours
               </span>
-              <div className="h-7 w-7 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center">
-                <Clock className="h-4 w-4" />
+              <div className="h-4.5 w-4.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                <Clock className="h-2.5 w-2.5" />
               </div>
             </div>
             <div>
-              <div className="text-xl sm:text-2xl font-bold font-mono text-foreground">
+              <div className="text-base sm:text-lg font-bold font-mono text-foreground leading-tight">
                 {aggregatedStats.totalHours} hrs
               </div>
-              <p className="text-[10.5px] text-muted-foreground">
+              <p className="text-[9px] text-muted-foreground truncate leading-tight">
                 Classroom Delivery
               </p>
             </div>
@@ -1151,21 +1175,21 @@ const TrainerAnalytics = ({
         </Card>
 
         {/* Institutes Reached */}
-        <Card className="shadow-2xs border bg-card/80 hover:shadow-xs transition-all col-span-2 sm:col-span-1">
-          <CardContent className="p-3.5 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+        <Card className="shadow-2xs border rounded-lg bg-card/70 hover:shadow-xs transition-all col-span-2 sm:col-span-1">
+          <CardContent className="p-2 sm:p-2.5 space-y-0.5">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground truncate">
                 Institutes
               </span>
-              <div className="h-7 w-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                <Building2 className="h-4 w-4" />
+              <div className="h-4.5 w-4.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <Building2 className="h-2.5 w-2.5" />
               </div>
             </div>
             <div>
-              <div className="text-xl sm:text-2xl font-bold font-mono text-foreground">
+              <div className="text-base sm:text-lg font-bold font-mono text-foreground leading-tight">
                 {uniqueCollegesCount}
               </div>
-              <p className="text-[10.5px] text-muted-foreground">
+              <p className="text-[9px] text-muted-foreground truncate leading-tight">
                 Colleges Reached
               </p>
             </div>
@@ -1449,40 +1473,29 @@ const TrainerAnalytics = ({
               </CardDescription>
             </div>
 
-            {filteredComments.high.length > 0 && (
+            {aggregatedStats.qualitative.high.length > 0 && (
               <span className="text-[10.5px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 inline-flex items-center gap-1 w-fit shadow-2xs">
-                <ThumbsUp className="h-2.5 w-2.5" /> {filteredComments.high.length} Highlights
+                <ThumbsUp className="h-2.5 w-2.5" /> {aggregatedStats.qualitative.high.length} Highlights
               </span>
             )}
           </CardHeader>
 
           <CardContent className="p-3.5 space-y-3">
-            {/* Search filter input */}
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                placeholder="Search highlights by keyword..."
-                value={feedbackSearch}
-                onChange={(e) => setFeedbackSearch(e.target.value)}
-                className="h-7 text-xs pl-8 bg-muted/30 shadow-2xs"
-              />
-            </div>
-
             {/* Highlights stream */}
             <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
-              {filteredComments.high.length > 0 ? (
+              {aggregatedStats.qualitative.high.length > 0 ? (
                 <div className="space-y-1.5">
-                  {filteredComments.high.slice(0, praiseLimit).map((c, i) => (
+                  {aggregatedStats.qualitative.high.slice(0, praiseLimit).map((c, i) => (
                     <FeedbackQuoteCard key={i} comment={c} type="positive" />
                   ))}
 
-                  {filteredComments.high.length > 4 && (
+                  {aggregatedStats.qualitative.high.length > 4 && (
                     <div className="pt-1 flex items-center justify-between text-[10px] text-muted-foreground">
                       <span>
-                        Showing {Math.min(praiseLimit, filteredComments.high.length)} of{" "}
-                        {filteredComments.high.length} highlights
+                        Showing {Math.min(praiseLimit, aggregatedStats.qualitative.high.length)} of{" "}
+                        {aggregatedStats.qualitative.high.length} highlights
                       </span>
-                      {praiseLimit < filteredComments.high.length ? (
+                      {praiseLimit < aggregatedStats.qualitative.high.length ? (
                         <button
                           type="button"
                           onClick={() => setPraiseLimit((prev) => prev + 4)}
@@ -1504,9 +1517,7 @@ const TrainerAnalytics = ({
                 </div>
               ) : (
                 <div className="p-8 text-center text-muted-foreground italic text-xs border border-dashed rounded-xl">
-                  {feedbackSearch
-                    ? "No student highlights found matching your search."
-                    : "No student praise highlights recorded for this filter selection."}
+                  No student praise highlights recorded for this filter selection.
                 </div>
               )}
             </div>

@@ -12,6 +12,7 @@ import {
   Trophy,
   User,
   Users,
+  ArrowLeftRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { resolveTrainerStatsFromSession } from "@/services/superadmin/trainerService";
@@ -370,7 +371,9 @@ const TrainerLeaderboard = ({
 
       <div className="overflow-hidden rounded-xl border bg-card shadow-xs">
         <div className="grid grid-cols-[40px_50px_1.5fr_1fr_90px_90px_90px_80px] gap-2.5 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/40 border-b min-w-[880px] items-center">
-          <span className="text-center">⚖️</span>
+          <span className="flex items-center justify-center text-muted-foreground" title="Compare selection">
+            <ArrowLeftRight className="h-3.5 w-3.5" />
+          </span>
           {renderSortHeader("Rank", "rank", "left")}
           {renderSortHeader("Trainer", "trainer", "left")}
           <span>Domain</span>

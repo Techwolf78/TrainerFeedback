@@ -14,6 +14,7 @@ import {
   RotateCcw,
   ShieldBan,
   Trophy,
+  ArrowLeftRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -470,7 +471,13 @@ const TrainersTab = () => {
         trainer={selectedTrainerForAnalytics}
         trainerId={selectedTrainerForAnalytics.id}
         trainerName={selectedTrainerForAnalytics.name}
-        allSessions={leaderboardSessions.length > 0 ? leaderboardSessions : null}
+        allSessions={
+          leaderboardSessions.length > 0
+            ? leaderboardSessions
+            : sessions && sessions.length > 0
+              ? sessions
+              : null
+        }
         onBack={() => handleSelectTrainerForAnalytics(null)}
       />
     );
@@ -699,7 +706,7 @@ const TrainersTab = () => {
                         <DropdownMenuItem
                           onClick={() => handleToggleCompare(trainer)}
                         >
-                          <span className="mr-2">⚖️</span>
+                          <ArrowLeftRight className="mr-2 h-4 w-4" />
                           {isSelectedForCompare ? "Remove from Compare" : "Add to Compare"}
                         </DropdownMenuItem>
                         <DropdownMenuItem
@@ -742,7 +749,7 @@ const TrainersTab = () => {
                       }`}
                       title={isSelectedForCompare ? "Remove from comparison" : "Select to compare side-by-side"}
                     >
-                      <span>⚖️</span>
+                      <ArrowLeftRight className="h-3 w-3" />
                       <span>{isSelectedForCompare ? "Selected" : "Compare"}</span>
                     </button>
 
@@ -1061,7 +1068,7 @@ const TrainersTab = () => {
               onClick={handleStartComparison}
               className="h-7 text-xs px-3.5 gap-1.5 gradient-hero text-primary-foreground shadow-xs font-semibold rounded-full disabled:opacity-50"
             >
-              <span>⚖️</span>
+              <ArrowLeftRight className="h-3.5 w-3.5" />
               <span>
                 {selectedTrainersForComparison.length < 2
                   ? "Select 1 more"

@@ -19,6 +19,7 @@ import {
   User,
   ThumbsUp,
   ThumbsDown,
+  ArrowLeftRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -496,7 +497,7 @@ const TrainerComparison = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card border rounded-2xl p-4 shadow-xs">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold text-lg shadow-inner">
-            ⚖️
+            <ArrowLeftRight className="h-5 w-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
