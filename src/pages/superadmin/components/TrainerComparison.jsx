@@ -48,8 +48,10 @@ export const TRAINER_THEMES = [
     color: "#3b82f6", // Blue
     fill: "rgba(59, 130, 246, 0.25)",
     border: "border-blue-500/40",
-    badgeBg: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30",
-    avatarBg: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
+    badgeBg:
+      "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30",
+    avatarBg:
+      "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
     dot: "bg-blue-500",
     cardHighlight: "bg-blue-500/[0.03] border-blue-500/30",
     metricHighlight: "text-blue-600 dark:text-blue-400",
@@ -61,8 +63,10 @@ export const TRAINER_THEMES = [
     color: "#a855f7", // Purple
     fill: "rgba(168, 85, 247, 0.25)",
     border: "border-purple-500/40",
-    badgeBg: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30",
-    avatarBg: "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30",
+    badgeBg:
+      "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30",
+    avatarBg:
+      "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30",
     dot: "bg-purple-500",
     cardHighlight: "bg-purple-500/[0.03] border-purple-500/30",
     metricHighlight: "text-purple-600 dark:text-purple-400",
@@ -74,8 +78,10 @@ export const TRAINER_THEMES = [
     color: "#f59e0b", // Amber
     fill: "rgba(245, 158, 11, 0.25)",
     border: "border-amber-500/40",
-    badgeBg: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
-    avatarBg: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
+    badgeBg:
+      "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
+    avatarBg:
+      "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
     dot: "bg-amber-500",
     cardHighlight: "bg-amber-500/[0.03] border-amber-500/30",
     metricHighlight: "text-amber-600 dark:text-amber-400",
@@ -105,7 +111,7 @@ const cleanCommentText = (rawText) => {
   // Condense extreme spam repetitions (e.g. "pls pls pls pls" -> "please...")
   text = text.replace(
     /\b(pls|please|plz|pleeease|pleaseee)\b(\s+\b(pls|please|plz|pleeease|pleaseee)\b){2,}/gi,
-    "please"
+    "please",
   );
 
   // Condense repeated punctuation
@@ -158,17 +164,19 @@ export const computeTrainerComparisonStats = (trainer, sessions = []) => {
 
     // Responses & Rating Distribution
     let ratingsInDist = 0;
-    Object.entries(trainerStats.ratingDistribution || {}).forEach(([rating, count]) => {
-      const numRating = Number(rating);
-      const numCount = Number(count) || 0;
-      if (numRating > 0 && numCount > 0) {
-        stats.ratingDistribution[numRating] =
-          (stats.ratingDistribution[numRating] || 0) + numCount;
-        stats.ratingSum += numRating * numCount;
-        stats.totalRatingsCount += numCount;
-        ratingsInDist += numCount;
-      }
-    });
+    Object.entries(trainerStats.ratingDistribution || {}).forEach(
+      ([rating, count]) => {
+        const numRating = Number(rating);
+        const numCount = Number(count) || 0;
+        if (numRating > 0 && numCount > 0) {
+          stats.ratingDistribution[numRating] =
+            (stats.ratingDistribution[numRating] || 0) + numCount;
+          stats.ratingSum += numRating * numCount;
+          stats.totalRatingsCount += numCount;
+          ratingsInDist += numCount;
+        }
+      },
+    );
 
     const responses =
       Number(trainerStats.totalResponses) ||
@@ -184,7 +192,8 @@ export const computeTrainerComparisonStats = (trainer, sessions = []) => {
     }
 
     // Categories
-    const catData = trainerStats.categoryAverages || trainerStats.categoryData || {};
+    const catData =
+      trainerStats.categoryAverages || trainerStats.categoryData || {};
     Object.entries(catData).forEach(([cat, val]) => {
       const normalizedCat = cat.toLowerCase();
       if (typeof val === "object" && val !== null) {
@@ -207,24 +216,42 @@ export const computeTrainerComparisonStats = (trainer, sessions = []) => {
       trainerStats.comments.forEach((c) => {
         if (c.rating >= 4) stats.qualitativeHigh.push(c);
         else if (c.rating <= 2) stats.qualitativeLow.push(c);
-        if (c.text?.toLowerCase().includes("need") || c.text?.toLowerCase().includes("future")) {
+        if (
+          c.text?.toLowerCase().includes("need") ||
+          c.text?.toLowerCase().includes("future")
+        ) {
           stats.futureTopics.push(c);
         }
       });
     } else {
       if (trainerStats.topComments && Array.isArray(trainerStats.topComments)) {
         trainerStats.topComments.forEach((c) =>
-          stats.qualitativeHigh.push({ text: c.text, rating: c.avgRating || c.rating || 5 })
+          stats.qualitativeHigh.push({
+            text: c.text,
+            rating: c.avgRating || c.rating || 5,
+          }),
         );
       }
-      if (trainerStats.leastRatedComments && Array.isArray(trainerStats.leastRatedComments)) {
+      if (
+        trainerStats.leastRatedComments &&
+        Array.isArray(trainerStats.leastRatedComments)
+      ) {
         trainerStats.leastRatedComments.forEach((c) =>
-          stats.qualitativeLow.push({ text: c.text, rating: c.avgRating || c.rating || 2 })
+          stats.qualitativeLow.push({
+            text: c.text,
+            rating: c.avgRating || c.rating || 2,
+          }),
         );
       }
-      if (trainerStats.futureTopics && Array.isArray(trainerStats.futureTopics)) {
+      if (
+        trainerStats.futureTopics &&
+        Array.isArray(trainerStats.futureTopics)
+      ) {
         trainerStats.futureTopics.forEach((c) =>
-          stats.futureTopics.push({ text: c.name || c.text, rating: c.avgRating || c.rating || 4 })
+          stats.futureTopics.push({
+            text: c.name || c.text,
+            rating: c.avgRating || c.rating || 4,
+          }),
         );
       }
     }
@@ -247,15 +274,19 @@ export const computeTrainerComparisonStats = (trainer, sessions = []) => {
   Object.keys(CATEGORY_NAMES).forEach((cat) => {
     if (stats.categoryCounts[cat] > 0) {
       categoryAverages[cat] = Number(
-        (stats.categoryTotals[cat] / stats.categoryCounts[cat]).toFixed(2)
+        (stats.categoryTotals[cat] / stats.categoryCounts[cat]).toFixed(2),
       );
     } else {
-      categoryAverages[cat] = avgRatingNum > 0 ? Number(avgRatingNum.toFixed(2)) : 0;
+      categoryAverages[cat] =
+        avgRatingNum > 0 ? Number(avgRatingNum.toFixed(2)) : 0;
     }
   });
 
   // Deduplicate and process comments
-  const processedHigh = processQualitativeComments(stats.qualitativeHigh, "high")
+  const processedHigh = processQualitativeComments(
+    stats.qualitativeHigh,
+    "high",
+  )
     .map((c) => ({ ...c, text: cleanCommentText(c.text) }))
     .filter((c) => c.text && c.text.length > 5);
 
@@ -264,8 +295,12 @@ export const computeTrainerComparisonStats = (trainer, sessions = []) => {
     .filter((c) => c.text && c.text.length > 5);
 
   // Unique deduplication by text
-  const uniqueHigh = Array.from(new Map(processedHigh.map((item) => [item.text, item])).values()).slice(0, 4);
-  const uniqueLow = Array.from(new Map(processedLow.map((item) => [item.text, item])).values()).slice(0, 4);
+  const uniqueHigh = Array.from(
+    new Map(processedHigh.map((item) => [item.text, item])).values(),
+  );
+  const uniqueLow = Array.from(
+    new Map(processedLow.map((item) => [item.text, item])).values(),
+  );
 
   return {
     trainer,
@@ -289,8 +324,13 @@ export const computeTrainerComparisonStats = (trainer, sessions = []) => {
 const FeedbackQuoteItem = ({ comment, type = "positive" }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const text = typeof comment === "string" ? comment : comment.text;
-  const rating = typeof comment === "object" ? comment.rating || (type === "positive" ? 5 : 2) : (type === "positive" ? 5 : 2);
-  const isLong = text && text.length > 170;
+  const rating =
+    typeof comment === "object"
+      ? comment.rating || (type === "positive" ? 5 : 2)
+      : type === "positive"
+        ? 5
+        : 2;
+  const isLong = text && text.length > 150;
 
   const isPositive = type === "positive";
   const borderAccent = isPositive
@@ -302,15 +342,15 @@ const FeedbackQuoteItem = ({ comment, type = "positive" }) => {
 
   return (
     <div
-      className={`text-xs border border-border/70 border-l-[3px] ${borderAccent} rounded-xl p-3 transition-all space-y-1.5 shadow-2xs`}
+      className={`text-xs border border-border/70 border-l-[3px] ${borderAccent} rounded-lg p-2 px-2.5 transition-all space-y-1 shadow-2xs`}
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-semibold text-muted-foreground flex items-center gap-1">
-          <MessageSquare className="h-3 w-3 text-muted-foreground/60" />
+      <div className="flex items-center justify-between gap-1.5">
+        <span className="text-[9.5px] font-semibold text-muted-foreground flex items-center gap-1">
+          <MessageSquare className="h-2.5 w-2.5 text-muted-foreground/60" />
           Student Review
         </span>
         <span
-          className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${badgeColor} flex items-center gap-1 shrink-0`}
+          className={`text-[9.5px] font-bold px-1.5 py-0.2 rounded border ${badgeColor} flex items-center gap-0.5 shrink-0`}
         >
           <Star className="h-2.5 w-2.5 fill-current" />
           {Number(rating).toFixed(1)}
@@ -318,8 +358,8 @@ const FeedbackQuoteItem = ({ comment, type = "positive" }) => {
       </div>
 
       <p
-        className={`text-foreground/90 leading-relaxed text-[11.5px] ${
-          !isExpanded && isLong ? "line-clamp-3" : ""
+        className={`text-foreground/90 leading-snug text-[11px] ${
+          !isExpanded && isLong ? "line-clamp-2" : ""
         }`}
       >
         “{text}”
@@ -329,7 +369,7 @@ const FeedbackQuoteItem = ({ comment, type = "positive" }) => {
         <button
           type="button"
           onClick={() => setIsExpanded(!isExpanded)}
-          className="text-[10px] font-semibold text-primary hover:underline block pt-0.5 cursor-pointer"
+          className="text-[9.5px] font-semibold text-primary hover:underline block pt-0.5 cursor-pointer"
         >
           {isExpanded ? "Show less" : "Read full review"}
         </button>
@@ -347,6 +387,8 @@ const TrainerComparison = ({
 }) => {
   // Sentiment filter for qualitative feedback
   const [feedbackView, setFeedbackView] = useState("all"); // 'all' | 'praises' | 'constructive'
+  const [praiseLimit, setPraiseLimit] = useState(4);
+  const [constructiveLimit, setConstructiveLimit] = useState(4);
 
   // Compute stats for each selected trainer
   const computedTrainers = useMemo(() => {
@@ -361,7 +403,13 @@ const TrainerComparison = ({
 
   // Radar chart data formatted for Recharts
   const radarData = useMemo(() => {
-    const categories = ["knowledge", "communication", "delivery", "engagement", "content"];
+    const categories = [
+      "knowledge",
+      "communication",
+      "delivery",
+      "engagement",
+      "content",
+    ];
     return categories.map((catKey) => {
       const item = {
         category: CATEGORY_NAMES[catKey] || catKey,
@@ -397,10 +445,16 @@ const TrainerComparison = ({
   const leaders = useMemo(() => {
     if (computedTrainers.length < 2) return {};
     const maxRating = Math.max(...computedTrainers.map((t) => t.avgRatingNum));
-    const maxResponses = Math.max(...computedTrainers.map((t) => t.totalResponses));
-    const maxSessions = Math.max(...computedTrainers.map((t) => t.sessionCount));
+    const maxResponses = Math.max(
+      ...computedTrainers.map((t) => t.totalResponses),
+    );
+    const maxSessions = Math.max(
+      ...computedTrainers.map((t) => t.sessionCount),
+    );
     const maxHours = Math.max(...computedTrainers.map((t) => t.totalHours));
-    const maxPositive = Math.max(...computedTrainers.map((t) => parseFloat(t.positivePercentage) || 0));
+    const maxPositive = Math.max(
+      ...computedTrainers.map((t) => parseFloat(t.positivePercentage) || 0),
+    );
 
     return {
       avgRating: maxRating > 0 ? maxRating : null,
@@ -448,12 +502,16 @@ const TrainerComparison = ({
               <h2 className="text-base sm:text-lg font-bold tracking-tight text-foreground">
                 Side-by-Side Trainer Comparison
               </h2>
-              <Badge variant="outline" className="text-[11px] font-medium bg-muted/60">
+              <Badge
+                variant="outline"
+                className="text-[11px] font-medium bg-muted/60"
+              >
                 {computedTrainers.length} Faculty Selected
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              Comparing ratings, student feedback, teaching category radars, and training volume.
+              Comparing ratings, student feedback, teaching category radars, and
+              training volume.
             </p>
           </div>
         </div>
@@ -483,19 +541,19 @@ const TrainerComparison = ({
       </div>
 
       {/* Trainer Profiles Grid */}
-      <div className={`grid gap-4 ${gridColsClass}`}>
+      <div className={`grid gap-3 ${gridColsClass}`}>
         {computedTrainers.map((t, idx) => {
           const theme = t.theme;
           return (
             <div
               key={t.trainer.id || idx}
-              className={`relative flex flex-col bg-card border ${theme.border} rounded-2xl p-4 shadow-xs transition-all ${theme.cardHighlight}`}
+              className={`relative flex flex-col bg-card border ${theme.border} rounded-xl p-2.5 px-3 shadow-xs transition-all ${theme.cardHighlight}`}
             >
-              {/* Top Banner Tag */}
-              <div className="flex items-center justify-between gap-2 mb-3">
+              {/* Top Banner Tag & Close */}
+              <div className="flex items-center justify-between gap-2 mb-1.5">
                 <div className="flex items-center gap-1.5">
-                  <span className={`h-2.5 w-2.5 rounded-full ${theme.dot}`} />
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  <span className={`h-2 w-2 rounded-full ${theme.dot}`} />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                     {theme.label}
                   </span>
                 </div>
@@ -503,40 +561,45 @@ const TrainerComparison = ({
                   <button
                     type="button"
                     onClick={() => onRemoveTrainer(t.trainer.id)}
-                    className="text-muted-foreground hover:text-destructive p-1 rounded-md transition-colors"
+                    className="text-muted-foreground hover:text-destructive p-0.5 rounded transition-colors"
                     title="Remove from comparison"
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <X className="h-3 w-3" />
                   </button>
                 )}
               </div>
 
               {/* Profile Card Info */}
-              <div className="flex items-start gap-3.5">
+              <div className="flex items-center gap-2.5">
                 <div
-                  className={`h-12 w-12 rounded-full flex-shrink-0 flex items-center justify-center border shadow-inner font-bold text-base ${theme.avatarBg}`}
+                  className={`h-9 w-9 rounded-full flex-shrink-0 flex items-center justify-center border shadow-inner font-bold ${theme.avatarBg}`}
                 >
-                  <User className="h-6 w-6" />
+                  <User className="h-4.5 w-4.5" />
                 </div>
-                <div className="min-w-0 flex-1 space-y-1">
+                <div className="min-w-0 flex-1 space-y-0.5">
                   <div className="flex items-center justify-between gap-1.5">
-                    <h3 className="text-sm font-bold text-foreground truncate" title={t.trainer.name}>
+                    <h3
+                      className="text-xs font-bold text-foreground truncate"
+                      title={t.trainer.name}
+                    >
                       {t.trainer.name}
                     </h3>
-                    <span className="text-[10px] font-mono bg-muted/80 px-2 py-0.5 rounded text-muted-foreground border shrink-0">
+                    <span className="text-[9px] font-mono bg-muted/80 px-1.5 py-0.5 rounded text-muted-foreground border shrink-0">
                       {t.trainer.trainer_id}
                     </span>
                   </div>
-                  <p className="text-xs text-muted-foreground truncate">{t.trainer.email}</p>
+                  <p className="text-[11px] text-muted-foreground truncate leading-none">
+                    {t.trainer.email}
+                  </p>
 
-                  <div className="flex flex-wrap gap-1 pt-1">
+                  <div className="flex flex-wrap gap-1 pt-0.5">
                     {t.trainer.domain && (
-                      <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-primary text-primary-foreground">
+                      <span className="text-[9px] font-medium px-1.5 py-0.2 rounded bg-primary text-primary-foreground">
                         {t.trainer.domain}
                       </span>
                     )}
                     {t.trainer.specialisation && (
-                      <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-secondary text-secondary-foreground border">
+                      <span className="text-[9px] font-medium px-1.5 py-0.2 rounded bg-secondary text-secondary-foreground border">
                         {t.trainer.specialisation}
                       </span>
                     )}
@@ -545,20 +608,24 @@ const TrainerComparison = ({
               </div>
 
               {/* Skills Tags & Action Button in one compact row */}
-              <div className="mt-3 pt-2.5 border-t flex items-center justify-between gap-2">
+              <div className="mt-2 pt-1.5 border-t flex items-center justify-between gap-2">
                 <div className="flex items-center flex-wrap gap-1 min-w-0 flex-1">
-                  <span className="text-[10px] font-medium text-muted-foreground shrink-0">Skills:</span>
+                  <span className="text-[9px] font-medium text-muted-foreground shrink-0">
+                    Skills:
+                  </span>
                   {t.trainer.topics && t.trainer.topics.length > 0 ? (
                     t.trainer.topics.map((topic, i) => (
                       <span
                         key={i}
-                        className="text-[9px] font-medium px-1.5 py-0.5 bg-muted/90 rounded border text-muted-foreground whitespace-normal break-words"
+                        className="text-[9px] font-medium px-1.5 py-0.2 bg-muted/90 rounded border text-muted-foreground whitespace-normal break-words"
                       >
                         {topic}
                       </span>
                     ))
                   ) : (
-                    <span className="text-[10px] text-muted-foreground italic">No topics listed</span>
+                    <span className="text-[9px] text-muted-foreground italic">
+                      No topics listed
+                    </span>
                   )}
                 </div>
 
@@ -567,10 +634,10 @@ const TrainerComparison = ({
                     variant="ghost"
                     size="sm"
                     onClick={() => onSelectTrainerForAnalytics(t.trainer)}
-                    className="h-6 text-[11px] px-2 gap-1 text-primary hover:bg-primary/10 shrink-0 font-medium"
+                    className="h-5 text-[10px] px-1.5 gap-0.5 text-primary hover:bg-primary/10 shrink-0 font-medium"
                   >
                     <span>Full Analytics</span>
-                    <ArrowRight className="h-3 w-3" />
+                    <ArrowRight className="h-2.5 w-2.5" />
                   </Button>
                 )}
               </div>
@@ -582,7 +649,8 @@ const TrainerComparison = ({
       {/* Side-by-Side Key Metrics Matrix */}
       <div className="space-y-3">
         <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-          <Sparkles className="h-3.5 w-3.5 text-primary" /> Key Performance Indicators
+          <Sparkles className="h-3.5 w-3.5 text-primary" /> Key Performance
+          Indicators
         </h3>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -590,15 +658,21 @@ const TrainerComparison = ({
           <Card className="shadow-2xs">
             <CardHeader className="p-3 pb-1.5">
               <CardTitle className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
-                <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" /> Avg Rating
+                <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />{" "}
+                Avg Rating
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 pt-0 space-y-2">
               {computedTrainers.map((t, idx) => {
                 const isLeader =
-                  leaders.avgRating && t.avgRatingNum === leaders.avgRating && computedTrainers.length > 1;
+                  leaders.avgRating &&
+                  t.avgRatingNum === leaders.avgRating &&
+                  computedTrainers.length > 1;
                 return (
-                  <div key={idx} className="flex items-center justify-between text-xs">
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between text-xs"
+                  >
                     <span className="text-muted-foreground flex items-center gap-1.5 truncate max-w-[85px]">
                       <span className={`h-2 w-2 rounded-full ${t.theme.dot}`} />
                       {t.trainer.name.split(" ")[0]}
@@ -609,7 +683,9 @@ const TrainerComparison = ({
                           ★ Top
                         </span>
                       )}
-                      <span className="font-bold text-sm text-foreground font-mono">{t.avgRating}</span>
+                      <span className="font-bold text-sm text-foreground font-mono">
+                        {t.avgRating}
+                      </span>
                     </div>
                   </div>
                 );
@@ -631,7 +707,10 @@ const TrainerComparison = ({
                   t.totalResponses === leaders.totalResponses &&
                   computedTrainers.length > 1;
                 return (
-                  <div key={idx} className="flex items-center justify-between text-xs">
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between text-xs"
+                  >
                     <span className="text-muted-foreground flex items-center gap-1.5 truncate max-w-[85px]">
                       <span className={`h-2 w-2 rounded-full ${t.theme.dot}`} />
                       {t.trainer.name.split(" ")[0]}
@@ -666,7 +745,10 @@ const TrainerComparison = ({
                   t.sessionCount === leaders.sessionCount &&
                   computedTrainers.length > 1;
                 return (
-                  <div key={idx} className="flex items-center justify-between text-xs">
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between text-xs"
+                  >
                     <span className="text-muted-foreground flex items-center gap-1.5 truncate max-w-[85px]">
                       <span className={`h-2 w-2 rounded-full ${t.theme.dot}`} />
                       {t.trainer.name.split(" ")[0]}
@@ -677,7 +759,9 @@ const TrainerComparison = ({
                           Max
                         </span>
                       )}
-                      <span className="font-bold text-sm text-foreground font-mono">{t.sessionCount}</span>
+                      <span className="font-bold text-sm text-foreground font-mono">
+                        {t.sessionCount}
+                      </span>
                     </div>
                   </div>
                 );
@@ -689,7 +773,8 @@ const TrainerComparison = ({
           <Card className="shadow-2xs">
             <CardHeader className="p-3 pb-1.5">
               <CardTitle className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5 text-emerald-500" /> Training Hours
+                <Clock className="h-3.5 w-3.5 text-emerald-500" /> Training
+                Hours
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 pt-0 space-y-2">
@@ -699,7 +784,10 @@ const TrainerComparison = ({
                   t.totalHours === leaders.totalHours &&
                   computedTrainers.length > 1;
                 return (
-                  <div key={idx} className="flex items-center justify-between text-xs">
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between text-xs"
+                  >
                     <span className="text-muted-foreground flex items-center gap-1.5 truncate max-w-[85px]">
                       <span className={`h-2 w-2 rounded-full ${t.theme.dot}`} />
                       {t.trainer.name.split(" ")[0]}
@@ -710,7 +798,9 @@ const TrainerComparison = ({
                           Max
                         </span>
                       )}
-                      <span className="font-bold text-sm text-foreground font-mono">{t.totalHours} hrs</span>
+                      <span className="font-bold text-sm text-foreground font-mono">
+                        {t.totalHours} hrs
+                      </span>
                     </div>
                   </div>
                 );
@@ -722,7 +812,8 @@ const TrainerComparison = ({
           <Card className="shadow-2xs col-span-2 sm:col-span-1">
             <CardHeader className="p-3 pb-1.5">
               <CardTitle className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
-                <CheckCircle2 className="h-3.5 w-3.5 text-teal-500" /> Positive Rate (4-5★)
+                <CheckCircle2 className="h-3.5 w-3.5 text-teal-500" /> Positive
+                Rate (4-5★)
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 pt-0 space-y-2">
@@ -732,7 +823,10 @@ const TrainerComparison = ({
                   t.positivePercentage === leaders.positivePercentage &&
                   computedTrainers.length > 1;
                 return (
-                  <div key={idx} className="flex items-center justify-between text-xs">
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between text-xs"
+                  >
                     <span className="text-muted-foreground flex items-center gap-1.5 truncate max-w-[85px]">
                       <span className={`h-2 w-2 rounded-full ${t.theme.dot}`} />
                       {t.trainer.name.split(" ")[0]}
@@ -762,10 +856,12 @@ const TrainerComparison = ({
           <CardHeader className="p-4 pb-2 flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-sm font-bold flex items-center gap-2">
-                <Zap className="h-4 w-4 text-primary" /> Category Skills Comparison
+                <Zap className="h-4 w-4 text-primary" /> Category Skills
+                Comparison
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Multi-dimensional rating comparison across standard evaluation pillars.
+                Multi-dimensional rating comparison across standard evaluation
+                pillars.
               </p>
             </div>
           </CardHeader>
@@ -802,9 +898,14 @@ const TrainerComparison = ({
                       if (!active || !payload || !payload.length) return null;
                       return (
                         <div className="bg-popover text-popover-foreground border rounded-lg p-2.5 shadow-md text-xs space-y-1">
-                          <p className="font-bold border-b pb-1 mb-1">{label}</p>
+                          <p className="font-bold border-b pb-1 mb-1">
+                            {label}
+                          </p>
                           {payload.map((entry, i) => (
-                            <div key={i} className="flex items-center justify-between gap-3">
+                            <div
+                              key={i}
+                              className="flex items-center justify-between gap-3"
+                            >
                               <span
                                 className="flex items-center gap-1.5"
                                 style={{ color: entry.stroke }}
@@ -827,7 +928,9 @@ const TrainerComparison = ({
                   <Legend
                     wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
                     formatter={(value) => (
-                      <span className="text-foreground font-medium">{value}</span>
+                      <span className="text-foreground font-medium">
+                        {value}
+                      </span>
                     )}
                   />
                 </RadarChart>
@@ -855,17 +958,36 @@ const TrainerComparison = ({
                   {Object.entries(CATEGORY_NAMES)
                     .filter(([k]) => k !== "overall")
                     .map(([key, label]) => {
-                      const values = computedTrainers.map((t) => t.categoryAverages[key] || 0);
+                      const values = computedTrainers.map(
+                        (t) => t.categoryAverages[key] || 0,
+                      );
                       const maxVal = Math.max(...values);
                       return (
-                        <tr key={key} className="hover:bg-muted/30 transition-colors">
-                          <td className="py-1.5 font-medium text-foreground">{label}</td>
+                        <tr
+                          key={key}
+                          className="hover:bg-muted/30 transition-colors"
+                        >
+                          <td className="py-1.5 font-medium text-foreground">
+                            {label}
+                          </td>
                           {computedTrainers.map((t, i) => {
                             const val = t.categoryAverages[key] || 0;
-                            const isMax = maxVal > 0 && val === maxVal && computedTrainers.length > 1;
+                            const isMax =
+                              maxVal > 0 &&
+                              val === maxVal &&
+                              computedTrainers.length > 1;
                             return (
-                              <td key={i} className="text-right py-1.5 font-mono">
-                                <span className={isMax ? "font-bold text-foreground" : "text-muted-foreground"}>
+                              <td
+                                key={i}
+                                className="text-right py-1.5 font-mono"
+                              >
+                                <span
+                                  className={
+                                    isMax
+                                      ? "font-bold text-foreground"
+                                      : "text-muted-foreground"
+                                  }
+                                >
                                   {val.toFixed(2)}
                                 </span>
                               </td>
@@ -884,7 +1006,8 @@ const TrainerComparison = ({
         <Card className="shadow-xs">
           <CardHeader className="p-4 pb-2">
             <CardTitle className="text-sm font-bold flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-primary" /> Star Rating Distribution
+              <BarChart3 className="h-4 w-4 text-primary" /> Star Rating
+              Distribution
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-0.5">
               Comparison of feedback count distribution from 5-star to 1-star.
@@ -893,8 +1016,15 @@ const TrainerComparison = ({
           <CardContent className="p-4 pt-2">
             <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} className="opacity-30" />
+                <BarChart
+                  data={barData}
+                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    className="opacity-30"
+                  />
                   <XAxis
                     dataKey="rating"
                     tick={{ fontSize: 11 }}
@@ -911,9 +1041,14 @@ const TrainerComparison = ({
                       if (!active || !payload || !payload.length) return null;
                       return (
                         <div className="bg-popover text-popover-foreground border rounded-lg p-2.5 shadow-md text-xs space-y-1">
-                          <p className="font-bold border-b pb-1 mb-1">{label}</p>
+                          <p className="font-bold border-b pb-1 mb-1">
+                            {label}
+                          </p>
                           {payload.map((entry, i) => (
-                            <div key={i} className="flex items-center justify-between gap-3">
+                            <div
+                              key={i}
+                              className="flex items-center justify-between gap-3"
+                            >
                               <span
                                 className="flex items-center gap-1.5"
                                 style={{ color: entry.fill }}
@@ -936,7 +1071,9 @@ const TrainerComparison = ({
                   <Legend
                     wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
                     formatter={(value) => (
-                      <span className="text-foreground font-medium">{value}</span>
+                      <span className="text-foreground font-medium">
+                        {value}
+                      </span>
                     )}
                   />
                   {computedTrainers.map((t, idx) => (
@@ -960,10 +1097,18 @@ const TrainerComparison = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                 {computedTrainers.map((t, i) => {
                   const total = t.totalRatingsCount || 1;
-                  const fiveStarPct = (((t.ratingDistribution[5] || 0) / total) * 100).toFixed(0);
-                  const fourStarPct = (((t.ratingDistribution[4] || 0) / total) * 100).toFixed(0);
+                  const fiveStarPct = (
+                    ((t.ratingDistribution[5] || 0) / total) *
+                    100
+                  ).toFixed(0);
+                  const fourStarPct = (
+                    ((t.ratingDistribution[4] || 0) / total) *
+                    100
+                  ).toFixed(0);
                   const lowStarPct = (
-                    (((t.ratingDistribution[1] || 0) + (t.ratingDistribution[2] || 0)) / total) *
+                    (((t.ratingDistribution[1] || 0) +
+                      (t.ratingDistribution[2] || 0)) /
+                      total) *
                     100
                   ).toFixed(0);
 
@@ -972,20 +1117,29 @@ const TrainerComparison = ({
                       key={i}
                       className="p-2 rounded-lg bg-muted/40 border text-xs space-y-1"
                     >
-                      <div className="font-bold truncate" style={{ color: t.theme.color }}>
+                      <div
+                        className="font-bold truncate"
+                        style={{ color: t.theme.color }}
+                      >
                         {t.trainer.name}
                       </div>
                       <div className="flex justify-between text-[11px] text-muted-foreground">
                         <span>5★ Rating:</span>
-                        <span className="font-semibold text-foreground">{fiveStarPct}%</span>
+                        <span className="font-semibold text-foreground">
+                          {fiveStarPct}%
+                        </span>
                       </div>
                       <div className="flex justify-between text-[11px] text-muted-foreground">
                         <span>4★ Rating:</span>
-                        <span className="font-semibold text-foreground">{fourStarPct}%</span>
+                        <span className="font-semibold text-foreground">
+                          {fourStarPct}%
+                        </span>
                       </div>
                       <div className="flex justify-between text-[11px] text-muted-foreground">
                         <span>1-2★ Concerns:</span>
-                        <span className="font-semibold text-foreground">{lowStarPct}%</span>
+                        <span className="font-semibold text-foreground">
+                          {lowStarPct}%
+                        </span>
                       </div>
                     </div>
                   );
@@ -997,23 +1151,25 @@ const TrainerComparison = ({
       </div>
 
       {/* Student Feedback & Qualitative Highlights Comparison */}
-      <Card className="shadow-xs border rounded-2xl overflow-hidden">
-        <CardHeader className="p-4 pb-3 border-b bg-card flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+      <Card className="shadow-xs border rounded-xl overflow-hidden">
+        <CardHeader className="p-3 py-2 border-b bg-card flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
-            <CardTitle className="text-sm font-bold flex items-center gap-2">
-              <MessageSquare className="h-4 w-4 text-primary" /> Qualitative Student Feedback
+            <CardTitle className="text-xs sm:text-sm font-bold flex items-center gap-1.5">
+              <MessageSquare className="h-3.5 w-3.5 text-primary" /> Qualitative
+              Student Feedback
             </CardTitle>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Side-by-side verbatim student feedback, praise highlights, and constructive reviews.
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Side-by-side verbatim student feedback, praise highlights, and
+              constructive reviews.
             </p>
           </div>
 
           {/* Sentiment Filter Switcher */}
-          <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-lg border">
+          <div className="flex items-center gap-0.5 bg-muted/60 p-0.5 rounded-lg border">
             <button
               type="button"
               onClick={() => setFeedbackView("all")}
-              className={`text-xs px-2.5 py-1 rounded-md transition-all font-medium ${
+              className={`text-[11px] px-2 py-0.5 rounded-md transition-all font-medium ${
                 feedbackView === "all"
                   ? "bg-background text-foreground shadow-2xs font-semibold"
                   : "text-muted-foreground hover:text-foreground"
@@ -1024,78 +1180,129 @@ const TrainerComparison = ({
             <button
               type="button"
               onClick={() => setFeedbackView("praises")}
-              className={`text-xs px-2.5 py-1 rounded-md transition-all font-medium flex items-center gap-1 ${
+              className={`text-[11px] px-2 py-0.5 rounded-md transition-all font-medium flex items-center gap-1 ${
                 feedbackView === "praises"
                   ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-semibold shadow-2xs"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              <ThumbsUp className="h-3 w-3" /> Praises
+              <ThumbsUp className="h-2.5 w-2.5" /> Praises
             </button>
             <button
               type="button"
               onClick={() => setFeedbackView("constructive")}
-              className={`text-xs px-2.5 py-1 rounded-md transition-all font-medium flex items-center gap-1 ${
+              className={`text-[11px] px-2 py-0.5 rounded-md transition-all font-medium flex items-center gap-1 ${
                 feedbackView === "constructive"
                   ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 font-semibold shadow-2xs"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              <ThumbsDown className="h-3 w-3" /> Needs Attention
+              <ThumbsDown className="h-2.5 w-2.5" /> Needs Attention
             </button>
           </div>
         </CardHeader>
 
-        <CardContent className="p-4">
-          <div className={`grid gap-4 ${gridColsClass}`}>
+        <CardContent className="p-3">
+          <div className={`grid gap-3 ${gridColsClass}`}>
             {computedTrainers.map((t, idx) => {
               const theme = t.theme;
               const hasPraises = t.topComments && t.topComments.length > 0;
-              const hasConstructive = t.leastRatedComments && t.leastRatedComments.length > 0;
+              const hasConstructive =
+                t.leastRatedComments && t.leastRatedComments.length > 0;
 
               return (
                 <div
                   key={idx}
-                  className={`bg-muted/15 border ${theme.border} rounded-xl p-3.5 space-y-3 flex flex-col justify-between`}
+                  className={`bg-muted/15 border ${theme.border} rounded-xl p-2.5 space-y-2 flex flex-col justify-between`}
                 >
                   {/* Column Header */}
                   <div>
-                    <div className="flex items-center justify-between gap-2 pb-2.5 border-b">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className={`h-2.5 w-2.5 rounded-full ${theme.dot} shrink-0`} />
+                    <div className="flex items-center justify-between gap-2 pb-1.5 border-b">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span
+                          className={`h-2 w-2 rounded-full ${theme.dot} shrink-0`}
+                        />
                         <h4 className="text-xs font-bold text-foreground truncate">
                           {t.trainer.name}
                         </h4>
                       </div>
-                      <span className="text-[10px] font-mono text-muted-foreground px-1.5 py-0.5 bg-muted rounded border shrink-0">
+                      <span className="text-[9.5px] font-mono text-muted-foreground px-1.5 py-0.2 bg-muted rounded border shrink-0">
                         {t.positivePercentage}% Positive
                       </span>
                     </div>
 
                     {/* Scrollable Feedback Stream with synchronized max height */}
-                    <div className="mt-3 space-y-3 max-h-[380px] overflow-y-auto pr-1">
+                    <div
+                      className={`mt-2 space-y-2 overflow-y-auto pr-1 ${
+                        feedbackView === "all"
+                          ? "max-h-[300px]"
+                          : "max-h-[420px]"
+                      }`}
+                    >
                       {/* 1. Student Praises & Highlights (4-5 Stars) */}
-                      {(feedbackView === "all" || feedbackView === "praises") && (
-                        <div className="space-y-2">
+                      {(feedbackView === "all" ||
+                        feedbackView === "praises") && (
+                        <div className="space-y-1.5">
                           {feedbackView === "all" && (
-                            <div className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center justify-between">
+                            <div className="text-[10.5px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center justify-between">
                               <span className="flex items-center gap-1">
-                                <Sparkles className="h-3 w-3" /> Praises & Strengths
+                                <Sparkles className="h-2.5 w-2.5" /> Praises &
+                                Strengths
                               </span>
-                              <span className="text-[10px] text-muted-foreground font-normal">
+                              <span className="text-[9.5px] text-muted-foreground font-normal">
                                 {t.topComments.length} reviews
                               </span>
                             </div>
                           )}
 
                           {hasPraises ? (
-                            <div className="space-y-2">
-                              {t.topComments.map((c, i) => (
-                                <FeedbackQuoteItem key={i} comment={c} type="positive" />
+                            <div className="space-y-1.5">
+                              {(feedbackView === "all"
+                                ? t.topComments.slice(0, 3)
+                                : t.topComments.slice(0, praiseLimit)
+                              ).map((c, i) => (
+                                <FeedbackQuoteItem
+                                  key={i}
+                                  comment={c}
+                                  type="positive"
+                                />
                               ))}
+
+                              {/* Load More for Praises */}
+                              {feedbackView === "praises" &&
+                                t.topComments.length > 4 && (
+                                  <div className="pt-1.5 flex items-center justify-between text-[10px] text-muted-foreground">
+                                    <span>
+                                      {Math.min(
+                                        praiseLimit,
+                                        t.topComments.length,
+                                      )}{" "}
+                                      of {t.topComments.length} reviews
+                                    </span>
+                                    {praiseLimit < t.topComments.length ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setPraiseLimit((prev) => prev + 4)
+                                        }
+                                        className="text-primary font-semibold hover:underline flex items-center gap-1 cursor-pointer bg-primary/10 hover:bg-primary/15 px-2 py-0.5 rounded border border-primary/20 transition-colors"
+                                      >
+                                        Load More (+4)
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => setPraiseLimit(4)}
+                                        className="text-muted-foreground hover:text-foreground font-medium hover:underline cursor-pointer"
+                                      >
+                                        Show Less
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                             </div>
                           ) : (
-                            <div className="text-xs text-muted-foreground italic bg-muted/30 p-2.5 rounded-lg border border-dashed text-center">
+                            <div className="text-[11px] text-muted-foreground italic bg-muted/30 p-2 rounded-lg border border-dashed text-center">
                               No praise quotes recorded.
                             </div>
                           )}
@@ -1103,27 +1310,75 @@ const TrainerComparison = ({
                       )}
 
                       {/* 2. Constructive Feedback & Areas for Improvement (1-2 Stars) */}
-                      {(feedbackView === "all" || feedbackView === "constructive") && (
-                        <div className="space-y-2 pt-1">
+                      {(feedbackView === "all" ||
+                        feedbackView === "constructive") && (
+                        <div className="space-y-1.5 pt-0.5">
                           {feedbackView === "all" && (
-                            <div className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 flex items-center justify-between">
+                            <div className="text-[10.5px] font-semibold text-amber-600 dark:text-amber-400 flex items-center justify-between">
                               <span className="flex items-center gap-1">
-                                <AlertCircle className="h-3 w-3" /> Constructive Feedback
+                                <AlertCircle className="h-2.5 w-2.5" />{" "}
+                                Constructive Feedback
                               </span>
-                              <span className="text-[10px] text-muted-foreground font-normal">
+                              <span className="text-[9.5px] text-muted-foreground font-normal">
                                 {t.leastRatedComments.length} reviews
                               </span>
                             </div>
                           )}
 
                           {hasConstructive ? (
-                            <div className="space-y-2">
-                              {t.leastRatedComments.map((c, i) => (
-                                <FeedbackQuoteItem key={i} comment={c} type="constructive" />
+                            <div className="space-y-1.5">
+                              {(feedbackView === "all"
+                                ? t.leastRatedComments.slice(0, 3)
+                                : t.leastRatedComments.slice(
+                                    0,
+                                    constructiveLimit,
+                                  )
+                              ).map((c, i) => (
+                                <FeedbackQuoteItem
+                                  key={i}
+                                  comment={c}
+                                  type="constructive"
+                                />
                               ))}
+
+                              {/* Load More for Needs Attention */}
+                              {feedbackView === "constructive" &&
+                                t.leastRatedComments.length > 4 && (
+                                  <div className="pt-1.5 flex items-center justify-between text-[10px] text-muted-foreground">
+                                    <span>
+                                      {Math.min(
+                                        constructiveLimit,
+                                        t.leastRatedComments.length,
+                                      )}{" "}
+                                      of {t.leastRatedComments.length} reviews
+                                    </span>
+                                    {constructiveLimit <
+                                    t.leastRatedComments.length ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setConstructiveLimit(
+                                            (prev) => prev + 4,
+                                          )
+                                        }
+                                        className="text-primary font-semibold hover:underline flex items-center gap-1 cursor-pointer bg-primary/10 hover:bg-primary/15 px-2 py-0.5 rounded border border-primary/20 transition-colors"
+                                      >
+                                        Load More (+4)
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => setConstructiveLimit(4)}
+                                        className="text-muted-foreground hover:text-foreground font-medium hover:underline cursor-pointer"
+                                      >
+                                        Show Less
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                             </div>
                           ) : (
-                            <div className="text-xs text-muted-foreground italic bg-muted/30 p-2.5 rounded-lg border border-dashed text-center">
+                            <div className="text-[11px] text-muted-foreground italic bg-muted/30 p-2 rounded-lg border border-dashed text-center">
                               No critical feedback submitted.
                             </div>
                           )}
@@ -1133,9 +1388,10 @@ const TrainerComparison = ({
                   </div>
 
                   {/* College Reach Footnote */}
-                  <div className="pt-2 border-t flex items-center justify-between text-[11px] text-muted-foreground">
+                  <div className="pt-1.5 border-t flex items-center justify-between text-[10px] text-muted-foreground">
                     <span className="flex items-center gap-1">
-                      <Building2 className="h-3 w-3" /> {t.uniqueCollegesCount} Institutes Reached
+                      <Building2 className="h-2.5 w-2.5" />{" "}
+                      {t.uniqueCollegesCount} Institutes Reached
                     </span>
                     <span className="font-mono">{t.totalHours} hrs Total</span>
                   </div>
