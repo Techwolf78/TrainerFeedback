@@ -307,6 +307,7 @@ export const computeTrainerComparisonStats = (trainer, sessions = []) => {
     sessionCount: stats.sessionCount,
     totalResponses: stats.totalResponses,
     totalHours: Math.round(stats.totalHours * 10) / 10,
+    totalRatingsCount: stats.totalRatingsCount,
     avgRating,
     avgRatingNum,
     positivePercentage,
@@ -1096,21 +1097,27 @@ const TrainerComparison = ({
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                 {computedTrainers.map((t, i) => {
-                  const total = t.totalRatingsCount || 1;
+                  const distSum =
+                    (t.ratingDistribution[1] || 0) +
+                    (t.ratingDistribution[2] || 0) +
+                    (t.ratingDistribution[3] || 0) +
+                    (t.ratingDistribution[4] || 0) +
+                    (t.ratingDistribution[5] || 0);
+                  const total = distSum > 0 ? distSum : (t.totalRatingsCount || t.totalResponses || 1);
                   const fiveStarPct = (
                     ((t.ratingDistribution[5] || 0) / total) *
                     100
-                  ).toFixed(0);
+                  ).toFixed(1);
                   const fourStarPct = (
                     ((t.ratingDistribution[4] || 0) / total) *
                     100
-                  ).toFixed(0);
+                  ).toFixed(1);
                   const lowStarPct = (
                     (((t.ratingDistribution[1] || 0) +
                       (t.ratingDistribution[2] || 0)) /
                       total) *
                     100
-                  ).toFixed(0);
+                  ).toFixed(1);
 
                   return (
                     <div
