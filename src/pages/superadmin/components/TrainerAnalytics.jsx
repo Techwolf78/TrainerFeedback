@@ -211,9 +211,7 @@ const TrainerAnalytics = ({
   });
 
   // UI state for qualitative feedback
-  const [feedbackTab, setFeedbackTab] = useState("all");
   const [praiseLimit, setPraiseLimit] = useState(4);
-  const [constructiveLimit, setConstructiveLimit] = useState(4);
   const [feedbackSearch, setFeedbackSearch] = useState("");
 
   // Load Data
@@ -1439,67 +1437,23 @@ const TrainerAnalytics = ({
           </CardContent>
         </Card>
 
-        {/* Qualitative Student Feedback Studio */}
+        {/* Recent Highlights / Positive Student Feedback */}
         <Card className="shadow-xs border rounded-2xl overflow-hidden flex flex-col justify-between">
           <CardHeader className="p-3.5 pb-2.5 border-b bg-card flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div>
               <CardTitle className="text-xs sm:text-sm font-bold flex items-center gap-1.5">
-                <MessageSquare className="h-3.5 w-3.5 text-primary" /> Qualitative Student Feedback
+                <Sparkles className="h-3.5 w-3.5 text-emerald-500" /> Recent Highlights
               </CardTitle>
               <CardDescription className="text-[11px]">
-                Student review quotes, strengths, and areas for improvement.
+                Student review quotes and praise highlights from recent sessions.
               </CardDescription>
             </div>
 
-            {/* Sentiment Switcher Tabs */}
-            <div className="flex items-center gap-0.5 bg-muted/60 p-0.5 rounded-lg border">
-              <button
-                type="button"
-                onClick={() => setFeedbackTab("all")}
-                className={`text-[10.5px] px-2 py-0.5 rounded-md transition-all font-medium ${
-                  feedbackTab === "all"
-                    ? "bg-background text-foreground shadow-2xs font-semibold"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                All
-              </button>
-              <button
-                type="button"
-                onClick={() => setFeedbackTab("praises")}
-                className={`text-[10.5px] px-2 py-0.5 rounded-md transition-all font-medium flex items-center gap-1 ${
-                  feedbackTab === "praises"
-                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-semibold shadow-2xs"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <ThumbsUp className="h-2.5 w-2.5" /> Praises ({filteredComments.high.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFeedbackTab("constructive")}
-                className={`text-[10.5px] px-2 py-0.5 rounded-md transition-all font-medium flex items-center gap-1 ${
-                  feedbackTab === "constructive"
-                    ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 font-semibold shadow-2xs"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <ThumbsDown className="h-2.5 w-2.5" /> Needs Attention ({filteredComments.low.length})
-              </button>
-              {filteredComments.future.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setFeedbackTab("future")}
-                  className={`text-[10.5px] px-2 py-0.5 rounded-md transition-all font-medium flex items-center gap-1 ${
-                    feedbackTab === "future"
-                      ? "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-semibold shadow-2xs"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <Sparkles className="h-2.5 w-2.5" /> Topics ({filteredComments.future.length})
-                </button>
-              )}
-            </div>
+            {filteredComments.high.length > 0 && (
+              <span className="text-[10.5px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 inline-flex items-center gap-1 w-fit shadow-2xs">
+                <ThumbsUp className="h-2.5 w-2.5" /> {filteredComments.high.length} Highlights
+              </span>
+            )}
           </CardHeader>
 
           <CardContent className="p-3.5 space-y-3">
@@ -1507,36 +1461,26 @@ const TrainerAnalytics = ({
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="Search reviews by keyword..."
+                placeholder="Search highlights by keyword..."
                 value={feedbackSearch}
                 onChange={(e) => setFeedbackSearch(e.target.value)}
                 className="h-7 text-xs pl-8 bg-muted/30 shadow-2xs"
               />
             </div>
 
-            {/* Feedback items stream */}
+            {/* Highlights stream */}
             <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
-              {/* 1. Praises */}
-              {(feedbackTab === "all" || feedbackTab === "praises") && (
+              {filteredComments.high.length > 0 ? (
                 <div className="space-y-1.5">
-                  {feedbackTab === "all" && filteredComments.high.length > 0 && (
-                    <div className="text-[10.5px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                      <Sparkles className="h-2.5 w-2.5" /> Praises & Highlights
-                    </div>
-                  )}
-
-                  {(feedbackTab === "all"
-                    ? filteredComments.high.slice(0, 3)
-                    : filteredComments.high.slice(0, praiseLimit)
-                  ).map((c, i) => (
+                  {filteredComments.high.slice(0, praiseLimit).map((c, i) => (
                     <FeedbackQuoteCard key={i} comment={c} type="positive" />
                   ))}
 
-                  {feedbackTab === "praises" && filteredComments.high.length > 4 && (
+                  {filteredComments.high.length > 4 && (
                     <div className="pt-1 flex items-center justify-between text-[10px] text-muted-foreground">
                       <span>
                         Showing {Math.min(praiseLimit, filteredComments.high.length)} of{" "}
-                        {filteredComments.high.length} reviews
+                        {filteredComments.high.length} highlights
                       </span>
                       {praiseLimit < filteredComments.high.length ? (
                         <button
@@ -1558,69 +1502,13 @@ const TrainerAnalytics = ({
                     </div>
                   )}
                 </div>
-              )}
-
-              {/* 2. Constructive */}
-              {(feedbackTab === "all" || feedbackTab === "constructive") && (
-                <div className="space-y-1.5 pt-1">
-                  {feedbackTab === "all" && filteredComments.low.length > 0 && (
-                    <div className="text-[10.5px] font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                      <AlertCircle className="h-2.5 w-2.5" /> Constructive Feedback & Areas for Improvement
-                    </div>
-                  )}
-
-                  {(feedbackTab === "all"
-                    ? filteredComments.low.slice(0, 3)
-                    : filteredComments.low.slice(0, constructiveLimit)
-                  ).map((c, i) => (
-                    <FeedbackQuoteCard key={i} comment={c} type="constructive" />
-                  ))}
-
-                  {feedbackTab === "constructive" && filteredComments.low.length > 4 && (
-                    <div className="pt-1 flex items-center justify-between text-[10px] text-muted-foreground">
-                      <span>
-                        Showing {Math.min(constructiveLimit, filteredComments.low.length)} of{" "}
-                        {filteredComments.low.length} reviews
-                      </span>
-                      {constructiveLimit < filteredComments.low.length ? (
-                        <button
-                          type="button"
-                          onClick={() => setConstructiveLimit((prev) => prev + 4)}
-                          className="text-primary font-semibold hover:underline flex items-center gap-1 cursor-pointer bg-primary/10 hover:bg-primary/15 px-2 py-0.5 rounded border border-primary/20 transition-colors"
-                        >
-                          Load More (+4)
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setConstructiveLimit(4)}
-                          className="text-muted-foreground hover:text-foreground font-medium hover:underline cursor-pointer"
-                        >
-                          Show Less
-                        </button>
-                      )}
-                    </div>
-                  )}
+              ) : (
+                <div className="p-8 text-center text-muted-foreground italic text-xs border border-dashed rounded-xl">
+                  {feedbackSearch
+                    ? "No student highlights found matching your search."
+                    : "No student praise highlights recorded for this filter selection."}
                 </div>
               )}
-
-              {/* 3. Future Demands */}
-              {feedbackTab === "future" && (
-                <div className="space-y-1.5">
-                  {filteredComments.future.map((c, i) => (
-                    <FeedbackQuoteCard key={i} comment={c} type="future" />
-                  ))}
-                </div>
-              )}
-
-              {/* Fallback empty message */}
-              {filteredComments.high.length === 0 &&
-                filteredComments.low.length === 0 &&
-                filteredComments.future.length === 0 && (
-                  <div className="p-8 text-center text-muted-foreground italic text-xs border border-dashed rounded-xl">
-                    No student feedback comments recorded for this filter selection.
-                  </div>
-                )}
             </div>
           </CardContent>
         </Card>
