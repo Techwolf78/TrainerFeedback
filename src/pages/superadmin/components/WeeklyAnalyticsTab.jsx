@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSuperAdminData } from "@/contexts/SuperAdminDataContext";
 import { getFeedbacksByDateRange } from "@/services/superadmin/responseService";
@@ -29,9 +29,19 @@ import {
   AlertTriangle,
   TrendingUp,
   LayoutDashboard,
+  RotateCcw,
+  Activity,
+  CheckCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { format } from "date-fns";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import {
   generateAlertsFromFeedbacks,
   getResolvedAlerts,
@@ -42,6 +52,9 @@ export default function WeeklyAnalyticsTab() {
   const navigate = useNavigate();
   const [feedbacks, setFeedbacks] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadedCount, setLoadedCount] = useState(0);
+  const [statusStage, setStatusStage] = useState("Connecting to database...");
   const [expandedDates, setExpandedDates] = useState({});
 
   // Resolved state for alerts
@@ -67,13 +80,13 @@ export default function WeeklyAnalyticsTab() {
       feedbacks,
       sessions,
       trainers,
-      colleges
+      colleges,
     );
     return computed.filter((a) => !resolvedAlertIds.has(a.id)).length;
   }, [feedbacks, sessions, trainers, colleges, resolvedAlertIds]);
 
   // Maximum allowed date range in days for interactive real-time inspection
-  const MAX_CUSTOM_RANGE_DAYS = 60;
+  const MAX_CUSTOM_RANGE_DAYS = 62;
 
   // Format Helper: Get YYYY-MM-DD key (local timezone safe)
   const formatDateKey = (date) => {
@@ -86,13 +99,21 @@ export default function WeeklyAnalyticsTab() {
 
   // Helper to calculate exact calendar days difference between two dates
   const getDaysDiff = (d1, d2) => {
-    const t1 = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate()).getTime();
-    const t2 = new Date(d2.getFullYear(), d2.getMonth(), d2.getDate()).getTime();
+    const t1 = new Date(
+      d1.getFullYear(),
+      d1.getMonth(),
+      d1.getDate(),
+    ).getTime();
+    const t2 = new Date(
+      d2.getFullYear(),
+      d2.getMonth(),
+      d2.getDate(),
+    ).getTime();
     return Math.round(Math.abs(t2 - t1) / (1000 * 60 * 60 * 24));
   };
 
-  // Date filter states
-  const [preset, setPreset] = useState("last7"); // last7, thisWeek, lastWeek, last30, custom
+  // Date filter states: last7, thisWeek, lastWeek, last30, last60, custom
+  const [preset, setPreset] = useState("last7");
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 7);
@@ -105,7 +126,14 @@ export default function WeeklyAnalyticsTab() {
     return d;
   });
 
-  // Handle preset clicks
+  // Date Picker popover state and uncommitted tempRange (prevents premature queries / lag)
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [tempRange, setTempRange] = useState(() => ({
+    from: startDate,
+    to: endDate,
+  }));
+
+  // Handle preset clicks (immediate query for standard presets)
   const applyPreset = (presetType) => {
     setPreset(presetType);
     const now = new Date();
@@ -117,7 +145,7 @@ export default function WeeklyAnalyticsTab() {
       case "thisWeek": {
         // Monday to Sunday of current week
         const day = now.getDay();
-        const diff = now.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+        const diff = now.getDate() - day + (day === 0 ? -6 : 1);
         start.setDate(diff);
         start.setHours(0, 0, 0, 0);
         break;
@@ -140,81 +168,72 @@ export default function WeeklyAnalyticsTab() {
         start.setDate(now.getDate() - 30);
         start.setHours(0, 0, 0, 0);
         break;
+      case "last60":
+        start.setDate(now.getDate() - 60);
+        start.setHours(0, 0, 0, 0);
+        break;
       default:
-        return; // custom allows manual change
+        return;
     }
 
     setStartDate(start);
     setEndDate(end);
+    setTempRange({ from: start, to: end });
   };
 
-  // Handle Start Date change with 60-day limit validation
-  const handleStartDateChange = (val) => {
-    if (!val) return;
-    setPreset("custom");
-    const [year, month, day] = val.split("-").map(Number);
-    const newStart = new Date(year, month - 1, day, 0, 0, 0, 0);
-
-    // If start is after current end date, move end date forward
-    if (newStart > endDate) {
-      const newEnd = new Date(newStart);
-      newEnd.setDate(newStart.getDate() + 7);
-      newEnd.setHours(23, 59, 59, 999);
-      setStartDate(newStart);
-      setEndDate(newEnd);
+  // Explicit Apply handler for Custom Date Range
+  const handleApplyCustomRange = () => {
+    if (!tempRange?.from || !tempRange?.to) {
+      toast.error("Please select both start and end dates before applying.");
       return;
     }
 
-    // Check if range exceeds MAX_CUSTOM_RANGE_DAYS
-    const diffDays = getDaysDiff(newStart, endDate);
+    const newStart = new Date(tempRange.from);
+    newStart.setHours(0, 0, 0, 0);
+
+    const newEnd = new Date(tempRange.to);
+    newEnd.setHours(23, 59, 59, 999);
+
+    if (newStart > newEnd) {
+      toast.error("Start date cannot be after end date.");
+      return;
+    }
+
+    const diffDays = getDaysDiff(newStart, newEnd) + 1;
     if (diffDays > MAX_CUSTOM_RANGE_DAYS) {
-      const newEnd = new Date(newStart);
-      newEnd.setDate(newStart.getDate() + MAX_CUSTOM_RANGE_DAYS);
-      newEnd.setHours(23, 59, 59, 999);
-      setStartDate(newStart);
-      setEndDate(newEnd);
-      toast.info(`Custom range limited to maximum ${MAX_CUSTOM_RANGE_DAYS} days. End date adjusted.`);
+      toast.error(
+        `Selected date range is ${diffDays} days. Please select a range of ${MAX_CUSTOM_RANGE_DAYS} days or fewer.`,
+      );
       return;
     }
 
+    setPreset("custom");
     setStartDate(newStart);
-  };
-
-  // Handle End Date change with 60-day limit validation
-  const handleEndDateChange = (val) => {
-    if (!val) return;
-    setPreset("custom");
-    const [year, month, day] = val.split("-").map(Number);
-    const newEnd = new Date(year, month - 1, day, 23, 59, 59, 999);
-
-    // If end is before current start date, move start date backward
-    if (newEnd < startDate) {
-      const newStart = new Date(newEnd);
-      newStart.setDate(newEnd.getDate() - 7);
-      newStart.setHours(0, 0, 0, 0);
-      setStartDate(newStart);
-      setEndDate(newEnd);
-      return;
-    }
-
-    // Check if range exceeds MAX_CUSTOM_RANGE_DAYS
-    const diffDays = getDaysDiff(startDate, newEnd);
-    if (diffDays > MAX_CUSTOM_RANGE_DAYS) {
-      const newStart = new Date(newEnd);
-      newStart.setDate(newEnd.getDate() - MAX_CUSTOM_RANGE_DAYS);
-      newStart.setHours(0, 0, 0, 0);
-      setStartDate(newStart);
-      setEndDate(newEnd);
-      toast.info(`Custom range limited to maximum ${MAX_CUSTOM_RANGE_DAYS} days. Start date adjusted.`);
-      return;
-    }
-
     setEndDate(newEnd);
+    setIsDatePickerOpen(false);
   };
 
-  // Fetch feedbacks for selected range
-  const fetchFeedbacks = async () => {
+  const handleResetDates = () => {
+    applyPreset("last7");
+  };
+
+  // Fetch feedbacks for selected range with chunking and progressive loading HUD
+  const fetchFeedbacks = useCallback(async () => {
+    if (!startDate || !endDate) return;
     setLoading(true);
+    setLoadingProgress(12);
+    setLoadedCount(0);
+    setStatusStage("Querying feedback records...");
+
+    const progressTimer = setInterval(() => {
+      setLoadingProgress((prev) => {
+        if (prev < 35) return prev + 5;
+        if (prev < 65) return prev + 2;
+        if (prev < 88) return prev + 0.8;
+        return prev;
+      });
+    }, 120);
+
     try {
       let start = new Date(startDate);
       let end = new Date(endDate);
@@ -227,7 +246,18 @@ export default function WeeklyAnalyticsTab() {
         start.setHours(0, 0, 0, 0);
       }
 
-      const data = await getFeedbacksByDateRange(start, end);
+      const data = await getFeedbacksByDateRange(start, end, 500, (count) => {
+        setLoadedCount(count);
+        setStatusStage(`Retrieved ${count.toLocaleString()} responses...`);
+        setLoadingProgress((prev) =>
+          Math.max(prev, Math.min(90, 30 + Math.floor(count / 70))),
+        );
+      });
+
+      setStatusStage("Mapping hierarchy & metrics...");
+      setLoadingProgress(96);
+      await new Promise((r) => setTimeout(r, 100));
+      setLoadingProgress(100);
       setFeedbacks(data || []);
 
       // Auto-expand the first date if present
@@ -247,13 +277,18 @@ export default function WeeklyAnalyticsTab() {
       console.error("Failed to fetch feedbacks for weekly analytics:", error);
       toast.error("Failed to load feedbacks for the selected range.");
     } finally {
-      setLoading(false);
+      clearInterval(progressTimer);
+      setTimeout(() => {
+        setLoading(false);
+        setLoadingProgress(0);
+        setLoadedCount(0);
+      }, 200);
     }
-  };
+  }, [startDate, endDate]);
 
   useEffect(() => {
     fetchFeedbacks();
-  }, [startDate, endDate]);
+  }, [fetchFeedbacks]);
 
   // Format Helper: Format key to readable day (e.g. "Monday, Jun 15, 2026")
   const formatReadableDate = (dateKey) => {
@@ -524,14 +559,76 @@ export default function WeeklyAnalyticsTab() {
 
   return (
     <div className="space-y-3">
+      {/* iOS-Style Clean Light-Themed Dynamic Progress HUD */}
+      {loading && (
+        <div className="bg-white/90 backdrop-blur-xl border border-slate-200/80 rounded-2xl p-3 px-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in-50 slide-in-from-top-1 duration-200">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Apple 12-segment spinner */}
+            <div className="relative w-8 h-8 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
+              <svg
+                className="w-5 h-5 animate-spin text-blue-600"
+                viewBox="0 0 100 100"
+                style={{ animationDuration: "0.85s" }}
+              >
+                {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map(
+                  (deg, i) => (
+                    <rect
+                      key={deg}
+                      x="46.5"
+                      y="10"
+                      width="7"
+                      height="22"
+                      rx="3.5"
+                      transform={`rotate(${deg} 50 50)`}
+                      fill="currentColor"
+                      opacity={(i + 1) / 12}
+                    />
+                  ),
+                )}
+              </svg>
+            </div>
+
+            <div className="min-w-0 space-y-0.5">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-900 tracking-tight">
+                  {statusStage}
+                </span>
+                {loadedCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/70 text-[10px] font-bold">
+                    {loadedCount.toLocaleString()} responses
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 font-medium">
+                Syncing batched data from Firestore safely without delays
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 w-full sm:w-56 shrink-0">
+            <div className="flex-1 bg-slate-100/90 rounded-full h-2 overflow-hidden p-0.5 border border-slate-200/60 shadow-inner">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-600 transition-all duration-300 ease-out shadow-xs"
+                style={{
+                  width: `${Math.min(100, Math.max(6, loadingProgress))}%`,
+                }}
+              />
+            </div>
+            <span className="text-xs font-bold text-blue-600 font-mono w-9 text-right">
+              {Math.round(loadingProgress)}%
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* 1. Header Filter Section */}
-      <Card className="border-slate-200 bg-white/80 backdrop-blur shadow-sm">
-        <CardHeader className="pb-2.5 pt-3 px-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+      <Card className="border-slate-200/80 bg-white/95 backdrop-blur shadow-xs rounded-xl overflow-hidden">
+        <CardHeader className="pb-2.5 pt-3 px-3.5 sm:px-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5">
             <div>
-              <CardTitle className="text-base font-bold text-slate-800 flex items-center gap-2">
-                <CalendarIcon className="h-5 w-5 text-blue-500" />
-                Daily Feedbacks
+              <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <CalendarIcon className="h-4.5 w-4.5 text-blue-600" />
+                Daily Feedbacks Hierarchy
               </CardTitle>
               <CardDescription className="text-[11px] text-slate-500 mt-0.5">
                 Day-wise structured hierarchy showing College → Session →
@@ -539,29 +636,30 @@ export default function WeeklyAnalyticsTab() {
               </CardDescription>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               <Button
+                variant="outline"
                 size="sm"
                 onClick={() => navigate("/super-admin/management-overview")}
-                className="h-8 text-xs gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm"
+                className="h-7.5 text-xs border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 gap-1.5 shadow-2xs font-semibold px-2.5"
               >
-                <TrendingUp className="h-3.5 w-3.5" />
+                <TrendingUp className="h-3.5 w-3.5 text-blue-600" />
                 Overview
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 text-xs border-slate-200 hover:bg-slate-50 hover:text-slate-700 gap-1.5"
+                className="h-7.5 text-xs border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 gap-1.5 shadow-2xs font-medium px-2.5"
                 onClick={fetchFeedbacks}
                 disabled={loading}
               >
                 <RefreshCw
                   className={cn(
-                    "h-3 w-3",
-                    loading ? "animate-spin text-blue-500" : "",
+                    "h-3 w-3 text-slate-500",
+                    loading && "animate-spin text-blue-600",
                   )}
                 />
-                Refresh Data
+                Refresh
               </Button>
               <Button
                 variant="outline"
@@ -577,7 +675,7 @@ export default function WeeklyAnalyticsTab() {
                     setExpandedDates(updated);
                   }
                 }}
-                className="h-8 text-xs border-slate-200 hover:bg-slate-50 hover:text-slate-700"
+                className="h-7.5 text-xs border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-medium px-2.5 shadow-2xs"
               >
                 {isAllExpanded ? "Collapse All" : "Expand All"}
               </Button>
@@ -585,13 +683,13 @@ export default function WeeklyAnalyticsTab() {
                 <Button
                   size="sm"
                   onClick={() => navigate("/super-admin/weekly-analytics/alerts")}
-                  className="h-8 text-xs gap-1.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold border-0 shadow-sm"
+                  className="h-7.5 text-xs gap-1.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold border-0 shadow-2xs px-3"
                 >
                   <AlertTriangle className="h-3.5 w-3.5" />
                   Alerts & Notifications
                 </Button>
                 {unresolvedAlertsCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[9px] font-bold h-4 min-w-[16px] px-1 rounded-full flex items-center justify-center border border-white shadow animate-bounce">
+                  <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[9px] font-bold h-4 min-w-[16px] px-1 rounded-full flex items-center justify-center border border-white shadow-xs animate-bounce">
                     {unresolvedAlertsCount}
                   </span>
                 )}
@@ -599,75 +697,178 @@ export default function WeeklyAnalyticsTab() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="border-t border-slate-100 pt-3 pb-3 px-4">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
+
+        <CardContent className="border-t border-slate-100/90 pt-2.5 pb-2.5 px-3.5 sm:px-4 bg-slate-50/40">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             {/* Quick Presets */}
-            <div className="col-span-1 lg:col-span-6 space-y-1">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                Date Presets
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {[
-                  { id: "last7", label: "Last 7 Days" },
-                  { id: "thisWeek", label: "This Week" },
-                  { id: "lastWeek", label: "Last Week" },
-                  { id: "last30", label: "Last 30 Days" },
-                  { id: "custom", label: "Custom Range" },
-                ].map((item) => (
-                  <Button
-                    key={item.id}
-                    variant={preset === item.id ? "default" : "outline"}
-                    size="sm"
-                    className={cn(
-                      "h-8 text-xs px-3 font-medium rounded-lg transition-all",
-                      preset === item.id
-                        ? "bg-slate-800 text-white hover:bg-slate-900"
-                        : "border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-700",
-                    )}
-                    onClick={() => applyPreset(item.id)}
-                  >
-                    {item.label}
-                  </Button>
-                ))}
-              </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mr-1">
+                Time Window:
+              </span>
+              {[
+                { id: "last7", label: "7 Days" },
+                { id: "thisWeek", label: "This Week" },
+                { id: "lastWeek", label: "Last Week" },
+                { id: "last30", label: "30 Days" },
+                { id: "last60", label: "60 Days" },
+              ].map((item) => (
+                <Button
+                  key={item.id}
+                  variant={preset === item.id ? "default" : "outline"}
+                  size="sm"
+                  className={cn(
+                    "h-6.5 text-[11px] px-2.5 py-0 rounded-md font-semibold transition-all",
+                    preset === item.id
+                      ? "bg-slate-900 text-white shadow-2xs border-slate-900"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+                  )}
+                  onClick={() => applyPreset(item.id)}
+                >
+                  {item.label}
+                </Button>
+              ))}
             </div>
 
-            {/* Custom Range Date Fields */}
-            <div className="col-span-1 lg:col-span-6 grid grid-cols-2 gap-3">
-              <div className="space-y-0.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Start Date
-                  </label>
-                  <span className="text-[9px] text-amber-600 dark:text-amber-400 font-medium">
-                    Max 60 Days
-                  </span>
-                </div>
-                <input
-                  type="date"
-                  className="w-full h-8 text-xs px-2.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
-                  value={formatDateKey(startDate)}
-                  max={formatDateKey(endDate)}
-                  onChange={(e) => handleStartDateChange(e.target.value)}
-                />
-              </div>
-              <div className="space-y-0.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    End Date
-                  </label>
-                  <span className="text-[9px] text-slate-400 font-medium">
-                    Live View
-                  </span>
-                </div>
-                <input
-                  type="date"
-                  className="w-full h-8 text-xs px-2.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
-                  value={formatDateKey(endDate)}
-                  min={formatDateKey(startDate)}
-                  onChange={(e) => handleEndDateChange(e.target.value)}
-                />
-              </div>
+            {/* Custom Range Popover & Reset */}
+            <div className="flex items-center gap-1.5">
+              <Popover
+                open={isDatePickerOpen}
+                onOpenChange={(open) => {
+                  setIsDatePickerOpen(open);
+                  if (open) {
+                    setTempRange({ from: startDate, to: endDate });
+                  }
+                }}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                      "h-6.5 text-[11px] px-2.5 py-0 rounded-md border bg-white font-medium shadow-2xs flex items-center gap-1.5 transition-all",
+                      preset === "custom"
+                        ? "border-blue-500 text-blue-700 bg-blue-50/60 ring-1 ring-blue-500/20 font-semibold"
+                        : "border-slate-200 text-slate-700 hover:bg-slate-50",
+                    )}
+                  >
+                    <CalendarIcon className="h-3 w-3 text-blue-600 shrink-0" />
+                    <span>
+                      {startDate ? (
+                        endDate ? (
+                          <>
+                            {format(startDate, "LLL dd, y")} -{" "}
+                            {format(endDate, "LLL dd, y")}
+                          </>
+                        ) : (
+                          format(startDate, "LLL dd, y")
+                        )
+                      ) : (
+                        <span>Pick dates</span>
+                      )}
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-auto p-0 border border-slate-200 shadow-2xl rounded-2xl overflow-hidden bg-white"
+                  align="end"
+                >
+                  <div className="p-3 bg-white">
+                    <Calendar
+                      initialFocus
+                      mode="range"
+                      defaultMonth={tempRange?.from || startDate || new Date()}
+                      selected={tempRange}
+                      onSelect={(range) => {
+                        setTempRange(range || { from: null, to: null });
+                      }}
+                      numberOfMonths={2}
+                    />
+                  </div>
+
+                  {/* Popover Action Footer with Live Range Summary & Apply */}
+                  {(() => {
+                    const tempDaysCount =
+                      tempRange?.from && tempRange?.to
+                        ? getDaysDiff(tempRange.from, tempRange.to) + 1
+                        : 0;
+                    const isExceedingLimit =
+                      tempDaysCount > MAX_CUSTOM_RANGE_DAYS;
+                    const isApplyDisabled =
+                      !tempRange?.from || !tempRange?.to || isExceedingLimit;
+
+                    return (
+                      <div className="p-3 border-t border-slate-100 bg-slate-50/80 flex flex-col sm:flex-row items-center justify-between gap-2.5">
+                        <div className="text-xs font-medium">
+                          {tempRange?.from && tempRange?.to ? (
+                            isExceedingLimit ? (
+                              <div className="flex items-center gap-1.5 text-rose-600 font-semibold">
+                                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                                <span>
+                                  {format(tempRange.from, "dd MMM yyyy")} &rarr;{" "}
+                                  {format(tempRange.to, "dd MMM yyyy")}
+                                  <span className="ml-1.5 font-bold text-rose-600">
+                                    ({tempDaysCount} days &bull; Max{" "}
+                                    {MAX_CUSTOM_RANGE_DAYS} days allowed)
+                                  </span>
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5 text-slate-700">
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                                <span>
+                                  {format(tempRange.from, "dd MMM yyyy")} &rarr;{" "}
+                                  {format(tempRange.to, "dd MMM yyyy")}
+                                  <span className="ml-1.5 font-bold text-blue-600">
+                                    ({tempDaysCount}{" "}
+                                    {tempDaysCount === 1 ? "day" : "days"})
+                                  </span>
+                                </span>
+                              </div>
+                            )
+                          ) : (
+                            <span className="text-slate-400">
+                              Select a start and end date from the calendar
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setIsDatePickerOpen(false)}
+                            className="h-7 text-xs text-slate-600 hover:bg-slate-200/60"
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={isApplyDisabled}
+                            onClick={handleApplyCustomRange}
+                            className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3"
+                          >
+                            Apply Date Range
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </PopoverContent>
+              </Popover>
+
+              {/* Reset Filter Button */}
+              {preset !== "last7" && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleResetDates}
+                  className="h-6.5 text-[11px] px-2 text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 gap-1 rounded-md transition-colors"
+                  title="Reset to default 7 days"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  <span>Reset</span>
+                </Button>
+              )}
             </div>
           </div>
         </CardContent>
@@ -675,79 +876,110 @@ export default function WeeklyAnalyticsTab() {
 
       {/* 2. Key Metrics Card Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-        {[
-          {
-            label: "Total Feedbacks",
-            value: rangeStats.responseCount,
-            icon: Users,
-            desc: "Submitted responses in range",
-          },
-          {
-            label: "Average Rating",
-            value:
-              rangeStats.avgRating > 0
-                ? rangeStats.avgRating.toFixed(2)
-                : "0.00",
-            icon: Star,
-            desc: "Range aggregated rating",
-            rating: rangeStats.avgRating,
-          },
-          {
-            label: "Active Colleges",
-            value: rangeStats.uniqueColleges,
-            icon: Building2,
-            desc: "Colleges with feedback",
-          },
-          {
-            label: "Active Trainers",
-            value: rangeStats.uniqueTrainers,
-            icon: User,
-            desc: "Trainers rated in range",
-          },
-        ].map((m, idx) => (
-          <Card
-            key={idx}
-            className="border-slate-200 bg-white shadow-sm overflow-hidden relative"
-          >
-            <CardContent className="p-2.5 px-3 flex items-center justify-between">
-              <div className="space-y-0.5">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  {m.label}
-                </p>
-                <div className="flex items-center gap-1.5">
-                  <h3 className="text-xl font-extrabold text-slate-800">
-                    {m.value}
-                  </h3>
-                  {m.rating !== undefined && m.rating > 0 && (
-                    <Star className="h-4 w-4 text-amber-500 fill-amber-500 animate-pulse" />
-                  )}
-                </div>
-                <p className="text-[9px] text-slate-500 font-medium">
-                  {m.desc}
-                </p>
-              </div>
-              <div className="h-10 w-10 rounded-xl bg-slate-50 flex items-center justify-center border border-slate-100/50">
-                <m.icon className="h-5 w-5 text-slate-500" />
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+        {loading && feedbacks.length === 0
+          ? [1, 2, 3, 4].map((i) => (
+              <Card
+                key={`metric-skeleton-${i}`}
+                className="border-slate-200/80 bg-white shadow-xs overflow-hidden relative"
+              >
+                <CardContent className="p-2.5 px-3 flex items-center justify-between">
+                  <div className="space-y-1.5 w-full pr-2">
+                    <div className="h-2.5 w-20 bg-slate-200/80 rounded animate-pulse" />
+                    <div className="h-6 w-14 bg-slate-200 rounded animate-pulse" />
+                    <div className="h-2 w-28 bg-slate-100 rounded animate-pulse" />
+                  </div>
+                  <div className="h-10 w-10 rounded-xl bg-slate-100/80 shrink-0 animate-pulse" />
+                </CardContent>
+              </Card>
+            ))
+          : [
+              {
+                label: "Total Feedbacks",
+                value: rangeStats.responseCount.toLocaleString(),
+                icon: Users,
+                desc: "Submitted responses in range",
+              },
+              {
+                label: "Average Rating",
+                value:
+                  rangeStats.avgRating > 0
+                    ? rangeStats.avgRating.toFixed(2)
+                    : "0.00",
+                icon: Star,
+                desc: "Range aggregated rating",
+                rating: rangeStats.avgRating,
+              },
+              {
+                label: "Active Colleges",
+                value: rangeStats.uniqueColleges,
+                icon: Building2,
+                desc: "Colleges with feedback",
+              },
+              {
+                label: "Active Trainers",
+                value: rangeStats.uniqueTrainers,
+                icon: User,
+                desc: "Trainers rated in range",
+              },
+            ].map((m, idx) => (
+              <Card
+                key={idx}
+                className="border-slate-200 bg-white shadow-xs overflow-hidden relative"
+              >
+                <CardContent className="p-2.5 px-3 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      {m.label}
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="text-xl font-extrabold text-slate-800">
+                        {m.value}
+                      </h3>
+                      {m.rating !== undefined && m.rating > 0 && (
+                        <Star className="h-4 w-4 text-amber-500 fill-amber-500 animate-pulse" />
+                      )}
+                    </div>
+                    <p className="text-[9px] text-slate-500 font-medium">
+                      {m.desc}
+                    </p>
+                  </div>
+                  <div className="h-10 w-10 rounded-xl bg-slate-50 flex items-center justify-center border border-slate-100/50">
+                    <m.icon className="h-5 w-5 text-slate-500" />
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
       </div>
 
       {/* 3. Grouped Content Listing */}
-      {loading ? (
-        <Card className="border-slate-200 bg-white p-12 shadow-sm text-center">
-          <div className="flex flex-col items-center justify-center space-y-4">
-            <RefreshCw className="h-10 w-10 text-blue-500 animate-spin" />
-            <h4 className="text-sm font-bold text-slate-700">
-              Loading daily feedbacks...
-            </h4>
-            <p className="text-xs text-slate-500">
-              Querying Firestore feedbacks and mapping relationships.
-            </p>
-          </div>
-        </Card>
-      ) : groupedData.length === 0 ? (
+      {loading && feedbacks.length === 0 ? (
+        <div className="space-y-2.5">
+          {[1, 2, 3].map((s) => (
+            <Card
+              key={`row-skeleton-${s}`}
+              className="border-slate-200/80 bg-white overflow-hidden shadow-xs"
+            >
+              <div className="p-3 px-4 flex items-center justify-between bg-white border-b border-slate-100">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-lg bg-slate-100 animate-pulse shrink-0" />
+                  <div className="space-y-1.5">
+                    <div className="h-4 w-40 bg-slate-200/80 rounded animate-pulse" />
+                    <div className="h-2.5 w-24 bg-slate-100 rounded animate-pulse" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="h-6 w-20 bg-slate-100 rounded-lg animate-pulse" />
+                  <div className="h-5 w-5 bg-slate-100 rounded animate-pulse" />
+                </div>
+              </div>
+              <div className="p-3 bg-slate-50/40 space-y-2">
+                <div className="h-8 bg-white border border-slate-200/60 rounded-lg animate-pulse" />
+                <div className="h-14 bg-white border border-slate-200/60 rounded-lg animate-pulse" />
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : !loading && groupedData.length === 0 ? (
         <Card className="border-slate-200 bg-white p-12 shadow-sm text-center">
           <div className="flex flex-col items-center justify-center space-y-3">
             <AlertCircle className="h-10 w-10 text-slate-300" />
@@ -760,7 +992,7 @@ export default function WeeklyAnalyticsTab() {
           </div>
         </Card>
       ) : (
-        <div className="space-y-2">
+        <div className={cn("space-y-2 transition-opacity duration-200", loading && groupedData.length > 0 && "opacity-60 pointer-events-none")}>
           {groupedData.map((day) => {
             const isExpanded = !!expandedDates[day.dateStr];
             return (

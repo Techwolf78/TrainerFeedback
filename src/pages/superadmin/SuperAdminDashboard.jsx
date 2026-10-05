@@ -37,7 +37,6 @@ import {
   Settings,
   Calendar,
   AlertTriangle,
-  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -345,7 +344,6 @@ const SuperAdminDashboardInner = () => {
           <div className="space-y-1">
             {!isSidebarCollapsed && <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest px-3 mb-2">Main</p>}
             <NavItem id="overview" label="Dashboard" icon={LayoutDashboard} path="/super-admin/dashboard" />
-            <NavItem id="management-overview" label="Management Overview" icon={TrendingUp} path="/super-admin/management-overview" />
             <NavItem id="weekly-analytics" label="Weekly Analytics" icon={Calendar} path="/super-admin/weekly-analytics" />
           </div>
 
