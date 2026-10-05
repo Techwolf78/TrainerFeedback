@@ -235,6 +235,22 @@ export const restoreSession = async (id) => {
   }
 };
 
+// Fast, lightweight fetch of all session documents (metadata only).
+// Retrieves all sessions without limit, without subcollection reads or heavy compiledStats calculation.
+// Used for session-to-college / session-to-trainer mappings across analytics tabs.
+export const getAllSessionMetadata = async () => {
+  try {
+    const snapshot = await getDocs(collection(db, COLLECTION_NAME));
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  } catch (error) {
+    console.error("Error fetching all session metadata:", error);
+    return [];
+  }
+};
+
 // Get all sessions (allows filtering)
 export const getAllSessions = async (collegeId = null) => {
   try {

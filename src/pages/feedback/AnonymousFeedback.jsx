@@ -434,6 +434,8 @@ export const AnonymousFeedback = () => {
       const version = session.reactivationCount || 0;
       const phaseId = session.phaseId || null;
       await addResponse(sessionId, {
+        collegeId: session.collegeId || null,
+        collegeName: session.collegeName || null,
         deviceId: getDeviceId(),
         answers,
         version,
@@ -633,6 +635,8 @@ export const AnonymousFeedback = () => {
 
         // Add minimal delay to avoid write contention triggers if any
         promises.push(addResponse(sessionId, {
+          collegeId: session.collegeId || null,
+          collegeName: session.collegeName || null,
           deviceId,
           answers,
           selectedTrainerId: randomTrainer?.id || null,
@@ -693,6 +697,8 @@ export const AnonymousFeedback = () => {
         const sessionTrainers = getTrainers(session);
         const randomTrainer = sessionTrainers[Math.floor(Math.random() * sessionTrainers.length)];
         promises.push(addResponse(sessionId, {
+          collegeId: session.collegeId || null,
+          collegeName: session.collegeName || null,
           deviceId,
           answers,
           version,

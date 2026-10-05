@@ -107,6 +107,7 @@ export const getFeedbacksByDateRange = async (
   endDate,
   batchSize = 500,
   onProgress = null,
+  shouldCancel = null,
 ) => {
   try {
     const feedbacksRef = collection(db, "feedbacks");
@@ -141,6 +142,11 @@ export const getFeedbacksByDateRange = async (
 
     // Fetch in safe batches of 500 to avoid RPC timeout on large datasets
     while (hasMore) {
+      if (typeof shouldCancel === "function" && shouldCancel()) {
+        console.log("Feedback stream cancelled by user.");
+        break;
+      }
+
       const constraints = [...baseConstraints, limit(batchSize)];
       if (lastDoc) {
         constraints.push(startAfter(lastDoc));
@@ -166,6 +172,9 @@ export const getFeedbacksByDateRange = async (
         if (querySnapshot.docs.length < batchSize) {
           hasMore = false;
         }
+
+        // Micro-pause to allow browser UI thread to breathe and render smoothly
+        await new Promise((resolve) => setTimeout(resolve, 25));
       }
     }
 

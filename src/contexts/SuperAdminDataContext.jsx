@@ -20,6 +20,7 @@ import {
   getAllSessions,
   subscribeToSessions,
   getOlderSessions,
+  getAllSessionMetadata,
 } from "@/services/superadmin/sessionService";
 import { getAllTemplates } from "@/services/superadmin/templateService";
 import { getAllSystemUsers, subscribeToAdmins } from "@/services/superadmin/userService";
@@ -46,6 +47,8 @@ export const SuperAdminDataProvider = ({ children }) => {
   const [admins, setAdmins] = useState([]);
   const [projectCodes, setProjectCodes] = useState([]);
   const [academicConfigs, setAcademicConfigs] = useState({}); // { [collegeId]: config }
+  // Map of all session metadata (id -> session) for comprehensive lookups (e.g. lifetime analytics)
+  const [allSessionsMap, setAllSessionsMap] = useState({});
 
   // Pagination state for sessions
   const [sessionsLastDoc, setSessionsLastDoc] = useState(null);
@@ -64,6 +67,7 @@ export const SuperAdminDataProvider = ({ children }) => {
   const adminsRef = useRef(admins);
   const projectCodesRef = useRef(projectCodes);
   const academicConfigsRef = useRef(academicConfigs);
+  const allSessionsMapRef = useRef(allSessionsMap);
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -87,6 +91,9 @@ export const SuperAdminDataProvider = ({ children }) => {
   useEffect(() => {
     academicConfigsRef.current = academicConfigs;
   }, [academicConfigs]);
+  useEffect(() => {
+    allSessionsMapRef.current = allSessionsMap;
+  }, [allSessionsMap]);
 
   // Loading states
   const [loading, setLoading] = useState({
@@ -397,6 +404,25 @@ export const SuperAdminDataProvider = ({ children }) => {
     [loaded.sessions],
   );
 
+  // Fast lightweight load of all session documents (metadata only)
+  const loadAllSessionsMetadata = useCallback(async (force = false) => {
+    if (!force && Object.keys(allSessionsMapRef.current).length > 0) {
+      return allSessionsMapRef.current;
+    }
+    try {
+      const metaList = await getAllSessionMetadata();
+      const map = {};
+      metaList.forEach((s) => {
+        map[s.id] = s;
+      });
+      setAllSessionsMap((prev) => ({ ...prev, ...map }));
+      return map;
+    } catch (error) {
+      console.error("Failed to load all sessions metadata:", error);
+      return {};
+    }
+  }, []);
+
   // Refresh all data
   const refreshAll = useCallback(async () => {
     setLoading((prev) => ({ ...prev, initial: true }));
@@ -407,9 +433,10 @@ export const SuperAdminDataProvider = ({ children }) => {
       loadTemplates(true),
       loadAdmins(true),
       loadProjectCodes(true),
+      loadAllSessionsMetadata(true),
     ]);
     setLoading((prev) => ({ ...prev, initial: false }));
-  }, [loadColleges, loadTrainers, loadSessions, loadTemplates, loadAdmins]);
+  }, [loadColleges, loadTrainers, loadSessions, loadTemplates, loadAdmins, loadAllSessionsMetadata]);
 
   // Initial load and session subscription
   useEffect(() => {
@@ -428,6 +455,7 @@ export const SuperAdminDataProvider = ({ children }) => {
         loadTemplates(),
         loadAdmins(),
         loadProjectCodes(),
+        loadAllSessionsMetadata(),
       ]);
 
       if (!cancelled) {
@@ -454,6 +482,15 @@ export const SuperAdminDataProvider = ({ children }) => {
           setSessionsLastDoc(lastDoc);
           setHasMoreSessions(hasMore || olderSessionsRef.current.length > 0);
           setLoaded((prev) => ({ ...prev, sessions: true }));
+
+          // Keep allSessionsMap synchronized with live sessions
+          setAllSessionsMap((prev) => {
+            const next = { ...prev };
+            liveSessions.forEach((s) => {
+              next[s.id] = { ...(next[s.id] || {}), ...s };
+            });
+            return next;
+          });
         }
       });
 
@@ -599,6 +636,7 @@ export const SuperAdminDataProvider = ({ children }) => {
     templates,
     admins,
     projectCodes,
+    allSessionsMap,
 
     // Loading states
     loading,
@@ -608,6 +646,7 @@ export const SuperAdminDataProvider = ({ children }) => {
     loadColleges,
     loadTrainers,
     loadSessions,
+    loadAllSessionsMetadata,
     loadTemplates,
     loadAdmins,
     loadProjectCodes,

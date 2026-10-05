@@ -48,7 +48,13 @@ import {
 } from "@/services/superadmin/alertService";
 
 export default function WeeklyAnalyticsTab() {
-  const { sessions, colleges, trainers } = useSuperAdminData();
+  const {
+    sessions,
+    colleges,
+    trainers,
+    allSessionsMap,
+    loadAllSessionsMetadata,
+  } = useSuperAdminData();
   const navigate = useNavigate();
   const [feedbacks, setFeedbacks] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -59,6 +65,15 @@ export default function WeeklyAnalyticsTab() {
 
   // Resolved state for alerts
   const [resolvedAlertIds, setResolvedAlertIds] = useState(new Set());
+
+  // Combined full session list for accurate session resolution across older dates
+  const allSessionsList = useMemo(() => {
+    const map = { ...(allSessionsMap || {}) };
+    sessions.forEach((s) => {
+      map[s.id] = s;
+    });
+    return Object.values(map);
+  }, [sessions, allSessionsMap]);
 
   // Fetch resolved alerts from Firestore on mount
   useEffect(() => {
@@ -78,12 +93,12 @@ export default function WeeklyAnalyticsTab() {
     if (!feedbacks || feedbacks.length === 0) return 0;
     const computed = generateAlertsFromFeedbacks(
       feedbacks,
-      sessions,
+      allSessionsList,
       trainers,
       colleges,
     );
     return computed.filter((a) => !resolvedAlertIds.has(a.id)).length;
-  }, [feedbacks, sessions, trainers, colleges, resolvedAlertIds]);
+  }, [feedbacks, allSessionsList, trainers, colleges, resolvedAlertIds]);
 
   // Maximum allowed date range in days for interactive real-time inspection
   const MAX_CUSTOM_RANGE_DAYS = 62;
@@ -246,6 +261,10 @@ export default function WeeklyAnalyticsTab() {
         start.setHours(0, 0, 0, 0);
       }
 
+      if (loadAllSessionsMetadata) {
+        await loadAllSessionsMetadata();
+      }
+
       const data = await getFeedbacksByDateRange(start, end, 500, (count) => {
         setLoadedCount(count);
         setStatusStage(`Retrieved ${count.toLocaleString()} responses...`);
@@ -313,7 +332,7 @@ export default function WeeklyAnalyticsTab() {
     trainers.forEach((t) => {
       trainerMap[t.id] = t;
     });
-    const sessionMap = {};
+    const sessionMap = { ...(allSessionsMap || {}) };
     sessions.forEach((s) => {
       sessionMap[s.id] = s;
     });
@@ -470,7 +489,7 @@ export default function WeeklyAnalyticsTab() {
         avgRating: dateAvgRating,
       };
     });
-  }, [feedbacks, colleges, trainers, sessions]);
+  }, [feedbacks, colleges, trainers, sessions, allSessionsMap]);
 
   // Overall range stats
   const rangeStats = useMemo(() => {
@@ -480,7 +499,7 @@ export default function WeeklyAnalyticsTab() {
     const activeTrainers = new Set();
     const activeColleges = new Set();
 
-    const sessionMap = {};
+    const sessionMap = { ...(allSessionsMap || {}) };
     sessions.forEach((s) => {
       sessionMap[s.id] = s;
     });
@@ -516,7 +535,7 @@ export default function WeeklyAnalyticsTab() {
       uniqueColleges: activeColleges.size,
       uniqueTrainers: activeTrainers.size,
     };
-  }, [feedbacks, sessions]);
+  }, [feedbacks, sessions, allSessionsMap]);
 
   // Check if all displayed dates are expanded
   const isAllExpanded = useMemo(() => {

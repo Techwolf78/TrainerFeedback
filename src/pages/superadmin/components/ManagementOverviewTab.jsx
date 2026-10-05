@@ -66,7 +66,13 @@ import {
 } from "@/components/ui/dialog";
 
 export default function ManagementOverviewTab() {
-  const { sessions, colleges, trainers } = useSuperAdminData();
+  const {
+    sessions,
+    colleges,
+    trainers,
+    allSessionsMap,
+    loadAllSessionsMetadata,
+  } = useSuperAdminData();
   const navigate = useNavigate();
   const printRef = useRef(null);
 
@@ -103,7 +109,7 @@ export default function ManagementOverviewTab() {
     return Math.round(Math.abs(t2 - t1) / (1000 * 60 * 60 * 24));
   };
 
-  // Date filter presets: last7, last30, last60, custom
+  // Date filter presets: last7, last30, last60, lifetime, custom
   const [preset, setPreset] = useState("last30");
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
@@ -116,6 +122,10 @@ export default function ManagementOverviewTab() {
     d.setHours(23, 59, 59, 999);
     return d;
   });
+
+  // Lifetime Warning Dialog & Stream Cancellation Ref
+  const [isLifetimeWarningOpen, setIsLifetimeWarningOpen] = useState(false);
+  const cancelStreamRef = useRef(false);
 
   // Date Picker popover state and uncommitted tempRange (prevents premature queries)
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
@@ -134,8 +144,13 @@ export default function ManagementOverviewTab() {
   const [collegeTierFilter, setCollegeTierFilter] = useState("all");
   const [collegeSortBy, setCollegeSortBy] = useState("volume");
 
-  // Handle preset clicks (immediate query for standard presets)
+  // Handle preset clicks (immediate query for standard presets, confirmation for lifetime)
   const applyPreset = (presetType) => {
+    if (presetType === "lifetime") {
+      setIsLifetimeWarningOpen(true);
+      return;
+    }
+
     setPreset(presetType);
     const now = new Date();
     let start = new Date();
@@ -162,6 +177,14 @@ export default function ManagementOverviewTab() {
     setStartDate(start);
     setEndDate(end);
     setTempRange({ from: start, to: end });
+  };
+
+  // Confirm loading lifetime dataset after user accepts warning
+  const handleConfirmLifetime = () => {
+    setIsLifetimeWarningOpen(false);
+    setPreset("lifetime");
+    setStartDate(null);
+    setEndDate(null);
   };
 
   // Explicit Apply handler for Custom Date Range
@@ -196,16 +219,25 @@ export default function ManagementOverviewTab() {
     setIsDatePickerOpen(false);
   };
 
-  // Fetch feedbacks for selected range with dynamic progress
+  // Fetch feedbacks for selected range with dynamic progress and safe batch streaming
   const fetchFeedbacks = useCallback(async () => {
-    if (!startDate || !endDate) return;
+    if (preset !== "lifetime" && (!startDate || !endDate)) return;
     setLoading(true);
-    setLoadingProgress(12);
+    setLoadingProgress(10);
     setLoadedCount(0);
-    setStatusStage("Querying feedback records...");
+    cancelStreamRef.current = false;
+    setStatusStage(
+      preset === "lifetime"
+        ? "Connecting and streaming complete historical dataset..."
+        : "Querying feedback records...",
+    );
 
     const progressTimer = setInterval(() => {
       setLoadingProgress((prev) => {
+        if (preset === "lifetime") {
+          if (prev < 90) return prev + 0.4;
+          return prev;
+        }
         if (prev < 35) return prev + 5;
         if (prev < 65) return prev + 2;
         if (prev < 88) return prev + 0.8;
@@ -214,23 +246,44 @@ export default function ManagementOverviewTab() {
     }, 120);
 
     try {
-      let start = new Date(startDate);
-      let end = new Date(endDate);
+      let start = startDate;
+      let end = endDate;
 
-      const diffDays = getDaysDiff(start, end);
-      if (diffDays > MAX_CUSTOM_RANGE_DAYS) {
-        start = new Date(end);
-        start.setDate(end.getDate() - MAX_CUSTOM_RANGE_DAYS);
-        start.setHours(0, 0, 0, 0);
+      if (preset !== "lifetime" && start && end) {
+        const diffDays = getDaysDiff(start, end);
+        if (diffDays > MAX_CUSTOM_RANGE_DAYS) {
+          start = new Date(end);
+          start.setDate(end.getDate() - MAX_CUSTOM_RANGE_DAYS);
+          start.setHours(0, 0, 0, 0);
+        }
       }
 
-      const data = await getFeedbacksByDateRange(start, end, 500, (count) => {
-        setLoadedCount(count);
-        setStatusStage(`Retrieved ${count.toLocaleString()} responses...`);
-        setLoadingProgress((prev) =>
-          Math.max(prev, Math.min(90, 30 + Math.floor(count / 70))),
-        );
-      });
+      const batchSize = preset === "lifetime" ? 1000 : 500;
+
+      // Ensure all session metadata is loaded so older/lifetime sessions resolve their college info
+      if (loadAllSessionsMetadata) {
+        await loadAllSessionsMetadata();
+      }
+
+      const data = await getFeedbacksByDateRange(
+        start,
+        end,
+        batchSize,
+        (count) => {
+          setLoadedCount(count);
+          setStatusStage(`Retrieved ${count.toLocaleString()} responses...`);
+          if (preset === "lifetime") {
+            setLoadingProgress((prev) =>
+              Math.max(prev, Math.min(94, 10 + Math.floor(count / 1500))),
+            );
+          } else {
+            setLoadingProgress((prev) =>
+              Math.max(prev, Math.min(90, 30 + Math.floor(count / 70))),
+            );
+          }
+        },
+        () => cancelStreamRef.current,
+      );
 
       setStatusStage("Synthesizing metrics & CSAT benchmarks...");
       setLoadingProgress(96);
@@ -251,7 +304,7 @@ export default function ManagementOverviewTab() {
         setLoadedCount(0);
       }, 220);
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, preset]);
 
   useEffect(() => {
     fetchFeedbacks();
@@ -270,7 +323,10 @@ export default function ManagementOverviewTab() {
         pixelRatio: 2,
       });
       const link = document.createElement("a");
-      link.download = `Management-Overview-${formatDateKey(startDate)}-to-${formatDateKey(endDate)}.png`;
+      link.download =
+        preset === "lifetime"
+          ? "Management-Overview-Lifetime-All-Time.png"
+          : `Management-Overview-${formatDateKey(startDate)}-to-${formatDateKey(endDate)}.png`;
       link.href = dataUrl;
       link.click();
       toast.success("Executive snapshot saved successfully!", { id: toastId });
@@ -284,7 +340,7 @@ export default function ManagementOverviewTab() {
 
   // Aggregation & KPI Computation Pipeline
   const analytics = useMemo(() => {
-    const sessionMap = {};
+    const sessionMap = { ...(allSessionsMap || {}) };
     sessions.forEach((s) => {
       sessionMap[s.id] = s;
     });
@@ -602,7 +658,7 @@ export default function ManagementOverviewTab() {
       lowRatedSessions: lowRatedSessions.slice(0, 8),
       criticalCount: criticalRatingCount,
     };
-  }, [feedbacks, sessions, colleges, trainers]);
+  }, [feedbacks, sessions, colleges, trainers, allSessionsMap]);
 
   // Filtered trainers for the "View All" Leaderboard Modal
   const modalFilteredTrainers = useMemo(() => {
@@ -730,10 +786,25 @@ export default function ManagementOverviewTab() {
               </div>
             </div>
 
-            {/* Fresh Light Capsule Live Tag */}
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50/90 border border-blue-200/70 text-[11px] font-semibold text-blue-700 shadow-2xs">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live Data Sync
+            {/* Fresh Light Capsule Live Tag & Stop Stream Action */}
+            <div className="flex flex-col sm:flex-row items-center gap-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50/90 border border-blue-200/70 text-[11px] font-semibold text-blue-700 shadow-2xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live Data Sync
+              </div>
+              {preset === "lifetime" && loadedCount > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    cancelStreamRef.current = true;
+                    toast.info("Stopping stream and processing loaded records...");
+                  }}
+                  className="h-6.5 text-[11px] px-3 bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold rounded-full shadow-2xs"
+                >
+                  Stop & View ({loadedCount.toLocaleString()})
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -807,6 +878,7 @@ export default function ManagementOverviewTab() {
                 { id: "last7", label: "7 Days" },
                 { id: "last30", label: "30 Days" },
                 { id: "last60", label: "60 Days" },
+                { id: "lifetime", label: "Lifetime (All Time)" },
               ].map((p) => (
                 <Button
                   key={p.id}
@@ -815,7 +887,11 @@ export default function ManagementOverviewTab() {
                   className={cn(
                     "h-6.5 text-[11px] px-2.5 py-0 rounded-md font-semibold transition-all",
                     preset === p.id
-                      ? "bg-slate-900 text-white shadow-2xs border-slate-900"
+                      ? p.id === "lifetime"
+                        ? "bg-amber-600 text-white shadow-2xs border-amber-600 hover:bg-amber-700"
+                        : "bg-slate-900 text-white shadow-2xs border-slate-900"
+                      : p.id === "lifetime"
+                      ? "border-amber-200 bg-amber-50/70 text-amber-800 hover:bg-amber-100"
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900",
                   )}
                   onClick={() => applyPreset(p.id)}
@@ -843,12 +919,16 @@ export default function ManagementOverviewTab() {
                       "h-6.5 text-[11px] px-2.5 py-0 rounded-md border bg-white font-medium shadow-2xs flex items-center gap-1.5 transition-all",
                       preset === "custom"
                         ? "border-blue-500 text-blue-700 bg-blue-50/60 ring-1 ring-blue-500/20 font-semibold"
+                        : preset === "lifetime"
+                        ? "border-amber-400 text-amber-800 bg-amber-50/60 ring-1 ring-amber-400/20 font-semibold"
                         : "border-slate-200 text-slate-700 hover:bg-slate-50",
                     )}
                   >
-                    <CalendarIcon className="h-3 w-3 text-blue-600 shrink-0" />
+                    <CalendarIcon className={cn("h-3 w-3 shrink-0", preset === "lifetime" ? "text-amber-600" : "text-blue-600")} />
                     <span>
-                      {startDate ? (
+                      {preset === "lifetime" ? (
+                        <span className="font-semibold text-amber-800">All Time (Complete History)</span>
+                      ) : startDate ? (
                         endDate ? (
                           <>
                             {format(startDate, "LLL dd, y")} -{" "}
@@ -1029,7 +1109,7 @@ export default function ManagementOverviewTab() {
               </span>
             </div>
             <div className="mt-1 text-[10.5px] text-slate-500 font-medium leading-none truncate">
-              Over {getDaysDiff(startDate, endDate) + 1}-day inspection window
+              Over {startDate && endDate ? `${getDaysDiff(startDate, endDate) + 1}-day` : "lifetime"} inspection window
             </div>
           </CardContent>
         </Card>
@@ -1468,8 +1548,11 @@ export default function ManagementOverviewTab() {
                   </DialogTitle>
                   <DialogDescription className="text-[11px] text-slate-500 font-medium leading-none mt-0.5">
                     All {analytics.trainers.length} deployed trainers ranked by
-                    student rating ({format(startDate, "dd MMM")} -{" "}
-                    {format(endDate, "dd MMM yyyy")})
+                    student rating (
+                    {startDate && endDate
+                      ? `${format(startDate, "dd MMM")} - ${format(endDate, "dd MMM yyyy")}`
+                      : "Complete Lifetime History"}
+                    )
                   </DialogDescription>
                 </div>
               </div>
@@ -1664,8 +1747,11 @@ export default function ManagementOverviewTab() {
                   </DialogTitle>
                   <DialogDescription className="text-[11px] text-slate-500 font-medium leading-none mt-0.5">
                     All {analytics.colleges.length} active campuses ranked across
-                    selected window ({format(startDate, "dd MMM")} -{" "}
-                    {format(endDate, "dd MMM yyyy")})
+                    selected window (
+                    {startDate && endDate
+                      ? `${format(startDate, "dd MMM")} - ${format(endDate, "dd MMM yyyy")}`
+                      : "Complete Lifetime History"}
+                    )
                   </DialogDescription>
                 </div>
               </div>
@@ -1865,6 +1951,76 @@ export default function ManagementOverviewTab() {
               className="h-7 px-3.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-lg shadow-xs"
             >
               Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 5. Lifetime / All-Time Data Loading Confirmation & Safety Warning Modal */}
+      <Dialog
+        open={isLifetimeWarningOpen}
+        onOpenChange={setIsLifetimeWarningOpen}
+      >
+        <DialogContent className="sm:max-w-[480px] p-0 overflow-hidden border border-slate-200/90 shadow-2xl rounded-2xl bg-white">
+          <div className="p-5 space-y-4">
+            {/* Header with Amber Warning Accent */}
+            <div className="flex items-start gap-3.5">
+              <div className="h-10 w-10 rounded-xl bg-amber-500/10 text-amber-600 border border-amber-500/20 flex items-center justify-center shrink-0 shadow-2xs">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+              </div>
+              <div className="space-y-1">
+                <DialogTitle className="text-base font-bold text-slate-900 leading-tight">
+                  High-Volume Database Operation
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500 leading-relaxed">
+                  You are about to query the complete historical feedback archive
+                  (estimated <span className="font-semibold text-slate-700">200,000+ responses</span>).
+                </DialogDescription>
+              </div>
+            </div>
+
+            {/* Information & Architecture Safeguards Box */}
+            <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-3.5 space-y-2.5">
+              <div className="flex items-start gap-2 text-xs text-slate-700">
+                <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                <span className="leading-snug">
+                  <strong className="font-semibold text-slate-900">Safe Throttled Streaming:</strong>{" "}
+                  Data will be loaded sequentially in batches of 1,000 with micro-pauses to protect your browser memory and network.
+                </span>
+              </div>
+              <div className="flex items-start gap-2 text-xs text-slate-700">
+                <Zap className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                <span className="leading-snug">
+                  <strong className="font-semibold text-slate-900">Live Progress HUD:</strong>{" "}
+                  You can monitor the live count and stop the stream anytime to view loaded data instantly.
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-400 font-medium leading-normal">
+              Note: This will perform multiple Firestore read operations. Proceed if you need full-historical analytics for leadership review.
+            </p>
+          </div>
+
+          {/* Dialog Action Buttons */}
+          <div className="py-3 px-5 border-t border-slate-100 bg-slate-50/70 flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsLifetimeWarningOpen(false)}
+              className="h-8 px-4 text-xs font-semibold rounded-lg border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleConfirmLifetime}
+              className="h-8 px-4 text-xs font-semibold rounded-lg bg-amber-600 hover:bg-amber-700 text-white shadow-xs gap-1.5"
+            >
+              <Activity className="h-3.5 w-3.5" />
+              Yes, Load Lifetime Data
             </Button>
           </div>
         </DialogContent>
