@@ -139,6 +139,7 @@ const AcademicConfigTab = ({ colleges }) => {
   );
   const activeCourseName = activeProjectCode?.course || "";
   const activeYear = activeProjectCode?.year || "";
+  const activeYearNum = activeYear ? String(activeYear).replace(/\D/g, "") || String(activeYear) : "";
   const activePassingYear = activeProjectCode?.academicYear || "";
 
   // Edit modal state - replaces browser prompts with professional modal
@@ -260,6 +261,20 @@ const AcademicConfigTab = ({ colleges }) => {
     }
   }, [selectedCollegeId, selectedProjectCode]);
 
+  // Auto-select the active year tab when project code changes
+  useEffect(() => {
+    if (activeCourseName && activeYearNum) {
+      const suffixedName = activePassingYear
+        ? `${activeCourseName} (${activePassingYear})`
+        : activeCourseName;
+      setSelectedYears((prev) => ({
+        ...prev,
+        [suffixedName]: activeYearNum,
+        [activeCourseName]: activeYearNum,
+      }));
+    }
+  }, [selectedProjectCode, activeCourseName, activePassingYear, activeYearNum]);
+
   // Auto-select first active project code on mount
   useEffect(() => {
     const activePC = (projectCodes || []).find((pc) => pc.archived !== true && pc.collegeId);
@@ -324,6 +339,16 @@ const AcademicConfigTab = ({ colleges }) => {
                 [suffixedName]: { years: {} }
               }
             };
+          }
+        }
+
+        // Ensure activeYearNum exists under the suffixed course
+        if (activeYearNum && loadedConfig.courses[suffixedName]) {
+          if (!loadedConfig.courses[suffixedName].years) {
+            loadedConfig.courses[suffixedName].years = {};
+          }
+          if (!loadedConfig.courses[suffixedName].years[activeYearNum]) {
+            loadedConfig.courses[suffixedName].years[activeYearNum] = { departments: {} };
           }
         }
       }
@@ -712,54 +737,68 @@ const AcademicConfigTab = ({ colleges }) => {
 
             {/* Years (Level 2) */}
             {expandedCourses[courseName] &&
-              Object.entries(courseData.years || {}).map(([year, yearData]) => (
-                <div
-                  key={year}
-                  className="ml-6 border-l-2 border-muted pl-4 py-2"
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-semibold text-foreground flex items-center gap-2">
-                      Year {year}
-                      {getYearPassingYear(courseName, year) && (
-                        <span className="text-xs font-normal text-muted-foreground">
-                          {getYearPassingYear(courseName, year)}
-                        </span>
-                      )}
-                    </span>
-                  </div>
+              Object.entries(courseData.years || {}).map(([year, yearData]) => {
+                const depts = Object.entries(yearData.departments || {});
+                const isSelectedPcYear = activeYearNum && String(year) === String(activeYearNum);
+                
+                return (
+                  <div
+                    key={year}
+                    className="ml-6 border-l-2 border-muted pl-4 py-2"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-semibold text-foreground flex items-center gap-2">
+                        Year {year}
+                        {getYearPassingYear(courseName, year) && (
+                          <span className="text-xs font-normal text-muted-foreground">
+                            {getYearPassingYear(courseName, year)}
+                          </span>
+                        )}
+                        {isSelectedPcYear && (
+                          <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/30">
+                            Active Project Code Year
+                          </Badge>
+                        )}
+                      </span>
+                    </div>
 
-                  {/* Departments (Level 3) - displayed side by side */}
-                  <div className="flex flex-wrap gap-4 ml-4">
-                    {Object.entries(yearData.departments || {}).map(
-                      ([deptName, deptData]) => (
-                        <div
-                          key={deptName}
-                          className="bg-secondary/20 rounded-lg p-3 border border-border/50 min-w-[150px]"
-                        >
-                          <div className="flex items-center gap-2 mb-2">
-                            <BookOpen className="h-4 w-4 text-primary" />
-                            <span className="font-medium">{deptName}</span>
-                          </div>
+                    {/* Departments (Level 3) - displayed side by side */}
+                    {depts.length === 0 ? (
+                      <div className="text-xs text-muted-foreground ml-4 italic py-1">
+                        No departments configured for Year {year} yet. Click "Configure Structure" to add.
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-4 ml-4">
+                        {depts.map(([deptName, deptData]) => (
+                          <div
+                            key={deptName}
+                            className="bg-secondary/20 rounded-lg p-3 border border-border/50 min-w-[150px]"
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              <BookOpen className="h-4 w-4 text-primary" />
+                              <span className="font-medium">{deptName}</span>
+                            </div>
 
-                          {/* Batches (Level 4) */}
-                          <div className="flex flex-wrap gap-1">
-                            {(deptData.batches || []).map((batch) => (
-                              <span
-                                key={batch}
-                                className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-secondary/30 border rounded"
-                              >
-                                <Users className="h-3 w-3" />
-                                {batch}
-                              </span>
-                            ))}
+                            {/* Batches (Level 4) */}
+                            <div className="flex flex-wrap gap-1">
+                              {(deptData.batches || []).map((batch) => (
+                                <span
+                                  key={batch}
+                                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-secondary/30 border rounded"
+                                >
+                                  <Users className="h-3 w-3" />
+                                  {batch}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      ),
+                        ))}
+                      </div>
                     )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
           </div>
         ))}
       </div>
@@ -815,9 +854,12 @@ const AcademicConfigTab = ({ colleges }) => {
           ).map(
             ([courseName, courseData]) => {
               const stats = getCourseStats(courseData);
-              const years = getYearsForCourse(courseData);
+              let years = getYearsForCourse(courseData);
+              if (activeYearNum && !years.includes(activeYearNum)) {
+                years = [...years, activeYearNum].sort((a, b) => parseInt(a) - parseInt(b));
+              }
               const selectedYear =
-                selectedYears[courseName] || years[0] || null;
+                selectedYears[courseName] || (activeYearNum && years.includes(activeYearNum) ? activeYearNum : null) || years[0] || null;
 
               return (
                 <div
@@ -1059,10 +1101,58 @@ const AcademicConfigTab = ({ colleges }) => {
                         {Object.keys(
                           courseData.years[selectedYear]?.departments || {},
                         ).length === 0 && (
-                          <div className="col-span-full text-center py-6 border-2 border-dashed rounded-lg bg-muted/20">
-                            <p className="text-sm text-muted-foreground mb-2">
+                          <div className="col-span-full text-center py-6 border-2 border-dashed rounded-lg bg-muted/20 space-y-3">
+                            <p className="text-sm text-muted-foreground">
                               No departments in Year {selectedYear} yet.
                             </p>
+                            {years.filter(
+                              (y) =>
+                                y !== selectedYear &&
+                                Object.keys(courseData.years[y]?.departments || {}).length > 0
+                            ).length > 0 && (
+                              <div className="flex flex-wrap justify-center gap-2 pt-2">
+                                {years
+                                  .filter(
+                                    (y) =>
+                                      y !== selectedYear &&
+                                      Object.keys(courseData.years[y]?.departments || {}).length > 0
+                                  )
+                                  .map((sourceYear) => (
+                                    <Button
+                                      key={sourceYear}
+                                      variant="outline"
+                                      size="sm"
+                                      className="text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10"
+                                      onClick={() => {
+                                        const sourceDepts =
+                                          courseData.years[sourceYear]?.departments || {};
+                                        setConfig((prev) => ({
+                                          ...prev,
+                                          courses: {
+                                            ...prev.courses,
+                                            [courseName]: {
+                                              ...prev.courses[courseName],
+                                              years: {
+                                                ...prev.courses[courseName].years,
+                                                [selectedYear]: {
+                                                  departments: JSON.parse(
+                                                    JSON.stringify(sourceDepts)
+                                                  ),
+                                                },
+                                              },
+                                            },
+                                          },
+                                        }));
+                                        toast.success(
+                                          `Copied departments from Year ${sourceYear} to Year ${selectedYear}`
+                                        );
+                                      }}
+                                    >
+                                      Copy all branches from Year {sourceYear}
+                                    </Button>
+                                  ))}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

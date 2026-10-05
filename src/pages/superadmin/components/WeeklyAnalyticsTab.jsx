@@ -27,6 +27,8 @@ import {
   Download,
   AlertCircle,
   AlertTriangle,
+  TrendingUp,
+  LayoutDashboard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -69,6 +71,25 @@ export default function WeeklyAnalyticsTab() {
     );
     return computed.filter((a) => !resolvedAlertIds.has(a.id)).length;
   }, [feedbacks, sessions, trainers, colleges, resolvedAlertIds]);
+
+  // Maximum allowed date range in days for interactive real-time inspection
+  const MAX_CUSTOM_RANGE_DAYS = 60;
+
+  // Format Helper: Get YYYY-MM-DD key (local timezone safe)
+  const formatDateKey = (date) => {
+    if (!date || isNaN(date.getTime())) return "";
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  // Helper to calculate exact calendar days difference between two dates
+  const getDaysDiff = (d1, d2) => {
+    const t1 = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate()).getTime();
+    const t2 = new Date(d2.getFullYear(), d2.getMonth(), d2.getDate()).getTime();
+    return Math.round(Math.abs(t2 - t1) / (1000 * 60 * 60 * 24));
+  };
 
   // Date filter states
   const [preset, setPreset] = useState("last7"); // last7, thisWeek, lastWeek, last30, custom
@@ -127,12 +148,85 @@ export default function WeeklyAnalyticsTab() {
     setEndDate(end);
   };
 
+  // Handle Start Date change with 60-day limit validation
+  const handleStartDateChange = (val) => {
+    if (!val) return;
+    setPreset("custom");
+    const [year, month, day] = val.split("-").map(Number);
+    const newStart = new Date(year, month - 1, day, 0, 0, 0, 0);
+
+    // If start is after current end date, move end date forward
+    if (newStart > endDate) {
+      const newEnd = new Date(newStart);
+      newEnd.setDate(newStart.getDate() + 7);
+      newEnd.setHours(23, 59, 59, 999);
+      setStartDate(newStart);
+      setEndDate(newEnd);
+      return;
+    }
+
+    // Check if range exceeds MAX_CUSTOM_RANGE_DAYS
+    const diffDays = getDaysDiff(newStart, endDate);
+    if (diffDays > MAX_CUSTOM_RANGE_DAYS) {
+      const newEnd = new Date(newStart);
+      newEnd.setDate(newStart.getDate() + MAX_CUSTOM_RANGE_DAYS);
+      newEnd.setHours(23, 59, 59, 999);
+      setStartDate(newStart);
+      setEndDate(newEnd);
+      toast.info(`Custom range limited to maximum ${MAX_CUSTOM_RANGE_DAYS} days. End date adjusted.`);
+      return;
+    }
+
+    setStartDate(newStart);
+  };
+
+  // Handle End Date change with 60-day limit validation
+  const handleEndDateChange = (val) => {
+    if (!val) return;
+    setPreset("custom");
+    const [year, month, day] = val.split("-").map(Number);
+    const newEnd = new Date(year, month - 1, day, 23, 59, 59, 999);
+
+    // If end is before current start date, move start date backward
+    if (newEnd < startDate) {
+      const newStart = new Date(newEnd);
+      newStart.setDate(newEnd.getDate() - 7);
+      newStart.setHours(0, 0, 0, 0);
+      setStartDate(newStart);
+      setEndDate(newEnd);
+      return;
+    }
+
+    // Check if range exceeds MAX_CUSTOM_RANGE_DAYS
+    const diffDays = getDaysDiff(startDate, newEnd);
+    if (diffDays > MAX_CUSTOM_RANGE_DAYS) {
+      const newStart = new Date(newEnd);
+      newStart.setDate(newEnd.getDate() - MAX_CUSTOM_RANGE_DAYS);
+      newStart.setHours(0, 0, 0, 0);
+      setStartDate(newStart);
+      setEndDate(newEnd);
+      toast.info(`Custom range limited to maximum ${MAX_CUSTOM_RANGE_DAYS} days. Start date adjusted.`);
+      return;
+    }
+
+    setEndDate(newEnd);
+  };
+
   // Fetch feedbacks for selected range
   const fetchFeedbacks = async () => {
     setLoading(true);
     try {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
+      let start = new Date(startDate);
+      let end = new Date(endDate);
+
+      // Clamp query safely without triggering state re-renders
+      const diffDays = getDaysDiff(start, end);
+      if (diffDays > MAX_CUSTOM_RANGE_DAYS) {
+        start = new Date(end);
+        start.setDate(end.getDate() - MAX_CUSTOM_RANGE_DAYS);
+        start.setHours(0, 0, 0, 0);
+      }
+
       const data = await getFeedbacksByDateRange(start, end);
       setFeedbacks(data || []);
 
@@ -160,15 +254,6 @@ export default function WeeklyAnalyticsTab() {
   useEffect(() => {
     fetchFeedbacks();
   }, [startDate, endDate]);
-
-  // Format Helper: Get YYYY-MM-DD key
-  const formatDateKey = (date) => {
-    if (!date || isNaN(date.getTime())) return "Unknown Date";
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  };
 
   // Format Helper: Format key to readable day (e.g. "Monday, Jun 15, 2026")
   const formatReadableDate = (dateKey) => {
@@ -456,6 +541,14 @@ export default function WeeklyAnalyticsTab() {
 
             <div className="flex items-center gap-2">
               <Button
+                size="sm"
+                onClick={() => navigate("/super-admin/management-overview")}
+                className="h-8 text-xs gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm"
+              >
+                <TrendingUp className="h-3.5 w-3.5" />
+                Overview
+              </Button>
+              <Button
                 variant="outline"
                 size="sm"
                 className="h-8 text-xs border-slate-200 hover:bg-slate-50 hover:text-slate-700 gap-1.5"
@@ -542,39 +635,37 @@ export default function WeeklyAnalyticsTab() {
             {/* Custom Range Date Fields */}
             <div className="col-span-1 lg:col-span-6 grid grid-cols-2 gap-3">
               <div className="space-y-0.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Start Date
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Start Date
+                  </label>
+                  <span className="text-[9px] text-amber-600 dark:text-amber-400 font-medium">
+                    Max 60 Days
+                  </span>
+                </div>
                 <input
                   type="date"
                   className="w-full h-8 text-xs px-2.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
-                  value={startDate.toISOString().split("T")[0]}
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      setPreset("custom");
-                      const d = new Date(e.target.value);
-                      d.setHours(0, 0, 0, 0);
-                      setStartDate(d);
-                    }
-                  }}
+                  value={formatDateKey(startDate)}
+                  max={formatDateKey(endDate)}
+                  onChange={(e) => handleStartDateChange(e.target.value)}
                 />
               </div>
               <div className="space-y-0.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  End Date
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    End Date
+                  </label>
+                  <span className="text-[9px] text-slate-400 font-medium">
+                    Live View
+                  </span>
+                </div>
                 <input
                   type="date"
                   className="w-full h-8 text-xs px-2.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
-                  value={endDate.toISOString().split("T")[0]}
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      setPreset("custom");
-                      const d = new Date(e.target.value);
-                      d.setHours(23, 59, 59, 999);
-                      setEndDate(d);
-                    }
-                  }}
+                  value={formatDateKey(endDate)}
+                  min={formatDateKey(startDate)}
+                  onChange={(e) => handleEndDateChange(e.target.value)}
                 />
               </div>
             </div>

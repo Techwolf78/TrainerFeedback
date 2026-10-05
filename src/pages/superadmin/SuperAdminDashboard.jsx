@@ -37,11 +37,13 @@ import {
   Settings,
   Calendar,
   AlertTriangle,
+  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Import Tab Components
 import OverviewTab from "./components/OverviewTab";
+import ManagementOverviewTab from "./components/ManagementOverviewTab";
 import CollegesTab from "./components/CollegesTab";
 import AdminsTab from "./components/AdminsTab";
 import SessionsTab from "./components/SessionsTab";
@@ -177,6 +179,8 @@ const SuperAdminDashboardInner = () => {
         return "analytics";
       case "weekly-analytics":
         return "weekly-analytics";
+      case "management-overview":
+        return "management-overview";
       case "profile":
         return "profile";
       case "alerts":
@@ -192,6 +196,7 @@ const SuperAdminDashboardInner = () => {
   // Determine if snapshot is allowed (including sub-views)
   const isSnapshotAllowed =
     activeTab === "overview" ||
+    activeTab === "management-overview" ||
     activeTab === "colleges" ||
     activeTab === "trainers" ||
     activeTab === "analytics" ||
@@ -294,6 +299,8 @@ const SuperAdminDashboardInner = () => {
         return "System Settings";
       case "weekly-analytics":
         return "Weekly Analytics";
+      case "management-overview":
+        return "Executive Management Overview";
       case "profile":
         return "My Profile";
       case "alerts":
@@ -338,6 +345,7 @@ const SuperAdminDashboardInner = () => {
           <div className="space-y-1">
             {!isSidebarCollapsed && <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest px-3 mb-2">Main</p>}
             <NavItem id="overview" label="Dashboard" icon={LayoutDashboard} path="/super-admin/dashboard" />
+            <NavItem id="management-overview" label="Management Overview" icon={TrendingUp} path="/super-admin/management-overview" />
             <NavItem id="weekly-analytics" label="Weekly Analytics" icon={Calendar} path="/super-admin/weekly-analytics" />
           </div>
 
@@ -523,6 +531,8 @@ const SuperAdminDashboardInner = () => {
               {activeTab === "settings" && <SettingsTab />}
 
               {activeTab === "weekly-analytics" && <WeeklyAnalyticsTab />}
+
+              {activeTab === "management-overview" && <ManagementOverviewTab />}
 
               {activeTab === "profile" && <ProfilePage />}
             </div>

@@ -312,6 +312,13 @@ export const SuperAdminDataProvider = ({ children }) => {
       const result = await createProjectCodeService(data);
       // Update local state
       setProjectCodes((prev) => [result, ...prev]);
+      if (data.collegeId) {
+        setAcademicConfigs((prev) => {
+          const next = { ...prev };
+          delete next[data.collegeId];
+          return next;
+        });
+      }
       toast.success("Project code created successfully");
       return result;
     } catch (error) {
@@ -332,6 +339,13 @@ export const SuperAdminDataProvider = ({ children }) => {
       setProjectCodes((prev) =>
         prev.map((c) => (c.id === id ? { ...c, ...result } : c)),
       );
+      if (data.collegeId) {
+        setAcademicConfigs((prev) => {
+          const next = { ...prev };
+          delete next[data.collegeId];
+          return next;
+        });
+      }
       toast.success("Project code updated successfully");
       return result;
     } catch (error) {

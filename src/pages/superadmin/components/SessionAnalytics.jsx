@@ -14,7 +14,14 @@ import {
 } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge"; // Added for live indicator
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   ArrowLeft,
   Star,
@@ -30,6 +37,9 @@ import {
   Camera,
   RefreshCw, // Added for live analytics refresh
   Loader2, // Added for loading state
+  BarChart3,
+  Activity,
+  Filter,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -48,6 +58,11 @@ import {
   PolarGrid,
   PolarAngleAxis,
   PolarRadiusAxis,
+  ComposedChart,
+  Line,
+  Area,
+  Legend,
+  LabelList,
 } from "recharts";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
@@ -57,6 +72,7 @@ import { db } from "@/services/firebase";
 import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import { processQualitativeComments, compileSessionStats, isValidTopicOrInterest, compileSessionStatsFromResponses } from "@/services/superadmin/responseService";
 import { updateSession } from "@/services/superadmin/sessionService";
+import { cn } from "@/lib/utils";
 
 // Helper function to get a color from red (0) to yellow (2.5) to green (5)
 const getDynamicColor = (rating) => {
@@ -67,10 +83,10 @@ const getDynamicColor = (rating) => {
   return `hsl(${hue}, 65%, 45%)`;
 };
 
-const SessionAnalytics = ({ session, onBack }) => {
+const SessionAnalytics = ({ session, onBack, initialTrainer = null }) => {
   const analyticsRef = useRef(null);
   const hasFullStats = session?.compiledStats && session?.compiledStats.ratingDistribution;
-  const [stats, setStats] = useState(() => {
+  const [baseStats, setBaseStats] = useState(() => {
     if (!hasFullStats) return null;
     const cs = session.compiledStats;
     return {
@@ -80,11 +96,13 @@ const SessionAnalytics = ({ session, onBack }) => {
       avgComments: processQualitativeComments(cs.avgComments)
     };
   });
+  const setStats = setBaseStats;
   const [loading, setLoading] = useState(!hasFullStats);
   const [isLive, setIsLive] = useState(session?.status === "active");
   const [learnedLimit, setLearnedLimit] = useState(25);
   const [futureLimit, setFutureLimit] = useState(25);
   const [liveResponses, setLiveResponses] = useState([]);
+  const [trendViewMode, setTrendViewMode] = useState("area"); // 'area' | 'bar'
 
   const fetchLiveStats = async (showToast = false) => {
     try {
@@ -173,6 +191,22 @@ const SessionAnalytics = ({ session, onBack }) => {
 
     if (session.status !== "active") {
       fetchLiveStats();
+      // Load responses for closed sessions to compute dynamic trainer analytics and date-wise timeline
+      const loadClosedResponses = async () => {
+        try {
+          const { getResponses } = await import("@/services/superadmin/responseService");
+          const allResponses = await getResponses(session.id);
+          const version = session.reactivationCount || 0;
+          let responses = (allResponses || []).filter((r) => (r.version ?? 0) === version);
+          if (responses.length === 0 && (allResponses || []).length > 0) {
+            responses = allResponses;
+          }
+          setLiveResponses(responses);
+        } catch (err) {
+          console.error("Failed to load closed session responses for timeline:", err);
+        }
+      };
+      loadClosedResponses();
       return;
     }
 
@@ -190,7 +224,10 @@ const SessionAnalytics = ({ session, onBack }) => {
         }));
 
         const version = session.reactivationCount || 0;
-        const responses = rawResponses.filter((r) => (r.version ?? 0) === version);
+        let responses = rawResponses.filter((r) => (r.version ?? 0) === version);
+        if (responses.length === 0 && rawResponses.length > 0) {
+          responses = rawResponses;
+        }
 
         const compiled = compileSessionStatsFromResponses(
           responses,
@@ -198,7 +235,7 @@ const SessionAnalytics = ({ session, onBack }) => {
           session.id
         );
 
-        setStats({
+        setBaseStats({
           ...compiled,
           topComments: processQualitativeComments(compiled.topComments, "high"),
           leastRatedComments: processQualitativeComments(compiled.leastRatedComments, "low"),
@@ -215,6 +252,314 @@ const SessionAnalytics = ({ session, onBack }) => {
 
     return () => unsubscribe();
   }, [session?.id, session?.status]);
+
+  // 1. Session Trainers Extraction
+  const sessionTrainers = useMemo(() => {
+    const map = new Map();
+    // From session assigned trainers
+    const assigned = session?.assignedTrainers || (session?.assignedTrainer ? [session.assignedTrainer] : []);
+    assigned.forEach((t) => {
+      const name = t?.name?.trim();
+      const id = t?.id || name;
+      if (name) {
+        map.set(name.toLowerCase(), { id, name });
+      }
+    });
+    // From live responses
+    (liveResponses || []).forEach((r) => {
+      const name = r.selectedTrainerName?.trim() || r.trainerName?.trim();
+      const id = r.selectedTrainerId || r.trainerId || name;
+      if (name && !map.has(name.toLowerCase())) {
+        map.set(name.toLowerCase(), { id, name });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [session, liveResponses]);
+
+  // Trainer response counts
+  const trainerResponseCounts = useMemo(() => {
+    const counts = {};
+    if (!liveResponses || liveResponses.length === 0) return counts;
+
+    if (sessionTrainers.length === 1) {
+      counts[sessionTrainers[0].name] = liveResponses.length;
+      return counts;
+    }
+
+    sessionTrainers.forEach((t) => {
+      const targetName = t.name.trim().toLowerCase();
+      const targetId = String(t.id || "").trim().toLowerCase();
+
+      const matchedCount = liveResponses.filter((r) => {
+        const tName = (r.selectedTrainerName || r.trainerName || "").trim().toLowerCase();
+        const tId = String(r.selectedTrainerId || r.trainerId || "").trim().toLowerCase();
+        if (tName === targetName || (targetId && tId === targetId)) return true;
+        if (tName && targetName && (tName.includes(targetName) || targetName.includes(tName))) return true;
+        return false;
+      }).length;
+
+      counts[t.name] = matchedCount;
+    });
+
+    return counts;
+  }, [liveResponses, sessionTrainers]);
+
+  // Active session trainers with > 0 reviews (or fallback to assigned trainers if no reviews yet)
+  const activeSessionTrainers = useMemo(() => {
+    if (!liveResponses || liveResponses.length === 0) return sessionTrainers;
+    const withResponses = sessionTrainers.filter(
+      (t) => (trainerResponseCounts[t.name] || 0) > 0,
+    );
+    return withResponses.length > 0 ? withResponses : sessionTrainers;
+  }, [sessionTrainers, trainerResponseCounts, liveResponses]);
+
+  // 2. Selected Trainer state
+  const [selectedTrainer, setSelectedTrainer] = useState(() => {
+    if (initialTrainer) return initialTrainer;
+    return "all";
+  });
+
+  // Sync selectedTrainer when initialTrainer or activeSessionTrainers change
+  useEffect(() => {
+    if (
+      initialTrainer &&
+      activeSessionTrainers.some(
+        (t) => t.name.toLowerCase() === initialTrainer.toLowerCase(),
+      )
+    ) {
+      const matched = activeSessionTrainers.find(
+        (t) => t.name.toLowerCase() === initialTrainer.toLowerCase(),
+      );
+      setSelectedTrainer(matched.name);
+    } else if (activeSessionTrainers.length === 1) {
+      setSelectedTrainer(activeSessionTrainers[0].name);
+    } else if (
+      selectedTrainer !== "all" &&
+      activeSessionTrainers.length > 0 &&
+      !activeSessionTrainers.some(
+        (t) => t.name.toLowerCase() === selectedTrainer.toLowerCase(),
+      )
+    ) {
+      setSelectedTrainer("all");
+    }
+  }, [initialTrainer, activeSessionTrainers]);
+
+  // 3. Filtered responses by selected trainer
+  const filteredResponses = useMemo(() => {
+    if (!liveResponses || liveResponses.length === 0) return [];
+    if (selectedTrainer === "all") return liveResponses;
+    if (
+      activeSessionTrainers.length === 1 &&
+      activeSessionTrainers[0].name.toLowerCase() ===
+        selectedTrainer.toLowerCase()
+    ) {
+      return liveResponses;
+    }
+    const target = selectedTrainer.trim().toLowerCase();
+    const matchedTrainerObj = sessionTrainers.find(
+      (t) => t.name.toLowerCase() === target,
+    );
+    const targetId = matchedTrainerObj?.id
+      ? String(matchedTrainerObj.id).trim().toLowerCase()
+      : "";
+
+    return liveResponses.filter((r) => {
+      const tName = (
+        r.selectedTrainerName ||
+        r.trainerName ||
+        ""
+      )
+        .trim()
+        .toLowerCase();
+      const tId = String(r.selectedTrainerId || r.trainerId || "")
+        .trim()
+        .toLowerCase();
+      if (tName === target) return true;
+      if (targetId && tId === targetId) return true;
+      if (
+        tName &&
+        target &&
+        (tName.includes(target) || target.includes(tName))
+      )
+        return true;
+      return false;
+    });
+  }, [liveResponses, selectedTrainer, sessionTrainers, activeSessionTrainers]);
+
+  // 4. Effective Stats for Selected Trainer or Entire Session
+  const stats = useMemo(() => {
+    const responsesToUse =
+      selectedTrainer === "all"
+        ? (liveResponses && liveResponses.length > 0 ? liveResponses : [])
+        : filteredResponses;
+
+    if (responsesToUse && responsesToUse.length > 0) {
+      const compiled = compileSessionStatsFromResponses(
+        responsesToUse,
+        session?.questions || [],
+        session?.id
+      );
+      return {
+        ...compiled,
+        topComments: processQualitativeComments(compiled.topComments, "high"),
+        leastRatedComments: processQualitativeComments(compiled.leastRatedComments, "low"),
+        avgComments: processQualitativeComments(compiled.avgComments),
+      };
+    }
+
+    if (selectedTrainer !== "all" && filteredResponses.length === 0) {
+      return {
+        totalResponses: 0,
+        avgRating: 0,
+        topRating: 0,
+        leastRating: 0,
+        ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+        topComments: [],
+        leastRatedComments: [],
+        avgComments: [],
+        questionStats: {},
+        categoryAverages: {
+          knowledge: 0,
+          communication: 0,
+          engagement: 0,
+          content: 0,
+          delivery: 0,
+          overall: 0,
+        },
+        topicsLearned: [],
+        futureTopics: [],
+        compiledAt: new Date().toISOString(),
+      };
+    }
+
+    return baseStats;
+  }, [baseStats, liveResponses, filteredResponses, selectedTrainer, session]);
+
+  // Compute Date-wise Timeline Data & Metrics for the Session
+  const { dateWiseTrend, trendMetrics } = useMemo(() => {
+    const responsesToUse = filteredResponses;
+    if (!responsesToUse || responsesToUse.length === 0) {
+      return { dateWiseTrend: [], trendMetrics: null };
+    }
+
+    const dateMap = {};
+
+    responsesToUse.forEach((r) => {
+      let d;
+      if (r.submittedAt?.toDate) {
+        d = r.submittedAt.toDate();
+      } else if (r.submittedAt) {
+        d = new Date(r.submittedAt);
+      }
+
+      if (!d || isNaN(d.getTime())) return;
+
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const dateKey = `${year}-${month}-${day}`;
+
+      const shortMonth = d.toLocaleDateString("en-US", { month: "short" });
+      const dayNum = d.getDate();
+      const dayOfWeek = d.toLocaleDateString("en-US", { weekday: "short" });
+
+      if (!dateMap[dateKey]) {
+        dateMap[dateKey] = {
+          dateKey,
+          displayDate: `${dayNum} ${shortMonth}`,
+          fullDate: `${dayOfWeek}, ${dayNum} ${shortMonth} ${year}`,
+          count: 0,
+          ratingSum: 0,
+          ratingCount: 0,
+        };
+      }
+
+      dateMap[dateKey].count += 1;
+
+      // Extract rating from answers or response object
+      let respRating = null;
+      if (typeof r.avgRating === "number" && r.avgRating > 0) {
+        respRating = r.avgRating;
+      } else if (r.answers && Array.isArray(r.answers)) {
+        const ratingAnswers = r.answers.filter((a) => {
+          const type = (a.type || "").toLowerCase();
+          if (type === "rating" || type === "overall" || type === "star" || type === "scale") return true;
+          const numVal = Number(a.value);
+          return !isNaN(numVal) && numVal >= 1 && numVal <= 5 && String(a.value).trim() !== "" && (type === "" || type === "number");
+        });
+        if (ratingAnswers.length > 0) {
+          respRating =
+            ratingAnswers.reduce((sum, a) => sum + (Number(a.value) || 0), 0) /
+            ratingAnswers.length;
+        }
+      }
+
+      if (respRating !== null && respRating > 0) {
+        dateMap[dateKey].ratingSum += respRating;
+        dateMap[dateKey].ratingCount += 1;
+      }
+    });
+
+    const sortedKeys = Object.keys(dateMap).sort((a, b) => a.localeCompare(b));
+
+    const trend = sortedKeys.map((k) => ({
+      date: dateMap[k].displayDate,
+      fullDate: dateMap[k].fullDate,
+      responses: dateMap[k].count,
+      avgRating:
+        dateMap[k].ratingCount > 0
+          ? Number((dateMap[k].ratingSum / dateMap[k].ratingCount).toFixed(2))
+          : 0,
+    }));
+
+    let peakDay = null;
+    let maxResponses = 0;
+    let totalSubmissions = 0;
+    let weightedRatingSum = 0;
+
+    trend.forEach((item) => {
+      totalSubmissions += item.responses;
+      if (item.responses > maxResponses) {
+        maxResponses = item.responses;
+        peakDay = item;
+      }
+      if (item.avgRating > 0) {
+        weightedRatingSum += item.avgRating * item.responses;
+      }
+    });
+
+    const avgDaily = trend.length > 0 ? Math.round(totalSubmissions / trend.length) : 0;
+    const overallAvgRating = totalSubmissions > 0 ? (weightedRatingSum / totalSubmissions).toFixed(2) : "0.00";
+
+    const validRatings = trend.map((t) => t.avgRating).filter((r) => r > 0);
+    const minRating = validRatings.length > 0 ? Math.min(...validRatings) : 4.0;
+    const maxRating = validRatings.length > 0 ? Math.max(...validRatings) : 5.0;
+
+    // Adaptive rating scale so the curve doesn't flatten at 5.0
+    let ratingMin = Math.max(0, Math.floor(minRating * 2) / 2 - 0.5);
+    if (ratingMin > 4.0) ratingMin = 4.0;
+    if (minRating < 2.5) ratingMin = 0;
+
+    const ratingTicks = [];
+    const step = (5.0 - ratingMin) / 4;
+    for (let v = ratingMin; v <= 5.001; v += step) {
+      ratingTicks.push(Number(v.toFixed(2)));
+    }
+
+    return {
+      dateWiseTrend: trend,
+      trendMetrics: {
+        totalDays: trend.length,
+        totalSubmissions,
+        peakDay: peakDay ? `${peakDay.date} (${peakDay.responses})` : "N/A",
+        avgDaily,
+        overallAvgRating,
+        ratingMin,
+        ratingMax: 5.0,
+        ratingTicks,
+      },
+    };
+  }, [filteredResponses]);
 
   const filteredTopicsLearned = useMemo(() => {
     return (stats?.topicsLearned || []).filter(isValidTopicOrInterest);
@@ -507,14 +852,46 @@ const SessionAnalytics = ({ session, onBack }) => {
   const learnedToShow = filteredTopicsLearned.slice(0, learnedLimit);
   const futureToShow = filteredFutureTopics.slice(0, futureLimit);
 
+  const ratingColors = {
+    5: "#10b981", // Emerald
+    4: "#3b82f6", // Blue
+    3: "#f59e0b", // Amber
+    2: "#f97316", // Orange
+    1: "#ef4444", // Rose
+  };
+
+  const totalRatingVotes = Object.values(stats.ratingDistribution || {}).reduce(
+    (sum, count) => sum + (Number(count) || 0),
+    0,
+  );
+
   // Prepare chart data - all ratings for bar chart (including zeros)
   const ratingDataAll = Object.entries(stats.ratingDistribution || {}).map(
-    ([rating, count]) => ({
-      name: `${rating} Star`,
-      value: count,
-      rating: parseInt(rating),
-    }),
+    ([rating, count]) => {
+      const rNum = parseInt(rating);
+      const percentage =
+        totalRatingVotes > 0
+          ? ((count / totalRatingVotes) * 100).toFixed(1)
+          : "0.0";
+      return {
+        name: `${rating} Star`,
+        value: count,
+        rating: rNum,
+        percentage,
+        color: ratingColors[rNum] || "#64748b",
+      };
+    },
   );
+
+  // State for hovered bar in Rating Distribution chart
+  const [hoveredBarRating, setHoveredBarRating] = useState(null);
+  // State for hovered slice in Rating Breakdown Donut chart
+  const [hoveredDonutRating, setHoveredDonutRating] = useState(null);
+
+  // Maximum value for domain scaling with label clearance
+  const maxRatingCount = useMemo(() => {
+    return Math.max(...ratingDataAll.map((d) => d.value || 0), 1);
+  }, [ratingDataAll]);
 
   // Filtered data for pie chart (exclude zeros)
   const ratingDataFiltered = ratingDataAll.filter((item) => item.value > 0);
@@ -589,7 +966,34 @@ const SessionAnalytics = ({ session, onBack }) => {
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 snapshot-ignore">
+        <div className="flex items-center gap-2 flex-wrap snapshot-ignore">
+          {/* Trainer Filter Dropdown (Only shows trainers who have > 0 reviews) */}
+          {activeSessionTrainers.length > 0 && (
+            <div className="flex items-center gap-1">
+              <Select
+                value={selectedTrainer}
+                onValueChange={(val) => setSelectedTrainer(val)}
+              >
+                <SelectTrigger className="h-7 text-xs font-semibold bg-white border-slate-200 min-w-[170px] max-w-[260px] shadow-2xs">
+                  <User className="h-3.5 w-3.5 text-indigo-600 mr-1 shrink-0" />
+                  <SelectValue placeholder="Select Trainer" />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeSessionTrainers.length > 1 && (
+                    <SelectItem value="all" className="text-xs font-semibold">
+                      All Trainers ({liveResponses.length} Submissions)
+                    </SelectItem>
+                  )}
+                  {activeSessionTrainers.map((t) => (
+                    <SelectItem key={t.name} value={t.name} className="text-xs font-medium">
+                      {t.name} {trainerResponseCounts[t.name] !== undefined ? `(${trainerResponseCounts[t.name]} reviews)` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {session.status === "active" && (
             <Button
               variant="outline"
@@ -816,7 +1220,7 @@ const SessionAnalytics = ({ session, onBack }) => {
 
       {/* Advanced Chart Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-10 gap-4">
-        {/* Rating Distribution (BarChart) */}
+        {/* Rating Distribution (BarChart with Interactive Numbers) */}
         <Card className="lg:col-span-4">
           <CardHeader className="pb-1 pt-2">
             <CardTitle className="text-[13px] font-medium">
@@ -829,14 +1233,31 @@ const SessionAnalytics = ({ session, onBack }) => {
           <CardContent className="pt-0 pb-2">
             <div className="h-[160px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={ratingDataAll} layout="vertical">
+                <BarChart
+                  key={`bar-${selectedTrainer}-${filteredResponses.length}`}
+                  data={ratingDataAll}
+                  layout="vertical"
+                  margin={{ top: 2, right: 38, left: -4, bottom: 2 }}
+                  onMouseMove={(state) => {
+                    if (state?.isTooltipActive && state?.activePayload?.length) {
+                      setHoveredBarRating(state.activePayload[0].payload.rating);
+                    } else {
+                      setHoveredBarRating(null);
+                    }
+                  }}
+                  onMouseLeave={() => setHoveredBarRating(null)}
+                >
                   <CartesianGrid
                     strokeDasharray="3 3"
                     horizontal={true}
                     vertical={false}
                     stroke="hsl(var(--muted-foreground)/0.1)"
                   />
-                  <XAxis type="number" hide />
+                  <XAxis
+                    type="number"
+                    domain={[0, Math.ceil(maxRatingCount * 1.2)]}
+                    hide
+                  />
                   <YAxis
                     dataKey="name"
                     type="category"
@@ -851,10 +1272,18 @@ const SessionAnalytics = ({ session, onBack }) => {
                     cursor={{ fill: "hsl(var(--muted)/0.4)" }}
                     content={({ active, payload }) => {
                       if (active && payload && payload.length) {
+                        const item = payload[0].payload;
                         return (
-                          <div className="bg-background border border-border p-1.5 rounded shadow-lg">
-                            <p className="text-[13px] font-bold">
-                              {payload[0].value} responses
+                          <div className="bg-white border border-slate-200 p-2 rounded-lg shadow-lg text-xs space-y-0.5">
+                            <p
+                              className="font-bold flex items-center gap-1.5"
+                              style={{ color: item.color }}
+                            >
+                              <Star className="h-3 w-3 fill-current" />
+                              {item.name}
+                            </p>
+                            <p className="text-[11px] font-semibold text-slate-800">
+                              {item.value} responses ({item.percentage}%)
                             </p>
                           </div>
                         );
@@ -862,23 +1291,75 @@ const SessionAnalytics = ({ session, onBack }) => {
                       return null;
                     }}
                   />
-                  <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={16}>
-                    {ratingDataAll.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={
-                          entry.rating === 5
-                            ? "#22c55e"
-                            : entry.rating === 4
-                              ? "#84cc16"
-                              : entry.rating === 3
-                                ? "#eab308"
-                                : entry.rating === 2
-                                  ? "#f97316"
-                                  : "#ef4444"
+                  <Bar
+                    dataKey="value"
+                    radius={[0, 4, 4, 0]}
+                    barSize={16}
+                    onMouseEnter={(entry) => setHoveredBarRating(entry.rating)}
+                    onMouseLeave={() => setHoveredBarRating(null)}
+                  >
+                    {ratingDataAll.map((entry, index) => {
+                      const isHovered = hoveredBarRating === entry.rating;
+                      const isAnyHovered = hoveredBarRating !== null;
+                      return (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={
+                            entry.rating === 5
+                              ? "#22c55e"
+                              : entry.rating === 4
+                                ? "#84cc16"
+                                : entry.rating === 3
+                                  ? "#eab308"
+                                  : entry.rating === 2
+                                    ? "#f97316"
+                                    : "#ef4444"
+                          }
+                          opacity={isAnyHovered ? (isHovered ? 1 : 0.38) : 1}
+                          className="transition-opacity duration-150 cursor-pointer"
+                        />
+                      );
+                    })}
+                    <LabelList
+                      dataKey="value"
+                      position="right"
+                      content={(props) => {
+                        const { x, y, width, height, value, index } = props;
+                        const entry = ratingDataAll[index];
+                        if (!entry) return null;
+
+                        const isHovered = hoveredBarRating === entry.rating;
+                        const isAnyHovered = hoveredBarRating !== null;
+
+                        // When any bar is hovered, hide other numbers so ONLY the hovered bar is visible
+                        if (isAnyHovered && !isHovered) {
+                          return null;
                         }
-                      />
-                    ))}
+
+                        return (
+                          <text
+                            x={x + width + 8}
+                            y={y + height / 2 + 3.5}
+                            fill={isHovered ? entry.color : "#64748b"}
+                            fontSize={isHovered ? "11px" : "10px"}
+                            fontWeight={isHovered ? "800" : "600"}
+                            className="transition-all duration-150 select-none"
+                          >
+                            {value}
+                            {isHovered && (
+                              <tspan
+                                dx="4"
+                                fontSize="9px"
+                                fontWeight="500"
+                                fill="#94a3b8"
+                              >
+                                ({entry.percentage}%)
+                              </tspan>
+                            )}
+                          </text>
+                        );
+                      }}
+                    />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -900,7 +1381,13 @@ const SessionAnalytics = ({ session, onBack }) => {
             <div className="h-[160px] w-full">
               {radarData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
+                  <RadarChart
+                    key={`radar-${selectedTrainer}-${filteredResponses.length}`}
+                    cx="50%"
+                    cy="50%"
+                    outerRadius="70%"
+                    data={radarData}
+                  >
                     <PolarGrid stroke="hsl(var(--muted-foreground)/0.2)" />
                     <PolarAngleAxis
                       dataKey="category"
@@ -971,49 +1458,372 @@ const SessionAnalytics = ({ session, onBack }) => {
           </CardContent>
         </Card>
 
-        {/* Rating Breakdown (PieChart) */}
-        <Card className="lg:col-span-3">
+        {/* Rating Breakdown (Donut Chart with Dynamic Center Highlight & Legend Sync) */}
+        <Card className="lg:col-span-3 flex flex-col justify-between">
           <CardHeader className="pb-1 pt-2">
-            <CardTitle className="text-[13px] font-medium">
-              Rating Breakdown
-            </CardTitle>
-            <CardDescription className="text-[10px]">
-              Percentage distribution
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0 pb-2">
-            <div className="h-[160px] w-full">
-              {ratingDataFiltered.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={ratingDataFiltered}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={45}
-                      outerRadius={65}
-                      paddingAngle={3}
-                      dataKey="value"
-                    >
-                      {ratingDataFiltered.map((entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={`hsl(215, 85%, ${75 - index * 6}%)`}
-                        />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground text-[13px] font-medium">
-                  No distribution data
-                </div>
-              )}
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-[13px] font-medium">
+                  Rating Breakdown
+                </CardTitle>
+                <CardDescription className="text-[10px]">
+                  Percentage share by star
+                </CardDescription>
+              </div>
+              <Badge variant="outline" className="text-[10px] font-semibold px-1.5 py-0 h-4 bg-slate-50 text-slate-700">
+                {stats.totalResponses} Total
+              </Badge>
             </div>
+          </CardHeader>
+          <CardContent className="pt-0 pb-2 flex-1 flex flex-col justify-center">
+            {ratingDataFiltered.length > 0 ? (
+              <div className="flex items-center justify-between gap-1.5">
+                {/* Left: Donut Chart with Dynamic Center Highlight (No Obstructing Tooltip) */}
+                <div className="relative h-[135px] w-[130px] shrink-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart key={`pie-${selectedTrainer}-${filteredResponses.length}`}>
+                      <Pie
+                        data={ratingDataFiltered}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={36}
+                        outerRadius={52}
+                        paddingAngle={2.5}
+                        dataKey="value"
+                        onMouseEnter={(_, index) =>
+                          setHoveredDonutRating(ratingDataFiltered[index])
+                        }
+                        onMouseLeave={() => setHoveredDonutRating(null)}
+                      >
+                        {ratingDataFiltered.map((entry) => {
+                          const isHovered =
+                            hoveredDonutRating?.rating === entry.rating;
+                          const isAnyHovered = hoveredDonutRating !== null;
+                          return (
+                            <Cell
+                              key={`cell-${entry.rating}`}
+                              fill={entry.color}
+                              stroke="#ffffff"
+                              strokeWidth={isHovered ? 2.5 : 1.5}
+                              opacity={isAnyHovered ? (isHovered ? 1 : 0.35) : 1}
+                              className="transition-all duration-150 cursor-pointer"
+                            />
+                          );
+                        })}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+
+                  {/* Center Score Overlay - Seamlessly switches to Hovered Slice Details */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none transition-all duration-150">
+                    {hoveredDonutRating ? (
+                      <>
+                        <span
+                          className="text-xs font-black leading-none animate-in zoom-in-95 duration-100"
+                          style={{ color: hoveredDonutRating.color }}
+                        >
+                          {hoveredDonutRating.percentage}%
+                        </span>
+                        <span className="text-[8px] font-bold text-slate-500 mt-0.5 truncate max-w-[55px]">
+                          {hoveredDonutRating.name}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-xs font-extrabold text-slate-800 leading-none">
+                          {stats.avgRating.toFixed(2)}
+                        </span>
+                        <span className="text-[8px] text-slate-400 font-semibold mt-0.5">
+                          Avg ★
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right: Interactive Legend with Percentages & Exact Counts */}
+                <div className="flex-1 space-y-0.5 min-w-0 pr-0.5">
+                  {ratingDataFiltered
+                    .slice()
+                    .sort((a, b) => b.rating - a.rating)
+                    .map((item) => {
+                      const isHovered =
+                        hoveredDonutRating?.rating === item.rating;
+                      const isAnyHovered = hoveredDonutRating !== null;
+                      return (
+                        <div
+                          key={item.rating}
+                          onMouseEnter={() => setHoveredDonutRating(item)}
+                          onMouseLeave={() => setHoveredDonutRating(null)}
+                          className={cn(
+                            "flex items-center justify-between text-[10px] leading-tight py-0.5 px-1 rounded transition-all cursor-pointer",
+                            isHovered
+                              ? "bg-slate-100 font-bold scale-[1.02] shadow-2xs"
+                              : "hover:bg-slate-50",
+                            isAnyHovered && !isHovered && "opacity-40",
+                          )}
+                        >
+                          <div className="flex items-center gap-1 min-w-0">
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0 transition-transform"
+                              style={{
+                                backgroundColor: item.color,
+                                transform: isHovered ? "scale(1.25)" : "scale(1)",
+                              }}
+                            />
+                            <span
+                              className={cn(
+                                "font-semibold truncate",
+                                isHovered ? "text-slate-900" : "text-slate-700",
+                              )}
+                            >
+                              {item.rating}★
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span
+                              className={cn(
+                                "font-bold",
+                                isHovered ? "text-slate-950" : "text-slate-800",
+                              )}
+                            >
+                              {item.percentage}%
+                            </span>
+                            <span className="text-[8.5px] text-slate-400">
+                              ({item.value})
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-[135px] text-muted-foreground text-[13px] font-medium">
+                No distribution data
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
+
+      {/* Date-Wise Feedback Trend (Submission Volume & Avg Rating) */}
+      {dateWiseTrend.length > 0 && (
+        <Card className="border border-slate-200/90 shadow-xs bg-white overflow-hidden rounded-xl">
+          <CardHeader className="py-2.5 px-4 flex flex-row items-center justify-between border-b border-slate-100 bg-slate-50/50">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center ring-1 ring-blue-500/15">
+                <TrendingUp className="h-4 w-4" />
+              </div>
+              <div>
+                <CardTitle className="text-[13px] font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                  Daily Response Velocity & Satisfaction Trend
+                </CardTitle>
+                <CardDescription className="text-[11px] text-slate-500">
+                  Day-by-day submission pace and rating trajectory across active dates
+                </CardDescription>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {/* Interactive View Mode Switcher */}
+              <div className="flex items-center bg-slate-100/90 p-0.5 rounded-lg border border-slate-200/80">
+                <button
+                  type="button"
+                  onClick={() => setTrendViewMode("area")}
+                  className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-md transition-all ${
+                    trendViewMode === "area"
+                      ? "bg-white text-blue-600 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <Activity className="h-3 w-3" /> Wave
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTrendViewMode("bar")}
+                  className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-md transition-all ${
+                    trendViewMode === "bar"
+                      ? "bg-white text-blue-600 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <BarChart3 className="h-3 w-3" /> Columns
+                </button>
+              </div>
+
+              {/* Legend Badges */}
+              <div className="hidden sm:flex items-center gap-2 text-[11px] font-medium pl-1 border-l border-slate-200">
+                <span className="inline-flex items-center gap-1 text-slate-600">
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500 ring-2 ring-blue-100" />
+                  Submissions
+                </span>
+                <span className="inline-flex items-center gap-1 text-slate-600">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-amber-100" />
+                  Avg Rating
+                </span>
+              </div>
+            </div>
+          </CardHeader>
+
+          {/* Quick Metrics Bar */}
+          {trendMetrics && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-4 py-2 bg-slate-50/30 border-b border-slate-100">
+              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200/70 shadow-2xs">
+                <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase font-semibold tracking-wider text-slate-600 truncate">Duration</p>
+                  <p className="text-xs font-bold text-slate-800 truncate">{trendMetrics.totalDays} Active Days</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200/70 shadow-2xs">
+                <Users className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase font-semibold tracking-wider text-slate-600 truncate">Total Volume</p>
+                  <p className="text-xs font-bold text-blue-600 truncate">{trendMetrics.totalSubmissions} Feedback</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200/70 shadow-2xs">
+                <TrendingUp className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase font-semibold tracking-wider text-slate-600 truncate">Daily Pace</p>
+                  <p className="text-xs font-bold text-indigo-600 truncate">~{trendMetrics.avgDaily} / day</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200/70 shadow-2xs">
+                <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase font-semibold tracking-wider text-slate-600 truncate">Peak Submissions</p>
+                  <p className="text-xs font-bold text-amber-700 truncate">{trendMetrics.peakDay}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <CardContent className="pt-3 pb-2 px-3 sm:px-4">
+            <div className="h-[185px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  key={`trend-${selectedTrainer}-${filteredResponses.length}`}
+                  data={dateWiseTrend}
+                  margin={{ top: 8, right: 10, left: -24, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient id="sessionAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0} />
+                    </linearGradient>
+                    <linearGradient id="sessionBarGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.95} />
+                      <stop offset="100%" stopColor="#2563eb" stopOpacity={0.9} />
+                    </linearGradient>
+                  </defs>
+
+                  <CartesianGrid
+                    strokeDasharray="4 4"
+                    stroke="#f1f5f9"
+                    vertical={false}
+                  />
+
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 11, fill: "#64748b", fontWeight: 500 }}
+                    axisLine={{ stroke: "#e2e8f0" }}
+                    tickLine={false}
+                    dy={4}
+                  />
+                  <YAxis
+                    yAxisId="left"
+                    allowDecimals={false}
+                    tick={{ fontSize: 10, fill: "#64748b" }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    domain={[trendMetrics?.ratingMin ?? 3.5, 5]}
+                    ticks={trendMetrics?.ratingTicks || [3.5, 4.0, 4.5, 5.0]}
+                    tick={{ fontSize: 10, fill: "#d97706", fontWeight: 600 }}
+                    tickFormatter={(val) => `${Number(val).toFixed(1)}★`}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+
+                  <RechartsTooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="bg-white/95 backdrop-blur-md p-2.5 rounded-xl shadow-lg border border-slate-200/90 text-xs space-y-1.5 min-w-[180px]">
+                            <p className="font-bold text-slate-800 border-b border-slate-100 pb-1 flex items-center gap-1.5">
+                              <Calendar className="h-3.5 w-3.5 text-blue-600" />
+                              {data.fullDate || data.date}
+                            </p>
+                            <div className="flex items-center justify-between gap-3 pt-0.5">
+                              <span className="text-slate-500 flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                                Submissions:
+                              </span>
+                              <span className="font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded text-[11px]">
+                                {data.responses} students
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-slate-500 flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                                Satisfaction:
+                              </span>
+                              <span className="font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded text-[11px] flex items-center gap-1">
+                                <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+                                {data.avgRating > 0 ? data.avgRating.toFixed(2) : "N/A"}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+
+                  {trendViewMode === "area" ? (
+                    <Area
+                      yAxisId="left"
+                      type="monotone"
+                      dataKey="responses"
+                      name="Submissions"
+                      stroke="#2563eb"
+                      strokeWidth={2.5}
+                      fill="url(#sessionAreaGrad)"
+                      activeDot={{ r: 5, fill: "#2563eb", stroke: "#ffffff", strokeWidth: 2 }}
+                    />
+                  ) : (
+                    <Bar
+                      yAxisId="left"
+                      dataKey="responses"
+                      name="Submissions"
+                      fill="url(#sessionBarGrad)"
+                      radius={[6, 6, 0, 0]}
+                      maxBarSize={28}
+                    />
+                  )}
+
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="avgRating"
+                    name="Avg Rating"
+                    stroke="#f59e0b"
+                    strokeWidth={2.5}
+                    dot={{ r: 3.5, fill: "#ffffff", stroke: "#f59e0b", strokeWidth: 2 }}
+                    activeDot={{ r: 5.5, fill: "#f59e0b" }}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Advanced Lower Layout: Comments & Topics */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1035,9 +1845,15 @@ const SessionAnalytics = ({ session, onBack }) => {
           <CardContent className="pt-0 pb-2">
             <Tabs defaultValue="top" className="w-full">
               <TabsList className="grid w-full grid-cols-3 h-7 p-0.5 bg-muted rounded-md mb-2">
-                <TabsTrigger value="top" className="text-[11px] font-medium py-1">Top</TabsTrigger>
-                <TabsTrigger value="average" className="text-[11px] font-medium py-1">Average</TabsTrigger>
-                <TabsTrigger value="improvement" className="text-[11px] font-medium py-1">Areas of Imp</TabsTrigger>
+                <TabsTrigger value="top" className="text-[11px] font-medium py-1">
+                  Top ({stats.topComments?.length || 0})
+                </TabsTrigger>
+                <TabsTrigger value="average" className="text-[11px] font-medium py-1">
+                  Average ({stats.avgComments?.length || 0})
+                </TabsTrigger>
+                <TabsTrigger value="improvement" className="text-[11px] font-medium py-1">
+                  Areas of Imp ({stats.leastRatedComments?.length || 0})
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="top" className="mt-0">

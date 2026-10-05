@@ -13,6 +13,8 @@ import {
   doc,
   where,
   Timestamp,
+  limit,
+  startAfter,
 } from "firebase/firestore";
 
 /**
@@ -94,31 +96,80 @@ export const getResponses = async (sessionId, startDate = null, endDate = null) 
 
 /**
  * Fetch all responses (feedbacks) from the root feedbacks collection within a date range
+ * Uses batch chunking (500 docs per chunk) to avoid Firestore WebChannel deadline/timeout errors
  * @param {Date} startDate - Start of range
  * @param {Date} endDate - End of range
+ * @param {number} batchSize - Number of docs per batch (default 500)
  * @returns {Promise<Array>} - List of feedbacks
  */
-export const getFeedbacksByDateRange = async (startDate, endDate) => {
+export const getFeedbacksByDateRange = async (
+  startDate,
+  endDate,
+  batchSize = 500,
+  onProgress = null,
+) => {
   try {
     const feedbacksRef = collection(db, "feedbacks");
-    const constraints = [];
+    const baseConstraints = [];
 
     if (startDate) {
-      constraints.push(where("submittedAt", ">=", startDate instanceof Date ? Timestamp.fromDate(startDate) : startDate));
+      baseConstraints.push(
+        where(
+          "submittedAt",
+          ">=",
+          startDate instanceof Date
+            ? Timestamp.fromDate(startDate)
+            : startDate,
+        ),
+      );
     }
     if (endDate) {
-      constraints.push(where("submittedAt", "<=", endDate instanceof Date ? Timestamp.fromDate(endDate) : endDate));
+      baseConstraints.push(
+        where(
+          "submittedAt",
+          "<=",
+          endDate instanceof Date ? Timestamp.fromDate(endDate) : endDate,
+        ),
+      );
     }
 
-    constraints.push(orderBy("submittedAt", "desc"));
+    baseConstraints.push(orderBy("submittedAt", "desc"));
 
-    const q = query(feedbacksRef, ...constraints);
-    const querySnapshot = await getDocs(q);
+    let allFeedbacks = [];
+    let lastDoc = null;
+    let hasMore = true;
 
-    return querySnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    // Fetch in safe batches of 500 to avoid RPC timeout on large datasets
+    while (hasMore) {
+      const constraints = [...baseConstraints, limit(batchSize)];
+      if (lastDoc) {
+        constraints.push(startAfter(lastDoc));
+      }
+
+      const q = query(feedbacksRef, ...constraints);
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        hasMore = false;
+      } else {
+        const batchData = querySnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        allFeedbacks = allFeedbacks.concat(batchData);
+        lastDoc = querySnapshot.docs[querySnapshot.docs.length - 1];
+
+        if (typeof onProgress === "function") {
+          onProgress(allFeedbacks.length);
+        }
+
+        if (querySnapshot.docs.length < batchSize) {
+          hasMore = false;
+        }
+      }
+    }
+
+    return allFeedbacks;
   } catch (error) {
     console.error("Error getting feedbacks by date range:", error);
     throw error;
@@ -423,8 +474,11 @@ export const compileSessionStatsFromResponses = (
 
   const ratingDistribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   responseStats.forEach((resp) => {
-    resp.answers
-      .filter((a) => a.type === "rating")
+    (resp.answers || [])
+      .filter((a) => {
+        const type = (a.type || "").toLowerCase();
+        return type === "rating" || type === "overall" || (!type && !isNaN(Number(a.value)));
+      })
       .forEach((a) => {
         const val = Math.round(Number(a.value) || 0);
         if (val >= 1 && val <= 5) ratingDistribution[val]++;
@@ -466,6 +520,32 @@ export const compileSessionStatsFromResponses = (
     delete stat.values;
   });
 
+  // Robust category resolution for rating questions
+  const resolveQuestionCategory = (a, qMap, questions) => {
+    if (a.category) return a.category.toLowerCase();
+    if (a.questionCategory) return a.questionCategory.toLowerCase();
+    if (a.questionId && qMap[a.questionId]) return qMap[a.questionId].toLowerCase();
+    const qObj = (questions || []).find((q) => q.id === a.questionId);
+    const text = (
+      a.questionText ||
+      a.question ||
+      qObj?.text ||
+      qObj?.question ||
+      a.label ||
+      a.title ||
+      a.name ||
+      a.questionId ||
+      ""
+    ).toLowerCase();
+    if (text.includes("knowledge") || text.includes("expert") || text.includes("domain") || text.includes("know")) return "knowledge";
+    if (text.includes("communicat") || text.includes("clarity") || text.includes("explain") || text.includes("voice") || text.includes("language")) return "communication";
+    if (text.includes("engag") || text.includes("interact") || text.includes("involve") || text.includes("doubts") || text.includes("interest")) return "engagement";
+    if (text.includes("content") || text.includes("curriculum") || text.includes("relevan") || text.includes("material") || text.includes("syllabus") || text.includes("topic")) return "content";
+    if (text.includes("deliver") || text.includes("present") || text.includes("pace") || text.includes("teach") || text.includes("method")) return "delivery";
+    if (text.includes("overall") || (a.type || "").toLowerCase() === "overall") return "overall";
+    return "overall";
+  };
+
   // Categories
   const questionCategoryMap = {};
   (sessionQuestions || []).forEach((q) => {
@@ -475,10 +555,13 @@ export const compileSessionStatsFromResponses = (
   const categoryTotals = {};
   const categoryCounts = {};
   responseStats.forEach((resp) => {
-    resp.answers
-      .filter((a) => a.type === "rating")
+    (resp.answers || [])
+      .filter((a) => {
+        const type = (a.type || "").toLowerCase();
+        return type === "rating" || type === "overall" || (!type && !isNaN(Number(a.value)));
+      })
       .forEach((a) => {
-        const category = questionCategoryMap[a.questionId] || "overall";
+        const category = resolveQuestionCategory(a, questionCategoryMap, sessionQuestions);
         const value = Number(a.value) || 0;
         if (!categoryTotals[category]) {
           categoryTotals[category] = 0;
@@ -501,7 +584,7 @@ export const compileSessionStatsFromResponses = (
   const byTrainer = {};
   const trainerGroups = {};
   responses.forEach((r) => {
-    const tid = r.selectedTrainerId;
+    const tid = r.selectedTrainerId || r.selectedTrainerName || r.trainerId || r.trainerName;
     if (tid) {
       if (!trainerGroups[tid]) trainerGroups[tid] = [];
       trainerGroups[tid].push(r);
@@ -521,14 +604,14 @@ export const compileSessionStatsFromResponses = (
       const answers = resp.answers || [];
       answers.forEach((a) => {
         const type = (a.type || "").toLowerCase();
-        if (type === "rating" || type === "overall") {
+        if (type === "rating" || type === "overall" || (!type && !isNaN(Number(a.value)))) {
           const val = Math.round(Number(a.value) || 0);
           if (val >= 1 && val <= 5) {
             tRatingDist[val]++;
             tRatingSum += val;
             tRatingCount++;
           }
-          const category = questionCategoryMap[a.questionId] || "overall";
+          const category = resolveQuestionCategory(a, questionCategoryMap, sessionQuestions);
           const numVal = Number(a.value) || 0;
           if (!tCategoryTotals[category]) {
             tCategoryTotals[category] = 0;

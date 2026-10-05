@@ -335,10 +335,22 @@ export const addProjectCodes = async (inputCodes, colleges) => {
             if (!collegeUpdates[item.collegeId]) {
                 collegeUpdates[item.collegeId] = {};
             }
+            const cleanYear = item.year.replace(/\D/g, '') || item.year;
+            
+            // Unsuffixed course
             if (!collegeUpdates[item.collegeId][item.course]) {
                 collegeUpdates[item.collegeId][item.course] = new Set();
             }
-            collegeUpdates[item.collegeId][item.course].add(item.year);
+            collegeUpdates[item.collegeId][item.course].add(cleanYear);
+
+            // Suffixed course with passing year
+            if (item.academicYear) {
+                const suffixed = `${item.course} (${item.academicYear})`;
+                if (!collegeUpdates[item.collegeId][suffixed]) {
+                    collegeUpdates[item.collegeId][suffixed] = new Set();
+                }
+                collegeUpdates[item.collegeId][suffixed].add(cleanYear);
+            }
         }
     });
 
@@ -585,9 +597,15 @@ export const createProjectCode = async (data) => {
     // Auto-update academic config so this course/year shows in the config tab
     if (docData.collegeId && docData.course && docData.year) {
       const yearNum = docData.year.replace(/\D/g, '') || docData.year;
-      await autoUpdateAcademicConfig(docData.collegeId, {
-        [docData.course]: new Set([yearNum])
+      const courseKeys = [docData.course];
+      if (docData.academicYear) {
+        courseKeys.push(`${docData.course} (${docData.academicYear})`);
+      }
+      const updatePayload = {};
+      courseKeys.forEach(ck => {
+        updatePayload[ck] = new Set([yearNum]);
       });
+      await autoUpdateAcademicConfig(docData.collegeId, updatePayload);
     }
 
     return { id: docRef.id, ...docData };
@@ -622,9 +640,15 @@ export const updateProjectCode = async (id, data) => {
     // Auto-update academic config for the new course/year
     if (docData.collegeId && docData.course && docData.year) {
       const yearNum = docData.year.replace(/\D/g, '') || docData.year;
-      await autoUpdateAcademicConfig(docData.collegeId, {
-        [docData.course]: new Set([yearNum])
+      const courseKeys = [docData.course];
+      if (docData.academicYear) {
+        courseKeys.push(`${docData.course} (${docData.academicYear})`);
+      }
+      const updatePayload = {};
+      courseKeys.forEach(ck => {
+        updatePayload[ck] = new Set([yearNum]);
       });
+      await autoUpdateAcademicConfig(docData.collegeId, updatePayload);
     }
 
     return { id, ...docData };
